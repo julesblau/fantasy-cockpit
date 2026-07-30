@@ -18,6 +18,15 @@
   <div id="test-summary">TESTS: running…</div>
   <div id="test-output"></div>
 
+  <!-- GitHub Pages serves this file from the app's own origin, so tests that write/remove
+       the real state key would stomp a live draft on a single visit. Snapshot it here, as
+       the very first script in the file (before state.js loads, hence the literal string
+       rather than DC.state.STORAGE_KEY), and restore it in the final render script below
+       after every test section has run. Literal must match STORAGE_KEY in js/state.js. -->
+  <script>
+    window.__DC_REAL_STATE_SNAPSHOT__ = localStorage.getItem('draft-cockpit/state');
+  </script>
+
   <!-- app scripts under test (later tasks append more script tags here, before the harness) -->
   <script src="./js/data.js"></script>
   <script src="./js/state.js"></script>
@@ -782,6 +791,55 @@
       assertEq(loaded.marks.x1, { drafted: false, target: true, avoid: false });
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
+
+    t('load(): drops a null undoStack entry instead of throwing on poisoned localStorage', function () {
+      var payload = {
+        schemaVersion: 1,
+        players: makeHealPlayers(),
+        marks: {
+          x1: { drafted: true, target: false, avoid: false },
+          x2: { drafted: false, target: false, avoid: false }
+        },
+        undoStack: [null, { playerId: 'x1', timestamp: 1 }],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: ''
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.players.length, 2, 'load() returned the real healed state, not a seed-fallback crash guard');
+      assertEq(loaded.undoStack.map(function (e) { return e.playerId; }), ['x1'], 'null entry dropped, valid entry kept');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): a throw from deep inside normalizeMarks still falls back to seed instead of crashing the boot', function () {
+      var trickyPlayers = makeHealPlayers();
+      trickyPlayers.forEach = function () {
+        throw new TypeError('simulated crash inside normalizeMarks');
+      };
+      var payload = {
+        schemaVersion: 1,
+        players: trickyPlayers,
+        marks: {
+          x1: { drafted: false, target: false, avoid: false },
+          x2: { drafted: false, target: false, avoid: false }
+        },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: ''
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, '"placeholder"');
+      var origParse = JSON.parse;
+      JSON.parse = function () {
+        return payload;
+      };
+      try {
+        var loaded = DC.state.load();
+        assertEq(loaded, DC.state.createSeedState(), 'a throw during validate/migrate/normalize must fall back to seed, not propagate');
+      } finally {
+        JSON.parse = origParse;
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
   })();
   </script>
 
@@ -1176,6 +1234,12 @@
       assert(html.indexOf('data-action="toggle-target"') === -1, 'no toggle buttons on drafted status row');
     });
 
+    t('playerRowHTML: drafted status view with no pickNumber (foreign-backup edge) shows an em dash, not "Pick "', function () {
+      var view = { id: 'p3b', rank: 21, name: 'No Pick Guy', team: 'BAL', position: 'QB', byeWeek: 5, drafted: true, target: false, avoid: false };
+      var html = DC.ui.templates.playerRowHTML(view, { searching: false, statusFilter: 'DRAFTED', pickNumber: null });
+      assert(html.indexOf('Pick —') !== -1, 'Pick em-dash badge: ' + html);
+    });
+
     t('playerRowHTML: byeWeek 0 renders as "Bye —"', function () {
       var view = { id: 'p4', rank: 200, name: 'Free Agent Guy', team: 'FA', position: 'WR', byeWeek: 0, drafted: false, target: false, avoid: false };
       var html = DC.ui.templates.playerRowHTML(view, { searching: false });
@@ -1377,6 +1441,16 @@
       summary.setAttribute('data-sections', liveSections.join('|'));
       summary.setAttribute('data-complete', '1'); // only set once the render script actually finishes
       summary.textContent = title;
+
+      // restore the real app's state key now that every section has run (see the snapshot
+      // script at the top of this file) - runs even if individual persistence tests failed
+      // partway through their own cleanup, so this page never leaves a live draft clobbered.
+      var __realSnapshot = window.__DC_REAL_STATE_SNAPSHOT__;
+      if (__realSnapshot === null || typeof __realSnapshot === 'undefined') {
+        localStorage.removeItem('draft-cockpit/state');
+      } else {
+        localStorage.setItem('draft-cockpit/state', __realSnapshot);
+      }
     })();
   </script>
 </body>

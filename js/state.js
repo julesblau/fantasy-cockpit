@@ -328,7 +328,7 @@
     });
 
     var undoStack = state.undoStack.filter(function (e) {
-      return validIds[e.playerId];
+      return e && typeof e.playerId === 'string' && validIds[e.playerId];
     });
 
     return {
@@ -360,29 +360,35 @@
       return createSeedState();
     }
 
-    if (!parsed || typeof parsed.schemaVersion !== 'number') {
-      return createSeedState();
-    }
-
-    if (parsed.schemaVersion > CURRENT_SCHEMA_VERSION) {
-      return createSeedState();
-    }
-
-    var version = parsed.schemaVersion;
-    while (version < CURRENT_SCHEMA_VERSION) {
-      var migrate = migrations[version];
-      if (typeof migrate !== 'function') {
+    // belt-and-suspenders: isValidState/migrate/normalizeMarks are defensive but a poisoned
+    // payload should never crash-loop the boot even if one of them has a gap - fall back to seed.
+    try {
+      if (!parsed || typeof parsed.schemaVersion !== 'number') {
         return createSeedState();
       }
-      parsed = migrate(parsed);
-      version++;
-    }
 
-    if (!isValidState(parsed)) {
+      if (parsed.schemaVersion > CURRENT_SCHEMA_VERSION) {
+        return createSeedState();
+      }
+
+      var version = parsed.schemaVersion;
+      while (version < CURRENT_SCHEMA_VERSION) {
+        var migrate = migrations[version];
+        if (typeof migrate !== 'function') {
+          return createSeedState();
+        }
+        parsed = migrate(parsed);
+        version++;
+      }
+
+      if (!isValidState(parsed)) {
+        return createSeedState();
+      }
+
+      return normalizeMarks(parsed);
+    } catch (e) {
       return createSeedState();
     }
-
-    return normalizeMarks(parsed);
   }
 
   /**

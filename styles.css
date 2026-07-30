@@ -233,6 +233,7 @@ body.searching #bottom-bar {
   padding: 10px 12px;
   margin-bottom: 8px;
   min-height: 64px;
+  max-height: 80px;
   position: relative;
   overflow: hidden;
 }
@@ -342,6 +343,7 @@ body.searching #bottom-bar {
   transform: translateX(24px);
   opacity: 0;
   max-height: 0;
+  min-height: 0;
   margin-bottom: 0;
   padding-top: 0;
   padding-bottom: 0;
@@ -447,6 +449,9 @@ body.searching #bottom-bar {
   background: var(--surface-1);
   border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
   padding: 16px 16px max(env(safe-area-inset-bottom), 16px);
+  max-height: 85vh;
+  max-height: 85dvh;
+  overflow-y: auto;
 }
 
 .sheet-title {

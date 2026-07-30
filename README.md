@@ -12,7 +12,7 @@ An offline-first, single-screen fantasy football draft cockpit. Hand-written van
 powershell -File scripts\serve.ps1
 ```
 
-Then open http://localhost:8321/ in a browser. Ctrl+C stops the server. If port 8321 is already bound, the script falls back to `http://127.0.0.1:8321/` automatically.
+Then open http://localhost:8321/ in a browser. Ctrl+C stops the server. If binding `http://localhost:8321/` fails with an access-denied/URL-ACL error, the script falls back to `http://127.0.0.1:8321/` automatically; a genuine port conflict (something else already using 8321) instead needs the `$port` variable in `serve.ps1` changed.
 
 ## Run the tests
 
@@ -47,6 +47,7 @@ Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it work
 1. Open the GitHub Pages URL in **Safari** (must be Safari, not Chrome or another browser).
 2. Tap Share -> Add to Home Screen.
 3. Launch the app from its home screen icon. It runs standalone and fullscreen, not inside Safari's browser chrome.
+4. Verify Export downloads on the phone (Settings -> Export Backup). See the iOS note under Backup/restore below if the download prompt doesn't appear.
 
 **Offline:** after the first online open, the app works with zero connectivity. Airplane Mode is a good way to test this.
 
@@ -90,6 +91,8 @@ Re-importing preserves your Drafted/Target/Avoid marks for any player whose name
 Settings -> Export Backup downloads a `draft-cockpit-backup.json` file containing your full state (rankings, marks, undo history, filters). To restore, paste or upload that same file into the Import box (Settings -> Import Rankings); it's auto-detected as a backup rather than a rankings file.
 
 **Export a backup before draft day, and again right after the draft.** localStorage is the only copy of your data; there is no cloud sync.
+
+**iOS standalone note:** if you installed the app to your home screen and the Export download prompt doesn't appear when you tap it, open the app's URL in Safari itself (not the home-screen icon) and export from there instead. This is a limitation of anchor-tag downloads inside an iOS standalone (home-screen) web app, not a bug in the app.
 
 ## Updating your rankings later
 

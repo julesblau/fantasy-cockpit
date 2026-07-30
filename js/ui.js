@@ -92,7 +92,7 @@
   }
 
   function draftedRowHTML(view, pickNumber) {
-    var pickText = typeof pickNumber === 'number' ? pickNumber : '';
+    var pickText = typeof pickNumber === 'number' ? pickNumber : EMDASH;
     return (
       '<div class="player-row" data-id="' + esc(view.id) + '">' +
         '<div class="player-rank">' + view.rank + '</div>' +
