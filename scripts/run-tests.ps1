@@ -37,15 +37,40 @@ if (-not $domText) {
     $domText = ""
 }
 
-$match = [regex]::Match($domText, 'data-pass="(\d+)" data-fail="(\d+)"')
+# Fail-closed crash detection: the initial #test-summary markup intentionally omits
+# data-pass/data-fail/data-complete, so any of these being missing means the render script
+# (which sets all three together, only once it actually finishes) never ran - a page/script
+# crash before completion, not a legitimate 0-failure result.
+$tagMatch = [regex]::Match($domText, '<div[^>]*id="test-summary"[^>]*>')
 
-if (-not $match.Success) {
-    Write-Host "ERROR: test summary not found in DOM output (JS likely crashed before completion)."
+if (-not $tagMatch.Success) {
+    Write-Host "ERROR: #test-summary element not found in DOM output (crash before completion)."
     exit 1
 }
 
-$passCount = [int]$match.Groups[1].Value
-$failCount = [int]$match.Groups[2].Value
+$tagText = $tagMatch.Value
+
+$completeMatch = [regex]::Match($tagText, 'data-complete="1"')
+if (-not $completeMatch.Success) {
+    Write-Host "ERROR: test summary has no data-complete marker (crash before completion)."
+    exit 1
+}
+
+$passMatch = [regex]::Match($tagText, 'data-pass="(\d+)"')
+$failMatch = [regex]::Match($tagText, 'data-fail="(\d+)"')
+
+if (-not $passMatch.Success -or -not $failMatch.Success) {
+    Write-Host "ERROR: test summary missing data-pass/data-fail (crash before completion)."
+    exit 1
+}
+
+$passCount = [int]$passMatch.Groups[1].Value
+$failCount = [int]$failMatch.Groups[1].Value
+
+if (($passCount + $failCount) -eq 0) {
+    Write-Host "ERROR: no tests ran (0 passed, 0 failed) - likely a crash between sections."
+    exit 1
+}
 
 Write-Host "TESTS: $passCount passed, $failCount failed"
 

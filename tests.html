@@ -13,7 +13,9 @@
   </style>
 </head>
 <body>
-  <div id="test-summary" data-pass="0" data-fail="0">TESTS: running…</div>
+  <!-- no data-pass/data-fail/data-complete here on purpose: their absence is what lets
+       run-tests.ps1 detect a crash that happens before the render script below ever runs -->
+  <div id="test-summary">TESTS: running…</div>
   <div id="test-output"></div>
 
   <!-- app scripts under test (later tasks append more script tags here, before the harness) -->
@@ -207,6 +209,7 @@
       var summary = document.getElementById('test-summary');
       summary.setAttribute('data-pass', String(pass));
       summary.setAttribute('data-fail', String(fail));
+      summary.setAttribute('data-complete', '1'); // only set once the render script actually finishes
       summary.textContent = title;
     })();
   </script>
