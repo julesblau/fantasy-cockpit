@@ -28,9 +28,14 @@
 
       var results = [];
       var currentSection = '';
+      var declaredSections = []; // unique section names, in declaration order
+      var sectionCounts = {}; // section name -> number of t() results registered under it
 
       function section(title) {
         currentSection = title;
+        if (declaredSections.indexOf(title) === -1) {
+          declaredSections.push(title);
+        }
       }
 
       function assert(cond, msg) {
@@ -65,6 +70,7 @@
           entry.detail = e && e.message ? e.message : String(e);
         }
         results.push(entry);
+        sectionCounts[currentSection] = (sectionCounts[currentSection] || 0) + 1;
       }
 
       window.section = section;
@@ -72,6 +78,8 @@
       window.assert = assert;
       window.assertEq = assertEq;
       window.__DC_TEST_RESULTS__ = results;
+      window.__DC_TEST_SECTIONS__ = declaredSections;
+      window.__DC_TEST_SECTION_COUNTS__ = sectionCounts;
     })();
   </script>
 
@@ -206,9 +214,19 @@
       var title = 'TESTS: ' + pass + ' passed, ' + fail + ' failed';
       document.title = title;
 
+      // a section only counts as "live" if it actually registered >=1 t() result - a section()
+      // call that ran but then crashed before any t() (or that never ran at all) is excluded,
+      // which is exactly what run-tests.ps1's static source scan checks for
+      var declaredSections = window.__DC_TEST_SECTIONS__ || [];
+      var sectionCounts = window.__DC_TEST_SECTION_COUNTS__ || {};
+      var liveSections = declaredSections.filter(function (name) {
+        return (sectionCounts[name] || 0) > 0;
+      });
+
       var summary = document.getElementById('test-summary');
       summary.setAttribute('data-pass', String(pass));
       summary.setAttribute('data-fail', String(fail));
+      summary.setAttribute('data-sections', liveSections.join('|'));
       summary.setAttribute('data-complete', '1'); // only set once the render script actually finishes
       summary.textContent = title;
     })();

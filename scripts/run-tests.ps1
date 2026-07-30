@@ -58,9 +58,10 @@ if (-not $completeMatch.Success) {
 
 $passMatch = [regex]::Match($tagText, 'data-pass="(\d+)"')
 $failMatch = [regex]::Match($tagText, 'data-fail="(\d+)"')
+$sectionsMatch = [regex]::Match($tagText, 'data-sections="([^"]*)"')
 
-if (-not $passMatch.Success -or -not $failMatch.Success) {
-    Write-Host "ERROR: test summary missing data-pass/data-fail (crash before completion)."
+if (-not $passMatch.Success -or -not $failMatch.Success -or -not $sectionsMatch.Success) {
+    Write-Host "ERROR: test summary missing data-pass/data-fail/data-sections (crash before completion)."
     exit 1
 }
 
@@ -69,6 +70,46 @@ $failCount = [int]$failMatch.Groups[1].Value
 
 if (($passCount + $failCount) -eq 0) {
     Write-Host "ERROR: no tests ran (0 passed, 0 failed) - likely a crash between sections."
+    exit 1
+}
+
+# Per-section liveness: statically scan the tests.html SOURCE (not the runtime DOM) for every
+# section(...) call. A crash partway through a section's script tag - whether it happens before
+# or after that section's own section(...) call runs - leaves that section's name out of the
+# runtime data-sections list even though the source still declares it. Comparing source-declared
+# names against runtime-live names catches both cases; comparing only against runtime data would
+# miss the "crashed before section() even ran" case entirely.
+$sourceText = Get-Content $testsHtmlPath -Raw
+$sectionPattern = 'section\(\s*[''"]([^''"]+)[''"]\s*\)'
+$sectionDeclMatches = [regex]::Matches($sourceText, $sectionPattern)
+
+$expectedSections = New-Object System.Collections.ArrayList
+foreach ($m in $sectionDeclMatches) {
+    $name = $m.Groups[1].Value
+    if (-not $expectedSections.Contains($name)) {
+        [void]$expectedSections.Add($name)
+    }
+}
+
+$liveSectionsRaw = $sectionsMatch.Groups[1].Value
+if ($liveSectionsRaw -eq '') {
+    $liveSections = @()
+}
+else {
+    $liveSections = $liveSectionsRaw -split '\|'
+}
+
+$missingSections = New-Object System.Collections.ArrayList
+foreach ($name in $expectedSections) {
+    if ($liveSections -notcontains $name) {
+        [void]$missingSections.Add($name)
+    }
+}
+
+if ($missingSections.Count -gt 0) {
+    foreach ($name in $missingSections) {
+        Write-Host "ERROR: section '$name' registered no tests - crashed before registration?"
+    }
     exit 1
 }
 
