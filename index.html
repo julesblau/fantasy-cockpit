@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Cockpit">
+  <meta name="theme-color" content="#000000">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./styles.css">
+  <title>Draft Cockpit</title>
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <header id="header">
+      <div id="search-container"></div>
+      <div id="stats-strip"></div>
+      <div id="filter-chips"></div>
+      <div id="summary-line"></div>
+    </header>
+    <main id="player-list"></main>
+    <div id="undo-banner-root"></div>
+    <nav id="bottom-bar"></nav>
+    <div id="sheet-root"></div>
+  </div>
+  <script src="./js/data.js"></script>
+  <script src="./js/state.js"></script>
+  <script src="./js/importer.js"></script>
+  <script src="./js/ui.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>
