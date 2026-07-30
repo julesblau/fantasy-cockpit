@@ -310,7 +310,22 @@
         columnMap[role] = idx;
       }
     });
-    var hasHeader = Object.keys(columnMap).length > 0;
+    // a single keyword match is not enough to call it a header — a real player
+    // name or list line can coincidentally contain one keyword (e.g. "Player").
+    // Real header lines also never contain an actual team code or position
+    // value (they contain the column NAMES "TEAM"/"POS", not values like "KC"/"RB").
+    var looksLikeDataRow = firstTokens.some(function (tok) {
+      var cleaned = (tok || '').trim();
+      if (cleaned === '') {
+        return false;
+      }
+      var upper = cleaned.toUpperCase();
+      if (Object.prototype.hasOwnProperty.call(DC.data.TEAM_BYE_WEEKS, upper)) {
+        return true;
+      }
+      return POSITION_TOKEN_RE.test(cleaned);
+    });
+    var hasHeader = Object.keys(columnMap).length >= 2 && !looksLikeDataRow;
     var dataLines = hasHeader ? lines.slice(1) : lines;
 
     var ctx = { players: [], skipped: 0, warningsRaw: [], seenIds: {} };

@@ -1068,6 +1068,62 @@
       assertEq(DC.importer.detectFormat('{"schemaVersion":"1","players":[]}'), 'rankings', 'schemaVersion must be numeric');
       assertEq(DC.importer.detectFormat('   {"schemaVersion":1,"players":[]}   '), 'backup', 'leading/trailing whitespace should be trimmed');
     });
+
+    // --- regression: header-detection false positive on a bare keyword token in a data line ---
+
+    var PLAYER_WORD_LIST_TEXT = [
+      '3. Test Player One KC RB',
+      '1. Christian McCaffrey SF RB',
+      '2. Josh Allen BUF QB',
+      '4. Brock Bowers LV TE',
+      '5. Bijan Robinson ATL RB',
+      '6. Justin Jefferson MIN WR'
+    ].join('\n');
+
+    t('parseRankings: a name containing "Player" on the first line does not get misdetected as a header (single keyword match is not a header)', function () {
+      var result = DC.importer.parseRankings(PLAYER_WORD_LIST_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 6, 'the "Player" line itself must still be parsed as data, not consumed as a header');
+      var testPlayer = result.players.filter(function (p) { return p.name === 'Test Player One'; })[0];
+      assert(testPlayer, 'Test Player One should have parsed as a normal player line');
+      assertEq(testPlayer.team, 'KC');
+      assertEq(testPlayer.position, 'RB');
+    });
+
+    var BOUNDARY_HEADER_TEXT = [
+      'RK,PLAYER,TEAM,POS,BYE',
+      '9,Christian McCaffrey,SF,RB,13',
+      '9,Josh Allen,BUF,QB,5',
+      '9,Brock Bowers,LV,TE,10',
+      '9,Bijan Robinson,ATL,RB,5',
+      '9,Justin Jefferson,MIN,WR,11'
+    ].join('\n');
+
+    t('parseRankings: a genuine header line (>=2 keyword matches: PLAYER+TEAM+POS+BYE) is still detected as a header', function () {
+      var result = DC.importer.parseRankings(BOUNDARY_HEADER_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 5, 'header row must be excluded from data — 5 players, not 6');
+      assertEq(result.players[0].name, 'Christian McCaffrey', 'name pulled from the PLAYER column, not the bogus source RK value');
+      assertEq(result.players[0].rank, 1, 'rank re-numbered by appearance, ignoring the (constant, bogus) source RK column');
+      assertEq(result.players[0].byeWeek, 13, 'bye pulled from the BYE column');
+    });
+
+    var LONE_KEYWORD_FIRST_LINE_TEXT = [
+      'Player',
+      '1. Christian McCaffrey SF RB',
+      '2. Josh Allen BUF QB',
+      '3. Brock Bowers LV TE',
+      '4. Bijan Robinson ATL RB',
+      '5. Justin Jefferson MIN WR'
+    ].join('\n');
+
+    t('parseRankings: a lone single-keyword first line ("Player" alone) is treated as data, not a header, so real data lines still parse', function () {
+      var result = DC.importer.parseRankings(LONE_KEYWORD_FIRST_LINE_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 5, 'the 5 real numbered-list lines should all parse');
+      assertEq(result.players[0].name, 'Christian McCaffrey');
+      assert(result.skipped >= 1, 'the lone "Player" line has no position and should be skipped (not silently dropped as a header)');
+    });
   })();
   </script>
 
