@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Draft Cockpit Tests</title>
+  <style>
+    body { background: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; padding: 16px; }
+    .test-line { font-size: 13px; line-height: 20px; font-family: ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; }
+    .test-line.pass { color: #30D158; }
+    .test-line.fail { color: #FF453A; }
+    .section-line { font-size: 15px; font-weight: 700; margin-top: 16px; color: rgba(255,255,255,0.6); }
+    #test-summary { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <div id="test-summary" data-pass="0" data-fail="0">TESTS: running…</div>
+  <div id="test-output"></div>
+
+  <!-- app scripts under test (later tasks append more script tags here, before the harness) -->
+  <script src="./js/data.js"></script>
+
+  <!-- harness (defined before test sections) -->
+  <script>
+    (function () {
+      'use strict';
+
+      var results = [];
+      var currentSection = '';
+
+      function section(title) {
+        currentSection = title;
+      }
+
+      function assert(cond, msg) {
+        if (!cond) {
+          throw new Error(msg || 'assertion failed');
+        }
+      }
+
+      function deepEqual(a, b) {
+        if (a === b) {
+          return true;
+        }
+        if (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null) {
+          return JSON.stringify(a) === JSON.stringify(b);
+        }
+        return false;
+      }
+
+      function assertEq(actual, expected, msg) {
+        if (!deepEqual(actual, expected)) {
+          var prefix = msg ? msg + ' — ' : '';
+          throw new Error(prefix + 'expected=' + JSON.stringify(expected) + ' actual=' + JSON.stringify(actual));
+        }
+      }
+
+      function t(name, fn) {
+        var entry = { section: currentSection, name: name, pass: true, detail: '' };
+        try {
+          fn();
+        } catch (e) {
+          entry.pass = false;
+          entry.detail = e && e.message ? e.message : String(e);
+        }
+        results.push(entry);
+      }
+
+      window.section = section;
+      window.t = t;
+      window.assert = assert;
+      window.assertEq = assertEq;
+      window.__DC_TEST_RESULTS__ = results;
+    })();
+  </script>
+
+  <!-- test sections (later tasks append their own <script> blocks here) -->
+  <script>
+    section('data');
+
+    t('SEED_PLAYERS.length is between 240 and 260', function () {
+      var n = DC.data.SEED_PLAYERS.length;
+      assert(n >= 240 && n <= 260, 'length=' + n);
+    });
+
+    t('all player ids are unique', function () {
+      var seen = {};
+      DC.data.SEED_PLAYERS.forEach(function (p) {
+        assert(!seen[p.id], 'duplicate id: ' + p.id);
+        seen[p.id] = true;
+      });
+    });
+
+    t('ranks are exactly 1..N in array order', function () {
+      DC.data.SEED_PLAYERS.forEach(function (p, i) {
+        assertEq(p.rank, i + 1, 'rank at index ' + i);
+      });
+    });
+
+    t('every player team exists in TEAM_BYE_WEEKS and byeWeek matches', function () {
+      DC.data.SEED_PLAYERS.forEach(function (p) {
+        assert(Object.prototype.hasOwnProperty.call(DC.data.TEAM_BYE_WEEKS, p.team), 'unknown team: ' + p.team);
+        assertEq(p.byeWeek, DC.data.TEAM_BYE_WEEKS[p.team], 'byeWeek for ' + p.id);
+      });
+    });
+
+    t('every position is QB, RB, WR, or TE', function () {
+      var valid = { QB: true, RB: true, WR: true, TE: true };
+      DC.data.SEED_PLAYERS.forEach(function (p) {
+        assert(valid[p.position], 'invalid position: ' + p.position + ' for ' + p.id);
+      });
+    });
+
+    t('position mix meets minimums (>=15 QB, >=50 RB, >=70 WR, >=20 TE)', function () {
+      var counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+      DC.data.SEED_PLAYERS.forEach(function (p) {
+        counts[p.position] = (counts[p.position] || 0) + 1;
+      });
+      assert(counts.QB >= 15, 'QB=' + counts.QB);
+      assert(counts.RB >= 50, 'RB=' + counts.RB);
+      assert(counts.WR >= 70, 'WR=' + counts.WR);
+      assert(counts.TE >= 20, 'TE=' + counts.TE);
+    });
+
+    t('TEAM_BYE_WEEKS has exactly 32 keys, all byes ints 5-14', function () {
+      var keys = Object.keys(DC.data.TEAM_BYE_WEEKS);
+      assertEq(keys.length, 32, 'key count');
+      keys.forEach(function (k) {
+        var w = DC.data.TEAM_BYE_WEEKS[k];
+        assert(Number.isInteger(w) && w >= 5 && w <= 14, k + ' bye=' + w);
+      });
+    });
+
+    t('slug behavior matches contract', function () {
+      assertEq(DC.data.slug("Ja'Marr Chase", "CIN"), 'ja-marr-chase-cin', 'chase slug');
+      assertEq(DC.data.slug('Amon-Ra St. Brown', 'DET'), 'amon-ra-st-brown-det', 'st brown slug');
+    });
+  </script>
+
+  <!-- render results (runs last, after all test-section scripts) -->
+  <script>
+    (function () {
+      'use strict';
+
+      var results = window.__DC_TEST_RESULTS__ || [];
+      var pass = 0;
+      var fail = 0;
+      var failingLines = [];
+      var passingLines = [];
+      var lastSection = null;
+
+      function lineFor(r) {
+        var mark = r.pass ? '✓' : '✗';
+        var text = mark + ' [' + r.section + '] ' + r.name;
+        if (!r.pass) {
+          text += ' — ' + r.detail;
+        }
+        return text;
+      }
+
+      results.forEach(function (r) {
+        if (r.pass) {
+          pass++;
+        } else {
+          fail++;
+        }
+        var div = document.createElement('div');
+        div.className = 'test-line ' + (r.pass ? 'pass' : 'fail');
+        div.textContent = lineFor(r);
+        if (r.pass) {
+          passingLines.push(div);
+        } else {
+          failingLines.push(div);
+        }
+      });
+
+      var output = document.getElementById('test-output');
+      failingLines.concat(passingLines).forEach(function (div) {
+        output.appendChild(div);
+      });
+
+      var title = 'TESTS: ' + pass + ' passed, ' + fail + ' failed';
+      document.title = title;
+
+      var summary = document.getElementById('test-summary');
+      summary.setAttribute('data-pass', String(pass));
+      summary.setAttribute('data-fail', String(fail));
+      summary.textContent = title;
+    })();
+  </script>
+</body>
+</html>
