@@ -20,6 +20,7 @@
 
   <!-- app scripts under test (later tasks append more script tags here, before the harness) -->
   <script src="./js/data.js"></script>
+  <script src="./js/state.js"></script>
 
   <!-- harness (defined before test sections) -->
   <script>
@@ -167,6 +168,516 @@
       });
       assert(maxRun <= 7, 'max run=' + maxRun + (firstViolation ? '; ' + firstViolation : ''));
     });
+  </script>
+
+  <!-- Task 3: state store tests (reducer / selectors / search / persistence) -->
+  <script>
+  (function () {
+    'use strict';
+    section('state');
+
+    function makePlayers() {
+      return [
+        { id: 'a', rank: 1, name: 'Aaron Ace', team: 'KC', position: 'QB', byeWeek: 9 },
+        { id: 'b', rank: 2, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7 },
+        { id: 'c', rank: 3, name: 'Cody Catch', team: 'MIA', position: 'WR', byeWeek: 10 },
+        { id: 'd', rank: 4, name: 'Dave Deep', team: 'KC', position: 'TE', byeWeek: 9 },
+        { id: 'e', rank: 5, name: 'Erik End', team: 'SEA', position: 'RB', byeWeek: 13 }
+      ];
+    }
+
+    function makeMarks(players) {
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false };
+      });
+      return marks;
+    }
+
+    function makeBaseState() {
+      var players = makePlayers();
+      return {
+        schemaVersion: 1,
+        players: players,
+        marks: makeMarks(players),
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: ''
+      };
+    }
+
+    t('createSeedState: correct shape from DC.data.SEED_PLAYERS', function () {
+      var s = DC.state.createSeedState();
+      assertEq(s.schemaVersion, 1);
+      assertEq(s.players, DC.data.SEED_PLAYERS);
+      assertEq(s.undoStack, []);
+      assertEq(s.filters, { position: 'ALL', status: 'AVAILABLE' });
+      assertEq(s.searchText, '');
+      DC.data.SEED_PLAYERS.forEach(function (p) {
+        assertEq(s.marks[p.id], { drafted: false, target: false, avoid: false }, 'marks for ' + p.id);
+      });
+    });
+
+    t('reduce is pure: DRAFT_PLAYER does not mutate the original state', function () {
+      var state = makeBaseState();
+      var beforeMarksB = JSON.stringify(state.marks.b);
+      var beforeUndoLen = state.undoStack.length;
+      var next = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'b' });
+      assertEq(JSON.stringify(state.marks.b), beforeMarksB, 'original marks.b mutated');
+      assertEq(state.undoStack.length, beforeUndoLen, 'original undoStack mutated');
+      assert(next !== state, 'expected a new state object');
+      assert(next.marks !== state.marks, 'expected a new marks object');
+    });
+
+    t('DRAFT_PLAYER unknown id -> unchanged (same reference)', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'zzz' });
+      assert(next === state, 'expected same reference for unknown id');
+    });
+
+    t('DRAFT_PLAYER already-drafted player -> unchanged (same reference)', function () {
+      var state = makeBaseState();
+      var afterDraft = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'a' });
+      var next = DC.state.reduce(afterDraft, { type: 'DRAFT_PLAYER', playerId: 'a' });
+      assert(next === afterDraft, 'expected same reference for already-drafted player');
+    });
+
+    t('DRAFT_PLAYER: marks drafted, pushes undo entry, clears searchText', function () {
+      var state = makeBaseState();
+      state.searchText = 'foo';
+      var next = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'c' });
+      assertEq(next.marks.c.drafted, true);
+      assertEq(next.undoStack.length, 1);
+      assertEq(next.undoStack[0].playerId, 'c');
+      assert(typeof next.undoStack[0].timestamp === 'number', 'timestamp should be a number');
+      assertEq(next.searchText, '');
+    });
+
+    t('UNDO_DRAFT x3 pops in LIFO order', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'a' });
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'b' });
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'c' });
+      assertEq(state.undoStack.map(function (e) { return e.playerId; }), ['a', 'b', 'c']);
+
+      state = DC.state.reduce(state, { type: 'UNDO_DRAFT' });
+      assertEq(state.marks.c.drafted, false, 'c undone first');
+      assertEq(state.undoStack.map(function (e) { return e.playerId; }), ['a', 'b']);
+
+      state = DC.state.reduce(state, { type: 'UNDO_DRAFT' });
+      assertEq(state.marks.b.drafted, false, 'b undone second');
+      assertEq(state.undoStack.map(function (e) { return e.playerId; }), ['a']);
+
+      state = DC.state.reduce(state, { type: 'UNDO_DRAFT' });
+      assertEq(state.marks.a.drafted, false, 'a undone third');
+      assertEq(state.undoStack, []);
+    });
+
+    t('UNDO_DRAFT on empty stack -> unchanged (same reference)', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, { type: 'UNDO_DRAFT' });
+      assert(next === state, 'expected same reference on empty stack');
+    });
+
+    t('UNDRAFT_PLAYER mid-stack removes only that entry, shifts later pick numbers', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'a' });
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'b' });
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'c' });
+      assertEq(DC.state.pickNumber(state, 'c'), 3);
+
+      var next = DC.state.reduce(state, { type: 'UNDRAFT_PLAYER', playerId: 'b' });
+      assertEq(next.marks.b.drafted, false);
+      assertEq(next.undoStack.map(function (e) { return e.playerId; }), ['a', 'c']);
+      assertEq(DC.state.pickNumber(next, 'c'), 2, 'c pick number shifts down after b removed');
+      assertEq(DC.state.pickNumber(next, 'a'), 1);
+    });
+
+    t('UNDRAFT_PLAYER on a non-drafted player -> unchanged (same reference)', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, { type: 'UNDRAFT_PLAYER', playerId: 'a' });
+      assert(next === state, 'expected same reference');
+    });
+
+    t('TOGGLE_TARGET on an avoided player clears avoid', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'TOGGLE_AVOID', playerId: 'a' });
+      assertEq(state.marks.a, { drafted: false, target: false, avoid: true });
+      state = DC.state.reduce(state, { type: 'TOGGLE_TARGET', playerId: 'a' });
+      assertEq(state.marks.a, { drafted: false, target: true, avoid: false });
+    });
+
+    t('TOGGLE_AVOID on a targeted player clears target', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'TOGGLE_TARGET', playerId: 'a' });
+      assertEq(state.marks.a, { drafted: false, target: true, avoid: false });
+      state = DC.state.reduce(state, { type: 'TOGGLE_AVOID', playerId: 'a' });
+      assertEq(state.marks.a, { drafted: false, target: false, avoid: true });
+    });
+
+    t('TOGGLE_TARGET off leaves avoid untouched (false)', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'TOGGLE_TARGET', playerId: 'a' });
+      state = DC.state.reduce(state, { type: 'TOGGLE_TARGET', playerId: 'a' });
+      assertEq(state.marks.a, { drafted: false, target: false, avoid: false });
+    });
+
+    t('SET_SEARCH sets searchText', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, { type: 'SET_SEARCH', text: 'mahomes' });
+      assertEq(next.searchText, 'mahomes');
+    });
+
+    t('SET_POSITION_FILTER sets filters.position without touching status', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, { type: 'SET_POSITION_FILTER', position: 'RB' });
+      assertEq(next.filters.position, 'RB');
+      assertEq(next.filters.status, 'AVAILABLE');
+    });
+
+    t('SET_STATUS_FILTER sets a new status, then re-selecting it toggles back to AVAILABLE', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, { type: 'SET_STATUS_FILTER', status: 'TARGETS' });
+      assertEq(next.filters.status, 'TARGETS');
+      var toggled = DC.state.reduce(next, { type: 'SET_STATUS_FILTER', status: 'TARGETS' });
+      assertEq(toggled.filters.status, 'AVAILABLE');
+    });
+
+    t('RESET_DRAFT clears drafted but keeps target/avoid, empties undoStack', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'TOGGLE_TARGET', playerId: 'b' });
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'a' });
+      state = DC.state.reduce(state, { type: 'RESET_DRAFT' });
+      assertEq(state.marks.a.drafted, false);
+      assertEq(state.marks.b.target, true, 'target should survive RESET_DRAFT');
+      assertEq(state.undoStack, []);
+    });
+
+    t('RESET_TARGETS_AVOID clears target/avoid but keeps drafted + undoStack', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'a' });
+      state = DC.state.reduce(state, { type: 'TOGGLE_TARGET', playerId: 'b' });
+      var stackBefore = state.undoStack.slice();
+      state = DC.state.reduce(state, { type: 'RESET_TARGETS_AVOID' });
+      assertEq(state.marks.a.drafted, true, 'drafted should survive');
+      assertEq(state.marks.b.target, false);
+      assertEq(state.undoStack, stackBefore);
+    });
+
+    t('CLEAR_ALL_DATA returns a fresh seed state', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'a' });
+      var next = DC.state.reduce(state, { type: 'CLEAR_ALL_DATA' });
+      assertEq(next, DC.state.createSeedState());
+    });
+
+    t('IMPORT_PLAYERS reconciles marks and undoStack, resets filters/search', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'TOGGLE_TARGET', playerId: 'b' });
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'a' });
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'c' });
+      state = DC.state.reduce(state, { type: 'SET_POSITION_FILTER', position: 'RB' });
+      state = DC.state.reduce(state, { type: 'SET_SEARCH', text: 'foo' });
+      assertEq(state.undoStack.map(function (e) { return e.playerId; }), ['a', 'c']);
+
+      var newPlayers = [
+        { id: 'b', rank: 1, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7 },
+        { id: 'c', rank: 2, name: 'Cody Catch', team: 'MIA', position: 'WR', byeWeek: 10 },
+        { id: 'z', rank: 3, name: 'Zeke New', team: 'NYG', position: 'RB', byeWeek: 12 }
+      ];
+      var next = DC.state.reduce(state, { type: 'IMPORT_PLAYERS', players: newPlayers });
+
+      assertEq(next.players, newPlayers);
+      assertEq(Object.keys(next.marks).sort(), ['b', 'c', 'z']);
+      assertEq(next.marks.b, { drafted: false, target: true, avoid: false }, 'surviving mark for b preserved as-is');
+      assertEq(next.marks.c, { drafted: true, target: false, avoid: false }, 'surviving mark for c preserved as-is (still drafted)');
+      assertEq(next.marks.z, { drafted: false, target: false, avoid: false }, 'new player z gets all-false marks');
+      assertEq(next.undoStack.map(function (e) { return e.playerId; }), ['c'], 'a dropped (gone), c kept (still exists), order preserved');
+      assertEq(next.filters, { position: 'ALL', status: 'AVAILABLE' });
+      assertEq(next.searchText, '');
+    });
+
+    t('unknown action type -> state unchanged (same reference)', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, { type: 'NOT_A_REAL_ACTION' });
+      assert(next === state, 'expected same reference for unknown action type');
+    });
+
+    t('createStore: dispatch updates state and notifies subscribers only on change', function () {
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+      var store = DC.state.createStore(makeBaseState());
+      var notifyCount = 0;
+      var lastState = null;
+      var unsubscribe = store.subscribe(function (s) {
+        notifyCount++;
+        lastState = s;
+      });
+
+      store.dispatch({ type: 'DRAFT_PLAYER', playerId: 'a' });
+      assertEq(notifyCount, 1, 'should notify on state change');
+      assertEq(lastState.marks.a.drafted, true);
+      assertEq(store.getState().marks.a.drafted, true);
+
+      store.dispatch({ type: 'DRAFT_PLAYER', playerId: 'a' });
+      assertEq(notifyCount, 1, 'should not notify when reducer returns unchanged state');
+
+      unsubscribe();
+      store.dispatch({ type: 'UNDO_DRAFT' });
+      assertEq(notifyCount, 1, 'should not notify after unsubscribe');
+
+      var savedRaw = localStorage.getItem(DC.state.STORAGE_KEY);
+      assert(savedRaw !== null, 'store should have persisted state to localStorage on change');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+  })();
+  </script>
+
+  <!-- Task 3: selectors tests -->
+  <script>
+  (function () {
+    'use strict';
+    section('selectors');
+
+    function makePlayers() {
+      return [
+        { id: 'p1', rank: 1, name: 'Aaron Ace', team: 'KC', position: 'QB', byeWeek: 9 },
+        { id: 'p2', rank: 2, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7 },
+        { id: 'p3', rank: 3, name: 'Cody Catch', team: 'MIA', position: 'WR', byeWeek: 10 },
+        { id: 'p4', rank: 4, name: 'Dave Deep', team: 'KC', position: 'TE', byeWeek: 9 },
+        { id: 'p5', rank: 5, name: 'Erik End', team: 'SEA', position: 'RB', byeWeek: 13 },
+        { id: 'p6', rank: 6, name: 'Frank Flat', team: 'NYG', position: 'WR', byeWeek: 12 },
+        { id: 'p7', rank: 7, name: 'Greg Gunslinger', team: 'BUF', position: 'QB', byeWeek: 5 },
+        { id: 'p8', rank: 8, name: 'Hank Hustle', team: 'ARI', position: 'RB', byeWeek: 5 }
+      ];
+    }
+
+    function makeMarks(players) {
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false };
+      });
+      return marks;
+    }
+
+    function makeState(overrides) {
+      var players = makePlayers();
+      var state = {
+        schemaVersion: 1,
+        players: players,
+        marks: makeMarks(players),
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: ''
+      };
+      if (overrides && overrides.marks) {
+        Object.keys(overrides.marks).forEach(function (id) {
+          state.marks[id] = Object.assign({}, state.marks[id], overrides.marks[id]);
+        });
+      }
+      if (overrides && overrides.filters) {
+        state.filters = Object.assign({}, state.filters, overrides.filters);
+      }
+      if (overrides && overrides.searchText !== undefined) {
+        state.searchText = overrides.searchText;
+      }
+      return state;
+    }
+
+    function assertAscendingRanks(list) {
+      for (var i = 1; i < list.length; i++) {
+        assert(list[i - 1].rank < list[i].rank, 'ranks not strictly ascending at index ' + i);
+      }
+    }
+
+    t('visiblePlayers default filters hide drafted, preserve rank order', function () {
+      var state = makeState({ marks: { p3: { drafted: true }, p7: { drafted: true } } });
+      var visible = DC.state.visiblePlayers(state);
+      assertEq(visible.map(function (p) { return p.id; }), ['p1', 'p2', 'p4', 'p5', 'p6', 'p8']);
+      assertAscendingRanks(visible);
+      assertEq(visible[0].drafted, false);
+    });
+
+    t('visiblePlayers RB + TARGETS combo returns only targeted, undrafted RBs in rank order', function () {
+      var state = makeState({
+        filters: { position: 'RB', status: 'TARGETS' },
+        marks: {
+          p2: { target: true },
+          p5: { target: true },
+          p6: { target: true }, // WR, excluded by position filter
+          p8: { avoid: true }   // RB but not targeted, excluded by status filter
+        }
+      });
+      var visible = DC.state.visiblePlayers(state);
+      assertEq(visible.map(function (p) { return p.id; }), ['p2', 'p5']);
+      assertAscendingRanks(visible);
+    });
+
+    t('visiblePlayers DRAFTED status view returns drafted players regardless of position ALL', function () {
+      var state = makeState({
+        filters: { position: 'ALL', status: 'DRAFTED' },
+        marks: { p3: { drafted: true }, p7: { drafted: true } }
+      });
+      var visible = DC.state.visiblePlayers(state);
+      assertEq(visible.map(function (p) { return p.id; }), ['p3', 'p7']);
+      visible.forEach(function (p) { assertEq(p.drafted, true); });
+    });
+
+    t('visiblePlayers: drafted player hidden under AVAILABLE, but visible when searching its own name', function () {
+      var state = makeState({ marks: { p1: { drafted: true } } });
+      var underAvailable = DC.state.visiblePlayers(state);
+      assert(underAvailable.indexOf === undefined || underAvailable.filter(function (p) { return p.id === 'p1'; }).length === 0, 'p1 should be hidden under AVAILABLE');
+
+      var searching = Object.assign({}, state, { searchText: 'Aaron' });
+      var found = DC.state.visiblePlayers(searching).filter(function (p) { return p.id === 'p1'; });
+      assertEq(found.length, 1, 'p1 should be found by search despite being drafted');
+      assertEq(found[0].drafted, true);
+    });
+
+    t('visiblePlayers view objects carry merged mark fields', function () {
+      var state = makeState({ marks: { p2: { target: true } } });
+      var visible = DC.state.visiblePlayers(state);
+      var p2 = visible.filter(function (p) { return p.id === 'p2'; })[0];
+      assertEq(p2.name, 'Bobby Back');
+      assertEq(p2.target, true);
+      assertEq(p2.drafted, false);
+      assertEq(p2.avoid, false);
+    });
+
+    t('availableCountsByPosition ignores status filter and searchText', function () {
+      var state = makeState({
+        filters: { position: 'RB', status: 'DRAFTED' },
+        searchText: 'xyz',
+        marks: { p3: { drafted: true } }
+      });
+      var counts = DC.state.availableCountsByPosition(state);
+      assertEq(counts, { QB: 2, RB: 3, WR: 1, TE: 1 });
+
+      var stateDifferentFilters = makeState({
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        marks: { p3: { drafted: true } }
+      });
+      var counts2 = DC.state.availableCountsByPosition(stateDifferentFilters);
+      assertEq(counts2, counts, 'counts should be independent of filters/searchText');
+    });
+
+    t('pickNumber returns 1-based index in undoStack, or null if absent', function () {
+      var state = makeState({});
+      state.undoStack = [
+        { playerId: 'p2', timestamp: 111 },
+        { playerId: 'p5', timestamp: 222 }
+      ];
+      assertEq(DC.state.pickNumber(state, 'p2'), 1);
+      assertEq(DC.state.pickNumber(state, 'p5'), 2);
+      assertEq(DC.state.pickNumber(state, 'p1'), null);
+    });
+  })();
+  </script>
+
+  <!-- Task 3: matchesSearch tests -->
+  <script>
+  (function () {
+    'use strict';
+    section('search');
+
+    t('matchesSearch: empty/whitespace query matches everything', function () {
+      var p = { name: 'Cody Catch', team: 'MIA', position: 'WR' };
+      assertEq(DC.state.matchesSearch(p, ''), true);
+      assertEq(DC.state.matchesSearch(p, '   '), true);
+    });
+
+    t('matchesSearch: name substring match, case-insensitive', function () {
+      var p = { name: 'Patrick Mahomes', team: 'KC', position: 'QB' };
+      assertEq(DC.state.matchesSearch(p, 'mah'), true);
+      assertEq(DC.state.matchesSearch(p, 'MAH'), true, 'case-insensitive uppercase query');
+      assertEq(DC.state.matchesSearch(p, 'zzz'), false);
+    });
+
+    t('matchesSearch: team prefix match in isolation (name has no matching letters)', function () {
+      var p = { name: 'Ryan Foss', team: 'KC', position: 'QB' };
+      assertEq(DC.state.matchesSearch(p, 'k'), true, 'team KC starts with k');
+      assertEq(DC.state.matchesSearch(p, 'c'), false, 'team KC does not start with c, name has no c');
+    });
+
+    t('matchesSearch: name substring matches independently of team prefix', function () {
+      var p = { name: 'Doug Nak', team: 'DAL', position: 'RB' };
+      assertEq(DC.state.matchesSearch(p, 'ak'), true, 'name contains "ak", team DAL does not start with "ak"');
+    });
+
+    t('matchesSearch: position prefix match', function () {
+      var wr = { name: 'Zed Zephyr', team: 'SEA', position: 'WR' };
+      var rb = { name: 'Zed Zephyr', team: 'SEA', position: 'RB' };
+      assertEq(DC.state.matchesSearch(wr, 'wr'), true);
+      assertEq(DC.state.matchesSearch(rb, 'wr'), false);
+    });
+  })();
+  </script>
+
+  <!-- Task 3: persistence tests -->
+  <script>
+  (function () {
+    'use strict';
+    section('persistence');
+
+    t('STORAGE_KEY and CURRENT_SCHEMA_VERSION constants', function () {
+      assertEq(DC.state.STORAGE_KEY, 'draft-cockpit/state');
+      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 1);
+    });
+
+    t('load(): missing key falls back to a fresh seed state', function () {
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+      var loaded = DC.state.load();
+      assertEq(loaded, DC.state.createSeedState());
+    });
+
+    t('load(): corrupt JSON falls back to seed', function () {
+      localStorage.setItem(DC.state.STORAGE_KEY, '{not valid json');
+      var loaded = DC.state.load();
+      assertEq(loaded, DC.state.createSeedState());
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): structurally-wrong shape falls back to seed', function () {
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify({ schemaVersion: 1 }));
+      var loaded = DC.state.load();
+      assertEq(loaded, DC.state.createSeedState());
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): future schemaVersion falls back to seed', function () {
+      var future = DC.state.createSeedState();
+      future.schemaVersion = DC.state.CURRENT_SCHEMA_VERSION + 1;
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(future));
+      var loaded = DC.state.load();
+      assertEq(loaded, DC.state.createSeedState());
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('save()/load() round trip preserves a non-trivial state exactly', function () {
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+      var state = DC.state.createSeedState();
+      var firstId = state.players[0].id;
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: firstId });
+      state = DC.state.reduce(state, { type: 'SET_POSITION_FILTER', position: 'RB' });
+
+      DC.state.save(state);
+      var loaded = DC.state.load();
+      assertEq(loaded, state);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('save(): swallows localStorage errors (quota/privacy) without throwing', function () {
+      var orig = localStorage.setItem;
+      localStorage.setItem = function () { throw new Error('QuotaExceededError'); };
+      try {
+        DC.state.save(DC.state.createSeedState());
+        assert(true, 'save() should not throw even if setItem throws');
+      } finally {
+        localStorage.setItem = orig;
+      }
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+  })();
   </script>
 
   <!-- render results (runs last, after all test-section scripts) -->
