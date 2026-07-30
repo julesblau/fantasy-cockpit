@@ -32,42 +32,61 @@ Write-Host "Serving $repoRoot at $prefix (Ctrl+C to stop)"
 try {
     while ($listener.IsListening) {
         $context = $listener.GetContext()
-        $request = $context.Request
-        $response = $context.Response
+        $response = $null
+        try {
+            $request = $context.Request
+            $response = $context.Response
 
-        $localPath = $request.Url.LocalPath
-        if ($localPath -eq "/") {
-            $localPath = "/index.html"
-        }
-
-        $relativePath = ($localPath.TrimStart("/")) -replace "/", "\"
-        $filePath = Join-Path $repoRoot $relativePath
-
-        if ((Test-Path $filePath -PathType Container)) {
-            $filePath = Join-Path $filePath "index.html"
-        }
-
-        $response.Headers.Add("Cache-Control", "no-store")
-
-        if (Test-Path $filePath -PathType Leaf) {
-            $ext = [System.IO.Path]::GetExtension($filePath).ToLowerInvariant()
-            $contentType = $mimeMap[$ext]
-            if (-not $contentType) {
-                $contentType = "application/octet-stream"
+            $localPath = $request.Url.LocalPath
+            if ($localPath -eq "/") {
+                $localPath = "/index.html"
             }
-            $bytes = [System.IO.File]::ReadAllBytes($filePath)
-            $response.ContentType = $contentType
-            $response.ContentLength64 = $bytes.Length
-            $response.OutputStream.Write($bytes, 0, $bytes.Length)
-        }
-        else {
-            $response.StatusCode = 404
-            $notFoundBytes = [System.Text.Encoding]::UTF8.GetBytes("404 Not Found")
-            $response.ContentLength64 = $notFoundBytes.Length
-            $response.OutputStream.Write($notFoundBytes, 0, $notFoundBytes.Length)
-        }
 
-        $response.OutputStream.Close()
+            $relativePath = ($localPath.TrimStart("/")) -replace "/", "\"
+            $filePath = Join-Path $repoRoot $relativePath
+
+            if ((Test-Path $filePath -PathType Container)) {
+                $filePath = Join-Path $filePath "index.html"
+            }
+
+            $response.Headers.Add("Cache-Control", "no-store")
+
+            if (Test-Path $filePath -PathType Leaf) {
+                $ext = [System.IO.Path]::GetExtension($filePath).ToLowerInvariant()
+                $contentType = $mimeMap[$ext]
+                if (-not $contentType) {
+                    $contentType = "application/octet-stream"
+                }
+                $bytes = [System.IO.File]::ReadAllBytes($filePath)
+                $response.ContentType = $contentType
+                $response.ContentLength64 = $bytes.Length
+                $response.OutputStream.Write($bytes, 0, $bytes.Length)
+            }
+            else {
+                $response.StatusCode = 404
+                $notFoundBytes = [System.Text.Encoding]::UTF8.GetBytes("404 Not Found")
+                $response.ContentLength64 = $notFoundBytes.Length
+                $response.OutputStream.Write($notFoundBytes, 0, $notFoundBytes.Length)
+            }
+
+            $response.OutputStream.Close()
+        }
+        catch {
+            # per-request isolation: one flaky request (client abort, locked file) must not kill the listener
+            Write-Warning "Request error: $($_.Exception.Message)"
+            try {
+                if ($response) {
+                    $response.StatusCode = 500
+                    $errBytes = [System.Text.Encoding]::UTF8.GetBytes("500 Internal Server Error")
+                    $response.ContentLength64 = $errBytes.Length
+                    $response.OutputStream.Write($errBytes, 0, $errBytes.Length)
+                    $response.OutputStream.Close()
+                }
+            }
+            catch {
+                # response already broken/closed by the client; nothing more we can do
+            }
+        }
     }
 }
 finally {
