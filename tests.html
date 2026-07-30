@@ -619,6 +619,13 @@
     'use strict';
     section('persistence');
 
+    function makeHealPlayers() {
+      return [
+        { id: 'x1', rank: 1, name: 'Xavier One', team: 'KC', position: 'QB', byeWeek: 9 },
+        { id: 'x2', rank: 2, name: 'Xavier Two', team: 'DAL', position: 'RB', byeWeek: 7 }
+      ];
+    }
+
     t('STORAGE_KEY and CURRENT_SCHEMA_VERSION constants', function () {
       assertEq(DC.state.STORAGE_KEY, 'draft-cockpit/state');
       assertEq(DC.state.CURRENT_SCHEMA_VERSION, 1);
@@ -675,6 +682,102 @@
       } finally {
         localStorage.setItem = orig;
       }
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): heals empty marks object instead of crashing selectors', function () {
+      var payload = {
+        schemaVersion: 1,
+        players: makeHealPlayers(),
+        marks: {},
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: ''
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.marks.x1, { drafted: false, target: false, avoid: false });
+      assertEq(loaded.marks.x2, { drafted: false, target: false, avoid: false });
+      DC.state.visiblePlayers(loaded);
+      DC.state.availableCountsByPosition(loaded);
+      assert(true, 'visiblePlayers/availableCountsByPosition ran without throwing');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): heals a mark entry with a wrong-typed field, preserving valid booleans', function () {
+      var payload = {
+        schemaVersion: 1,
+        players: makeHealPlayers(),
+        marks: {
+          x1: { drafted: 'yes', target: true, avoid: false },
+          x2: { drafted: false, target: false, avoid: false }
+        },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: ''
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.marks.x1, { drafted: false, target: true, avoid: false }, 'drafted healed to false, target preserved');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): drops orphan mark keys not present in players', function () {
+      var payload = {
+        schemaVersion: 1,
+        players: makeHealPlayers(),
+        marks: {
+          x1: { drafted: false, target: false, avoid: false },
+          x2: { drafted: false, target: false, avoid: false },
+          ghost: { drafted: true, target: false, avoid: false }
+        },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: ''
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assert(!Object.prototype.hasOwnProperty.call(loaded.marks, 'ghost'), 'orphan mark key should be dropped');
+      assertEq(Object.keys(loaded.marks).sort(), ['x1', 'x2']);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): drops undoStack entries whose playerId is not in players', function () {
+      var payload = {
+        schemaVersion: 1,
+        players: makeHealPlayers(),
+        marks: {
+          x1: { drafted: true, target: false, avoid: false },
+          x2: { drafted: false, target: false, avoid: false }
+        },
+        undoStack: [
+          { playerId: 'x1', timestamp: 111 },
+          { playerId: 'ghost', timestamp: 222 }
+        ],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: ''
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.undoStack.map(function (e) { return e.playerId; }), ['x1']);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): heals both target and avoid true by keeping target and clearing avoid', function () {
+      var payload = {
+        schemaVersion: 1,
+        players: makeHealPlayers(),
+        marks: {
+          x1: { drafted: false, target: true, avoid: true },
+          x2: { drafted: false, target: false, avoid: false }
+        },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: ''
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.marks.x1, { drafted: false, target: true, avoid: false });
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
   })();

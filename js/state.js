@@ -300,6 +300,47 @@
     }
   }
 
+  /**
+   * Repairs (rather than discards) a structurally-valid-but-inconsistent state:
+   * missing/invalid marks entries default to false, orphan marks/undoStack
+   * entries for ids not in players are dropped, target/avoid exclusivity
+   * is re-enforced. localStorage is the only copy of a live draft, so a
+   * bad-shaped single mark shouldn't cost the whole draft.
+   * @param {State} state
+   * @returns {State}
+   */
+  function normalizeMarks(state) {
+    var validIds = {};
+    state.players.forEach(function (p) {
+      validIds[p.id] = true;
+    });
+
+    var marks = {};
+    state.players.forEach(function (p) {
+      var m = state.marks[p.id];
+      var drafted = m && typeof m.drafted === 'boolean' ? m.drafted : false;
+      var target = m && typeof m.target === 'boolean' ? m.target : false;
+      var avoid = m && typeof m.avoid === 'boolean' ? m.avoid : false;
+      if (target && avoid) {
+        avoid = false;
+      }
+      marks[p.id] = { drafted: drafted, target: target, avoid: avoid };
+    });
+
+    var undoStack = state.undoStack.filter(function (e) {
+      return validIds[e.playerId];
+    });
+
+    return {
+      schemaVersion: state.schemaVersion,
+      players: state.players,
+      marks: marks,
+      undoStack: undoStack,
+      filters: state.filters,
+      searchText: state.searchText
+    };
+  }
+
   /** @returns {State} */
   function load() {
     var raw;
@@ -341,7 +382,7 @@
       return createSeedState();
     }
 
-    return parsed;
+    return normalizeMarks(parsed);
   }
 
   /**
