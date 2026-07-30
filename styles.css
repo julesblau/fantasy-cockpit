@@ -108,6 +108,9 @@ body.searching #bottom-bar {
 /* search */
 .search-bar {
   padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .search-input {
@@ -116,6 +119,8 @@ body.searching #bottom-bar {
   background: var(--surface-2);
   border-radius: var(--radius-button);
   width: 100%;
+  flex: 1;
+  min-width: 0;
   border: none;
   color: var(--text-1);
   padding: 0 12px;

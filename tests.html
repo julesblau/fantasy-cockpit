@@ -22,6 +22,7 @@
   <script src="./js/data.js"></script>
   <script src="./js/state.js"></script>
   <script src="./js/importer.js"></script>
+  <script src="./js/ui.js"></script>
 
   <!-- harness (defined before test sections) -->
   <script>
@@ -1066,6 +1067,136 @@
       assertEq(DC.importer.detectFormat('{"foo":"bar"}'), 'rankings');
       assertEq(DC.importer.detectFormat('{"schemaVersion":"1","players":[]}'), 'rankings', 'schemaVersion must be numeric');
       assertEq(DC.importer.detectFormat('   {"schemaVersion":1,"players":[]}   '), 'backup', 'leading/trailing whitespace should be trimmed');
+    });
+  })();
+  </script>
+
+  <!-- Task 5: ui.js pure-template tests -->
+  <script>
+  (function () {
+    'use strict';
+    section('ui-templates');
+
+    t('playerRowHTML: available row has rank, escaped name, meta line, action buttons', function () {
+      var view = { id: 'ja-marr-chase-cin', rank: 1, name: "Ja'Marr Chase", team: 'CIN', position: 'WR', byeWeek: 10, drafted: false, target: false, avoid: false };
+      var html = DC.ui.templates.playerRowHTML(view, { searching: false, statusFilter: 'AVAILABLE', pickNumber: null });
+      assert(html.indexOf('player-rank">1<') !== -1, 'rank shown');
+      assert(html.indexOf('Ja&#39;Marr Chase') !== -1, 'name is escaped: ' + html);
+      assert(html.indexOf('CIN') !== -1 && html.indexOf('WR') !== -1 && html.indexOf('Bye 10') !== -1, 'meta line: ' + html);
+      assert(html.indexOf('data-action="draft"') !== -1, 'draft action present');
+      assert(html.indexOf('data-action="toggle-target"') !== -1, 'toggle-target action present');
+      assert(html.indexOf('data-action="toggle-avoid"') !== -1, 'toggle-avoid action present');
+      assert(html.indexOf('btn-draft') !== -1, 'btn-draft class present');
+    });
+
+    t('playerRowHTML: target view has is-target + on-target star; avoid view has is-avoid + on-avoid x', function () {
+      var base = { id: 'p1', rank: 5, name: 'Test Player', team: 'KC', position: 'RB', byeWeek: 9, drafted: false };
+      var targetView = Object.assign({}, base, { target: true, avoid: false });
+      var avoidView = Object.assign({}, base, { target: false, avoid: true });
+      var targetHtml = DC.ui.templates.playerRowHTML(targetView, { searching: false });
+      var avoidHtml = DC.ui.templates.playerRowHTML(avoidView, { searching: false });
+      assert(targetHtml.indexOf('is-target') !== -1, 'row has is-target: ' + targetHtml);
+      assert(targetHtml.indexOf('on-target') !== -1, 'star has on-target: ' + targetHtml);
+      assert(avoidHtml.indexOf('is-avoid') !== -1, 'row has is-avoid: ' + avoidHtml);
+      assert(avoidHtml.indexOf('on-avoid') !== -1, 'x has on-avoid: ' + avoidHtml);
+    });
+
+    t('playerRowHTML: drafted row while searching shows is-drafted-search + DRAFTED pill, no draft action', function () {
+      var view = { id: 'p2', rank: 12, name: 'Some Guy', team: 'SF', position: 'WR', byeWeek: 13, drafted: true, target: false, avoid: false };
+      var html = DC.ui.templates.playerRowHTML(view, { searching: true });
+      assert(html.indexOf('is-drafted-search') !== -1, 'is-drafted-search class: ' + html);
+      assert(html.indexOf('DRAFTED') !== -1, 'DRAFTED pill text: ' + html);
+      assert(html.indexOf('drafted-pill') !== -1, 'drafted-pill class: ' + html);
+      assert(html.indexOf('data-action="draft"') === -1, 'no draft action on drafted-search row');
+      assert(html.indexOf('data-action="toggle-target"') === -1, 'no toggle buttons on drafted-search row');
+    });
+
+    t('playerRowHTML: drafted status view shows Pick N badge and UNDO button', function () {
+      var view = { id: 'p3', rank: 20, name: 'Another Guy', team: 'BAL', position: 'QB', byeWeek: 5, drafted: true, target: false, avoid: false };
+      var html = DC.ui.templates.playerRowHTML(view, { searching: false, statusFilter: 'DRAFTED', pickNumber: 3 });
+      assert(html.indexOf('Pick 3') !== -1, 'Pick 3 badge: ' + html);
+      assert(html.indexOf('btn-undraft') !== -1, 'btn-undraft class: ' + html);
+      assert(html.indexOf('data-action="undraft"') !== -1, 'undraft action: ' + html);
+      assert(html.indexOf('data-action="toggle-target"') === -1, 'no toggle buttons on drafted status row');
+    });
+
+    t('playerRowHTML: byeWeek 0 renders as "Bye —"', function () {
+      var view = { id: 'p4', rank: 200, name: 'Free Agent Guy', team: 'FA', position: 'WR', byeWeek: 0, drafted: false, target: false, avoid: false };
+      var html = DC.ui.templates.playerRowHTML(view, { searching: false });
+      assert(html.indexOf('Bye —') !== -1, 'byeWeek 0 -> Bye —: ' + html);
+    });
+
+    t('statsStripHTML: renders 4 stats with counts and marks active position', function () {
+      var counts = { QB: 12, RB: 40, WR: 55, TE: 18 };
+      var html = DC.ui.templates.statsStripHTML(counts, 'RB');
+      var statMatches = html.match(/<button class="stat/g) || [];
+      assertEq(statMatches.length, 4, 'expected 4 stat buttons');
+      assert(html.indexOf('stat-count">40<') !== -1, 'RB count shown: ' + html);
+      assert(/class="stat active"[^>]*data-position="RB"/.test(html), 'RB marked active: ' + html);
+    });
+
+    t('chipsHTML: renders 8 chips total; RB position + TARGETS status marked active', function () {
+      var html = DC.ui.templates.chipsHTML({ position: 'RB', status: 'TARGETS' });
+      var chipMatches = html.match(/<button class="chip/g) || [];
+      assertEq(chipMatches.length, 8, 'expected 8 chips');
+      assert(/class="chip active-position"[^>]*data-position="RB"/.test(html), 'RB chip active-position: ' + html);
+      assert(/class="chip active-target"[^>]*data-status="TARGETS"/.test(html), 'Targets chip active-target: ' + html);
+    });
+
+    t('summaryHTML: formats position/status/count; search variant shows quoted query', function () {
+      var state1 = { filters: { position: 'RB', status: 'TARGETS' }, searchText: '' };
+      var html1 = DC.ui.templates.summaryHTML(state1, 6);
+      assert(html1.indexOf('RB') !== -1 && html1.indexOf('Targets') !== -1 && html1.indexOf('6 players') !== -1, html1);
+
+      var state2 = { filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: 'mahomes' };
+      var html2 = DC.ui.templates.summaryHTML(state2, 2);
+      assert(html2.indexOf('"mahomes"') !== -1, 'search variant shows quoted query: ' + html2);
+    });
+
+    t('emptyStateHTML: each kind renders a distinct title and expected action', function () {
+      var search = DC.ui.templates.emptyStateHTML('search', 'zzz');
+      assert(search.indexOf('zzz') !== -1 && search.indexOf('data-action="clear-search"') !== -1, search);
+
+      var targets = DC.ui.templates.emptyStateHTML('targets');
+      assert(targets.indexOf('No targets yet') !== -1, targets);
+
+      var drafted = DC.ui.templates.emptyStateHTML('drafted');
+      assert(drafted.indexOf('No picks yet') !== -1, drafted);
+
+      var combo = DC.ui.templates.emptyStateHTML('combo', { status: 'Avoid', position: 'RB' });
+      assert(combo.indexOf('data-action="clear-filters"') !== -1, combo);
+
+      var complete = DC.ui.templates.emptyStateHTML('complete');
+      assert(complete.indexOf('Draft complete') !== -1, complete);
+
+      var titles = [search, targets, drafted, combo, complete];
+      for (var i = 0; i < titles.length; i++) {
+        for (var j = i + 1; j < titles.length; j++) {
+          assert(titles[i] !== titles[j], 'kinds ' + i + ' and ' + j + ' rendered identical HTML');
+        }
+      }
+    });
+
+    t('bottomBarHTML: undo disabled when stack empty; Targets item active when status TARGETS', function () {
+      var state1 = { undoStack: [], filters: { position: 'ALL', status: 'TARGETS' } };
+      var html1 = DC.ui.templates.bottomBarHTML(state1);
+      assert(/<button class="bar-undo"[^>]*disabled/.test(html1), 'undo disabled at empty stack: ' + html1);
+      assert(/class="bar-item active"[^>]*data-status="TARGETS"/.test(html1), 'Targets item active: ' + html1);
+
+      var state2 = { undoStack: [{ playerId: 'a', timestamp: 1 }], filters: { position: 'ALL', status: 'AVAILABLE' } };
+      var html2 = DC.ui.templates.bottomBarHTML(state2);
+      assert(!/<button class="bar-undo"[^>]*disabled/.test(html2), 'undo enabled when stack non-empty: ' + html2);
+    });
+
+    // --- controller-added integration requirement: backup schemaVersion mismatch must not apply ---
+    t('backupApplyCheck: matching schemaVersion accepted; mismatch rejected with a human error', function () {
+      var okState = { schemaVersion: DC.state.CURRENT_SCHEMA_VERSION, players: [{}] };
+      var mismatchState = { schemaVersion: DC.state.CURRENT_SCHEMA_VERSION + 1, players: [{}] };
+      var okResult = DC.ui.templates.backupApplyCheck(okState);
+      var badResult = DC.ui.templates.backupApplyCheck(mismatchState);
+      assertEq(okResult.ok, true, 'matching version accepted');
+      assertEq(badResult.ok, false, 'mismatched version rejected');
+      assert(/different app version/i.test(badResult.error), 'human error mentions version mismatch: ' + badResult.error);
     });
   })();
   </script>
