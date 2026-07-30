@@ -21,6 +21,7 @@
   <!-- app scripts under test (later tasks append more script tags here, before the harness) -->
   <script src="./js/data.js"></script>
   <script src="./js/state.js"></script>
+  <script src="./js/importer.js"></script>
 
   <!-- harness (defined before test sections) -->
   <script>
@@ -779,6 +780,292 @@
       var loaded = DC.state.load();
       assertEq(loaded.marks.x1, { drafted: false, target: true, avoid: false });
       localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+  })();
+  </script>
+
+  <!-- Task 4: importer tests (CSV/TSV/list/backup parsing) -->
+  <script>
+  (function () {
+    'use strict';
+    section('importer');
+
+    // --- Fixture 1: FantasyPros-style CSV (quoted fields, TIERS column, K/DST rows) ---
+    var CSV_HEADER = '"RK","TIERS","PLAYER NAME","TEAM","POS","BYE WEEK","SOS SEASON","ECR VS. ADP"';
+    var CSV_ROWS = [
+      '"1","Tier 1, Elite","Ja\'Marr Chase","CIN","WR1","6","Easy","+2.1"',
+      '"2","1","Justin Jefferson","MIN","WR1","11","Easy","+1.8"',
+      '"3","1","CeeDee Lamb","DAL","WR2","7","Avg","+0.9"',
+      '"4","1","Amon-Ra St. Brown","DET","WR2","8","Avg","+1.2"',
+      '"5","1","Bijan Robinson","ATL","RB1","5","Easy","+3.0"',
+      '"6","1","Saquon Barkley","PHI","RB1","12","Easy","+2.5"',
+      '"7","2","Christian McCaffrey","SF","RB1","13","Hard","-1.0"',
+      '"8","2","Jahmyr Gibbs","DET","RB2","8","Avg","+0.5"',
+      '"9","2","Josh Allen","BUF","QB1","5","Easy","+1.1"',
+      '"10","2","Patrick Mahomes II","KC","QB1","7","Avg","+0.2"',
+      '"11","2","Lamar Jackson","BAL","QB1","5","Easy","+1.4"',
+      '"12","3","Brock Bowers","LV","TE1","10","Avg","+0.8"',
+      '"13","3","Trey McBride","ARI","TE1","5","Avg","+0.3"',
+      '"14","3","Puka Nacua","LAR","WR3","10","Hard","-0.4"',
+      '"15","3","Malik Nabers","NYG","WR3","12","Avg","+0.6"',
+      '"16","3","Nico Collins","HOU","WR4","8","Avg","+0.1"',
+      '"17","4","Derrick Henry","BAL","RB3","5","Easy","+2.2"',
+      '"18","4","Jonathan Taylor","IND","RB3","8","Easy","+1.9"',
+      '"19","4","Ashton Jeanty","LV","RB4","10","Avg","+0.7"',
+      '"20","4","Jalen Hurts","PHI","QB2","12","Avg","+0.5"',
+      '"21","5","Harrison Butker","KC","K1","9","Avg","0.0"',
+      '"22","5","San Francisco","SF","DST1","13","Avg","0.0"'
+    ];
+    var CSV_TEXT = [CSV_HEADER].concat(CSV_ROWS).join('\n');
+
+    t('parseRankings: FantasyPros CSV — quoted fields, TIERS column, K/DST skipped, ranks 1..N', function () {
+      var result = DC.importer.parseRankings(CSV_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 20, 'kept player count');
+      assertEq(result.skipped, 2, 'K + DST rows skipped');
+      result.players.forEach(function (p, i) {
+        assertEq(p.rank, i + 1, 'rank at index ' + i);
+      });
+      var mahomes = result.players.filter(function (p) { return p.name === 'Patrick Mahomes II'; })[0];
+      assert(mahomes, 'quoted name "Patrick Mahomes II" should survive intact');
+      assertEq(mahomes.team, 'KC');
+      assertEq(mahomes.byeWeek, 7, 'BYE WEEK column (7) overrides KC team default (9)');
+      var chase = result.players.filter(function (p) { return p.name === "Ja'Marr Chase"; })[0];
+      assertEq(chase.byeWeek, 6, 'bye from BYE WEEK column, matches CIN default here');
+      assertEq(chase.team, 'CIN');
+      assertEq(DC.importer.detectFormat(CSV_TEXT), 'rankings');
+    });
+
+    // --- Fixture 2: TSV (tab-delimited), same shape ---
+    var TSV_FIELDS = [
+      ['RK', 'TIERS', 'PLAYER NAME', 'TEAM', 'POS', 'BYE WEEK', 'SOS SEASON', 'ECR VS. ADP'],
+      ['1', '1', 'Bijan Robinson', 'ATL', 'RB1', '5', 'Easy', '+3.0'],
+      ['2', '1', 'Saquon Barkley', 'PHI', 'RB1', '12', 'Easy', '+2.5'],
+      ['3', '1', 'Jahmyr Gibbs', 'DET', 'RB2', '8', 'Avg', '+0.5'],
+      ['4', '2', 'Christian McCaffrey', 'SF', 'RB1', '13', 'Hard', '-1.0'],
+      ['5', '2', 'Josh Allen', 'BUF', 'QB1', '5', 'Easy', '+1.1'],
+      ['6', '2', 'Lamar Jackson', 'BAL', 'QB1', '5', 'Easy', '+1.4'],
+      ['7', '3', 'Brock Bowers', 'LV', 'TE1', '10', 'Avg', '+0.8'],
+      ['8', '3', 'Trey McBride', 'ARI', 'TE1', '5', 'Avg', '+0.3'],
+      ['9', '3', 'Nico Collins', 'HOU', 'WR4', '8', 'Avg', '+0.1'],
+      ['10', '4', 'Derrick Henry', 'BAL', 'RB3', '5', 'Easy', '+2.2'],
+      ['11', '5', 'Harrison Butker', 'KC', 'K1', '9', 'Avg', '0.0']
+    ];
+    var TSV_TEXT = TSV_FIELDS.map(function (row) { return row.join('\t'); }).join('\n');
+
+    t('parseRankings: TSV (tab-delimited) — parses same shape as CSV', function () {
+      var result = DC.importer.parseRankings(TSV_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 10, 'kicker row skipped');
+      assertEq(result.skipped, 1);
+      assertEq(result.players[0].name, 'Bijan Robinson');
+      assertEq(result.players[0].rank, 1);
+      assertEq(result.players[0].position, 'RB');
+      assertEq(result.players[0].byeWeek, 5);
+    });
+
+    // --- Fixture 3: numbered plain list, 20 lines ---
+    var NUMBERED_LIST_NAMES = [
+      ['Christian McCaffrey', 'SF', 'RB'],
+      ["Ja'Marr Chase", 'CIN', 'WR'],
+      ['Justin Jefferson', 'MIN', 'WR'],
+      ['Bijan Robinson', 'ATL', 'RB'],
+      ['Josh Allen', 'BUF', 'QB'],
+      ['Brock Bowers', 'LV', 'TE'],
+      ['Saquon Barkley', 'PHI', 'RB'],
+      ['CeeDee Lamb', 'DAL', 'WR'],
+      ['Jahmyr Gibbs', 'DET', 'RB'],
+      ['Lamar Jackson', 'BAL', 'QB'],
+      ['Amon-Ra St. Brown', 'DET', 'WR'],
+      ['Trey McBride', 'ARI', 'TE'],
+      ['Puka Nacua', 'LAR', 'WR'],
+      ['Derrick Henry', 'BAL', 'RB'],
+      ['Malik Nabers', 'NYG', 'WR'],
+      ['Jonathan Taylor', 'IND', 'RB'],
+      ['Nico Collins', 'HOU', 'WR'],
+      ['Jalen Hurts', 'PHI', 'QB'],
+      ['Ashton Jeanty', 'LV', 'RB'],
+      ['Joe Burrow', 'CIN', 'QB']
+    ];
+    var NUMBERED_LIST_TEXT = NUMBERED_LIST_NAMES.map(function (row, i) {
+      return (i + 1) + '. ' + row[0] + ' ' + row[1] + ' ' + row[2];
+    }).join('\n');
+
+    t('parseRankings: numbered plain list ("1. Christian McCaffrey SF RB") x20', function () {
+      var result = DC.importer.parseRankings(NUMBERED_LIST_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 20);
+      assertEq(result.skipped, 0);
+      assertEq(result.players[0], {
+        id: DC.data.slug('Christian McCaffrey', 'SF'),
+        rank: 1,
+        name: 'Christian McCaffrey',
+        team: 'SF',
+        position: 'RB',
+        byeWeek: DC.data.TEAM_BYE_WEEKS.SF
+      });
+      assertEq(result.players[4].team, 'BUF');
+      assertEq(result.players[4].position, 'QB');
+      assertEq(result.players[4].byeWeek, DC.data.TEAM_BYE_WEEKS.BUF, 'bye from TEAM_BYE_WEEKS, no bye column present');
+    });
+
+    // --- Fixture 4: parenthesized team/pos form ---
+    var PAREN_LIST_TEXT = [
+      'Josh Allen (BUF - QB)',
+      'Christian McCaffrey (SF - RB)',
+      "Ja'Marr Chase (CIN - WR)",
+      'Brock Bowers (LV - TE)',
+      'Bijan Robinson (ATL - RB)',
+      'Justin Jefferson (MIN - WR)'
+    ].join('\n');
+
+    t('parseRankings: parenthesized "Josh Allen (BUF - QB)" form', function () {
+      var result = DC.importer.parseRankings(PAREN_LIST_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 6);
+      var allen = result.players.filter(function (p) { return p.name === 'Josh Allen'; })[0];
+      assert(allen, 'Josh Allen should have parsed');
+      assertEq(allen.team, 'BUF');
+      assertEq(allen.position, 'QB');
+    });
+
+    // --- Fixture 5: name-only list (no position => unparseable => ok:false via <5 guard) ---
+    var NAME_ONLY_TEXT = [
+      "Ja'Marr Chase", 'Justin Jefferson', 'CeeDee Lamb', 'Amon-Ra St. Brown', 'Puka Nacua',
+      'Malik Nabers', 'Nico Collins', 'Brian Thomas Jr', 'A.J. Brown', 'Tyreek Hill',
+      'Bijan Robinson', 'Saquon Barkley', 'Jahmyr Gibbs', 'Christian McCaffrey', 'Josh Allen',
+      'Brock Bowers', 'Lamar Jackson', 'Jalen Hurts', 'Joe Burrow', 'Trey McBride'
+    ].join('\n');
+
+    t('parseRankings: name-only list — no position on any line => ok:false via <5 guard', function () {
+      var result = DC.importer.parseRankings(NAME_ONLY_TEXT);
+      assertEq(result.ok, false, 'name-only lines carry no position and are skipped, so this should fail');
+      assert(typeof result.error === 'string' && result.error.length > 0, 'error should be a human-readable string');
+    });
+
+    // --- Fixture 6: backup JSON round-trip ---
+    t('parseBackup: JSON.stringify(valid state) round-trips through detectFormat + parseBackup', function () {
+      var state = DC.state.createSeedState();
+      var text = JSON.stringify(state);
+      assertEq(DC.importer.detectFormat(text), 'backup');
+      var result = DC.importer.parseBackup(text);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.state, state);
+    });
+
+    // --- Fixture 7: corrupt/garbage text ---
+    var GARBAGE_TEXT = 'hello world\nfoo';
+
+    t('parseRankings: corrupt/garbage text => ok:false with a human error, never throws', function () {
+      var result = DC.importer.parseRankings(GARBAGE_TEXT);
+      assertEq(result.ok, false);
+      assert(typeof result.error === 'string' && result.error.length > 0, 'error should be a human-readable string');
+      assertEq(DC.importer.detectFormat(GARBAGE_TEXT), 'rankings', 'garbage text is not JSON, so it is classified as rankings input');
+    });
+
+    t('parseBackup: corrupt JSON and structurally-wrong shapes => ok:false, never throws', function () {
+      var badJson = DC.importer.parseBackup('{not valid json');
+      assertEq(badJson.ok, false);
+      assert(typeof badJson.error === 'string' && badJson.error.length > 0);
+
+      var wrongShape = DC.importer.parseBackup(JSON.stringify({ schemaVersion: 1, players: [] }));
+      assertEq(wrongShape.ok, false, 'empty players array is structurally invalid');
+
+      var notAnObject = DC.importer.parseBackup(JSON.stringify([1, 2, 3]));
+      assertEq(notAnObject.ok, false);
+    });
+
+    // --- Fixture 8: duplicate player lines ---
+    var DUPLICATE_LIST_TEXT = [
+      '1. Christian McCaffrey SF RB',
+      '2. Josh Allen BUF QB',
+      '3. Brock Bowers LV TE',
+      "4. Ja'Marr Chase CIN WR",
+      '5. Bijan Robinson ATL RB',
+      '99. Christian McCaffrey SF RB'
+    ].join('\n');
+
+    t('parseRankings: duplicate player lines — first kept, warning present, ids unique', function () {
+      var result = DC.importer.parseRankings(DUPLICATE_LIST_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 5, 'duplicate line should not add a second player');
+      var ids = result.players.map(function (p) { return p.id; });
+      assertEq(ids.length, (function () {
+        var seen = {};
+        var count = 0;
+        ids.forEach(function (id) { if (!seen[id]) { seen[id] = true; count++; } });
+        return count;
+      })(), 'all ids must be unique');
+      assert(result.warnings.length >= 1, 'expected at least one warning for the duplicate');
+      assertEq(result.players[0].rank, 1);
+      assertEq(result.players[0].name, 'Christian McCaffrey');
+    });
+
+    // --- Fixture 9: "RB12"-style position suffix + case-insensitive team ---
+    var SUFFIX_LIST_TEXT = [
+      '1. Christian McCaffrey sf RB12',
+      "2. Ja'Marr Chase CIN WR3",
+      '3. Josh Allen BUF QB1',
+      '4. Brock Bowers lv TE1',
+      '5. Bijan Robinson ATL RB1'
+    ].join('\n');
+
+    t('parseRankings: "RB12"-style position normalizes; case-insensitive team ("sf" -> SF)', function () {
+      var result = DC.importer.parseRankings(SUFFIX_LIST_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 5);
+      assertEq(result.players[0].team, 'SF', 'lowercase "sf" should normalize to SF');
+      assertEq(result.players[0].position, 'RB', '"RB12" should normalize to RB');
+      assertEq(result.players[3].team, 'LV', 'lowercase "lv" should normalize to LV');
+      assertEq(result.players[3].position, 'TE');
+    });
+
+    // --- self-review: team-missing defaults to "FA" / byeWeek 0 ---
+    var NO_TEAM_LIST_TEXT = [
+      '1. Christian McCaffrey SF RB',
+      '2. Some Undrafted Rookie RB',
+      '3. Josh Allen BUF QB',
+      '4. Brock Bowers LV TE',
+      '5. Bijan Robinson ATL RB'
+    ].join('\n');
+
+    t('parseRankings: line with no team token defaults to team "FA", byeWeek 0', function () {
+      var result = DC.importer.parseRankings(NO_TEAM_LIST_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      var rookie = result.players.filter(function (p) { return p.name === 'Some Undrafted Rookie'; })[0];
+      assert(rookie, 'rookie line should still parse (has a position, just no team)');
+      assertEq(rookie.team, 'FA');
+      assertEq(rookie.byeWeek, 0);
+    });
+
+    // --- self-review: bye column override only applied when value is 1-18 ---
+    var BYE_HEADER = '"RK","PLAYER NAME","TEAM","POS","BYE WEEK"';
+    var BYE_ROWS = [
+      '"1","Christian McCaffrey","SF","RB","13"',
+      '"2","Josh Allen","BUF","QB","0"',
+      '"3","Brock Bowers","LV","TE","19"',
+      '"4","Bijan Robinson","ATL","RB","5"',
+      '"5","Justin Jefferson","MIN","WR","11"'
+    ];
+    var BYE_TEXT = [BYE_HEADER].concat(BYE_ROWS).join('\n');
+
+    t('parseRankings: bye column override only applied when 1-18, else falls back to team default', function () {
+      var result = DC.importer.parseRankings(BYE_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      var mccaffrey = result.players.filter(function (p) { return p.name === 'Christian McCaffrey'; })[0];
+      assertEq(mccaffrey.byeWeek, 13, 'in-range override applied');
+      var allen = result.players.filter(function (p) { return p.name === 'Josh Allen'; })[0];
+      assertEq(allen.byeWeek, DC.data.TEAM_BYE_WEEKS.BUF, '"0" is out of range, falls back to team default');
+      var bowers = result.players.filter(function (p) { return p.name === 'Brock Bowers'; })[0];
+      assertEq(bowers.byeWeek, DC.data.TEAM_BYE_WEEKS.LV, '"19" is out of range, falls back to team default');
+    });
+
+    // --- detectFormat edge cases (beyond the 9 mandatory fixtures, for contract completeness) ---
+    t('detectFormat: JSON array or object missing required backup fields => "rankings"', function () {
+      assertEq(DC.importer.detectFormat('[1,2,3]'), 'rankings');
+      assertEq(DC.importer.detectFormat('{"foo":"bar"}'), 'rankings');
+      assertEq(DC.importer.detectFormat('{"schemaVersion":"1","players":[]}'), 'rankings', 'schemaVersion must be numeric');
+      assertEq(DC.importer.detectFormat('   {"schemaVersion":1,"players":[]}   '), 'backup', 'leading/trailing whitespace should be trimmed');
     });
   })();
   </script>
