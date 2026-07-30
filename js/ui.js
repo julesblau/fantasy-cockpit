@@ -330,6 +330,7 @@
     function closeSettings() {
       sheetScrim.hidden = true;
       sheetEl.hidden = true;
+      disarmAllConfirmButtons(); // a pending two-tap confirm must not survive a sheet close
       resetImportArea();
     }
 
@@ -338,6 +339,9 @@
     }
 
     // ---- two-tap confirm (Reset Draft / Reset Targets-Avoid / Clear All Data / import Apply buttons) ----
+    // Only one confirmable button may be armed at a time, and closing the sheet always
+    // clears any pending arm — otherwise a stale "Tap again to confirm" state could fire
+    // a destructive dispatch on a single, unconfirmed tap after the sheet is reopened.
 
     function clearArmTimer(btn) {
       if (btn._armTimer) {
@@ -353,7 +357,21 @@
       }
     }
 
+    function disarmButton(btn) {
+      clearArmTimer(btn);
+      btn.removeAttribute('data-armed');
+      restoreLabel(btn);
+    }
+
+    function disarmAllConfirmButtons() {
+      var armed = sheetRoot.querySelectorAll('[data-armed]');
+      for (var i = 0; i < armed.length; i++) {
+        disarmButton(armed[i]);
+      }
+    }
+
     function armButton(btn) {
+      disarmAllConfirmButtons(); // arming one disarms any other pending confirm
       if (!btn.hasAttribute('data-original-label')) {
         btn.setAttribute('data-original-label', btn.textContent);
       }
@@ -361,16 +379,13 @@
       btn.textContent = 'Tap again to confirm';
       clearArmTimer(btn);
       btn._armTimer = setTimeout(function () {
-        btn.removeAttribute('data-armed');
-        restoreLabel(btn);
+        disarmButton(btn);
       }, 3000);
     }
 
     function confirmAction(btn, onConfirm) {
       if (btn.getAttribute('data-armed') === '1') {
-        clearArmTimer(btn);
-        btn.removeAttribute('data-armed');
-        restoreLabel(btn);
+        disarmButton(btn);
         onConfirm();
       } else {
         armButton(btn);

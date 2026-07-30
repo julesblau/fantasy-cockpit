@@ -1198,6 +1198,66 @@
       assertEq(badResult.ok, false, 'mismatched version rejected');
       assert(/different app version/i.test(badResult.error), 'human error mentions version mismatch: ' + badResult.error);
     });
+
+    // --- fix: two-tap confirm arm state must not survive a sheet close, and arming one
+    // button must disarm any other pending confirm (mounts DC.ui into a hidden, throwaway
+    // DOM fixture — no other way to exercise this DOM-wired logic) ---
+
+    function buildMountFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="stats-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    t('two-tap confirm: closing the sheet disarms a pending confirm; arming one button disarms another', function () {
+      var fixture = buildMountFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.ui.mount(store);
+
+        var openBtn = fixture.querySelector('[data-action="open-settings"]');
+        var doneBtn = fixture.querySelector('[data-action="close-settings"]');
+        var clearAllBtn = fixture.querySelector('[data-action="clear-all-data"]');
+        var resetDraftBtn = fixture.querySelector('[data-action="reset-draft"]');
+        assert(openBtn && doneBtn && clearAllBtn && resetDraftBtn, 'expected sheet buttons to exist after mount');
+
+        openBtn.click();
+        clearAllBtn.click(); // first tap: arm
+        assertEq(clearAllBtn.getAttribute('data-armed'), '1', 'clear-all-data armed after first tap');
+        assertEq(clearAllBtn.textContent, 'Tap again to confirm', 'clear-all-data label shows confirm prompt');
+
+        resetDraftBtn.click(); // arming a different button must disarm clear-all-data
+        assertEq(resetDraftBtn.getAttribute('data-armed'), '1', 'reset-draft armed after its first tap');
+        assert(clearAllBtn.getAttribute('data-armed') !== '1', 'clear-all-data disarmed once a different button arms');
+        assertEq(clearAllBtn.textContent, 'Clear All Data', 'clear-all-data label restored once disarmed');
+
+        doneBtn.click(); // close the sheet while reset-draft is still armed
+        openBtn.click(); // reopen
+        assert(resetDraftBtn.getAttribute('data-armed') !== '1', 'reset-draft disarmed by the sheet close, not still armed on reopen');
+        assertEq(resetDraftBtn.textContent, 'Reset Draft', 'reset-draft label restored after close+reopen');
+
+        // single taps only ever arm — no destructive action should have actually fired
+        var state = store.getState();
+        var anyDrafted = state.players.some(function (p) { return state.marks[p.id].drafted; });
+        assert(!anyDrafted, 'no player should be drafted: only arming taps were simulated, never a confirming second tap');
+      } finally {
+        document.body.removeChild(fixture);
+      }
+    });
   })();
   </script>
 
