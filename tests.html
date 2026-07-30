@@ -134,6 +134,29 @@
       assertEq(DC.data.slug("Ja'Marr Chase", "CIN"), 'ja-marr-chase-cin', 'chase slug');
       assertEq(DC.data.slug('Amon-Ra St. Brown', 'DET'), 'amon-ra-st-brown-det', 'st brown slug');
     });
+
+    t('no run of more than 7 consecutive same-position players from rank 30 onward', function () {
+      var tail = DC.data.SEED_PLAYERS.filter(function (p) { return p.rank >= 30; });
+      var maxRun = 0;
+      var curRun = 0;
+      var curPos = null;
+      var firstViolation = null;
+      tail.forEach(function (p) {
+        if (p.position === curPos) {
+          curRun++;
+        } else {
+          curPos = p.position;
+          curRun = 1;
+        }
+        if (curRun > maxRun) {
+          maxRun = curRun;
+        }
+        if (curRun > 7 && firstViolation === null) {
+          firstViolation = 'first violation at rank ' + p.rank + ' (' + p.position + ')';
+        }
+      });
+      assert(maxRun <= 7, 'max run=' + maxRun + (firstViolation ? '; ' + firstViolation : ''));
+    });
   </script>
 
   <!-- render results (runs last, after all test-section scripts) -->
