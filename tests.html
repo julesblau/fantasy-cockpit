@@ -403,7 +403,7 @@
       assertEq(Object.keys(next.marks).sort(), ['b', 'c', 'z']);
       assertEq(next.marks.b, { drafted: false, target: true, avoid: false }, 'surviving mark for b preserved as-is');
       assertEq(next.marks.c, { drafted: true, target: false, avoid: false, mine: false }, 'surviving mark for c preserved as-is (still drafted; mine:false stamped by DRAFT_PLAYER)');
-      assertEq(next.marks.z, { drafted: false, target: false, avoid: false }, 'new player z gets all-false marks');
+      assertEq(next.marks.z, { drafted: false, target: false, avoid: false, mine: false }, 'new player z gets all-false marks, including mine:false');
       assertEq(next.undoStack.map(function (e) { return e.playerId; }), ['c'], 'a dropped (gone), c kept (still exists), order preserved');
       assertEq(next.filters, { position: 'ALL', status: 'AVAILABLE' });
       assertEq(next.searchText, '');
@@ -1174,6 +1174,15 @@
       ];
       var next = DC.state.reduce(state, { type: 'IMPORT_PLAYERS', players: newPlayers });
       assertEq(next.marks.m2, { drafted: true, target: false, avoid: false, mine: true }, 'surviving mark for m2 preserved as-is, including mine');
+    });
+
+    t('IMPORT_PLAYERS: a brand-new player id gets the full 4-key mark default, including mine:false', function () {
+      var state = makeMineState();
+      var newPlayers = [
+        { id: 'm9', rank: 1, name: 'Milo Nine', team: 'NYG', position: 'RB', byeWeek: 12 }
+      ];
+      var next = DC.state.reduce(state, { type: 'IMPORT_PLAYERS', players: newPlayers });
+      assertEq(next.marks.m9, { drafted: false, target: false, avoid: false, mine: false }, 'brand-new id must default to the full 4-key mark shape');
     });
 
     t('createSeedState: marks include mine:false', function () {

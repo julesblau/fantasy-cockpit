@@ -162,7 +162,7 @@
         var newPlayers = action.players;
         var newMarks = {};
         newPlayers.forEach(function (p) {
-          newMarks[p.id] = state.marks[p.id] || { drafted: false, target: false, avoid: false };
+          newMarks[p.id] = state.marks[p.id] || { drafted: false, target: false, avoid: false, mine: false };
         });
         var survivingIds = {};
         newPlayers.forEach(function (p) {
