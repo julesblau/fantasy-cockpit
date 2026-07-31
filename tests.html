@@ -1710,6 +1710,30 @@
       assertEq(DC.edit.staging.idsOf(overshootLow), ['e', 'a', 'b', 'c', 'd'], 'clamped to first index');
     });
 
+    // --- pin: clamped-no-op same-reference contract (official per amended spec supplement) ---
+    // moveByIndex's same-ref check compares the CLAMPED toIndex to fromIndex, not the raw
+    // toIndex — so an overshoot/undershoot that clamps back onto fromIndex is a same-reference
+    // no-op, while an overshoot that clamps onto a genuinely different index still moves.
+
+    t('moveByIndex: overshoot past the end from the already-last row -> same reference (clamped toIndex === fromIndex)', function () {
+      var staged = makeStaged();
+      var next = DC.edit.staging.moveByIndex(staged, 4, 999);
+      assert(next === staged, 'expected same reference: item already at last index, overshoot clamps back to itself');
+    });
+
+    t('moveByIndex: undershoot below the start from the already-first row -> same reference (clamped toIndex === fromIndex)', function () {
+      var staged = makeStaged();
+      var next = DC.edit.staging.moveByIndex(staged, 0, -999);
+      assert(next === staged, 'expected same reference: item already at first index, undershoot clamps back to itself');
+    });
+
+    t('moveByIndex: a non-no-op overshoot still moves — new array reference, item ends up last', function () {
+      var staged = makeStaged();
+      var next = DC.edit.staging.moveByIndex(staged, 0, 999);
+      assert(next !== staged, 'expected a NEW array reference: fromIndex 0 is not already at the clamped destination (last index)');
+      assertEq(DC.edit.staging.idsOf(next), ['b', 'c', 'd', 'e', 'a']);
+    });
+
     t('moveToRank: normal move, clamp-low (toRank 0), clamp-high (toRank beyond length)', function () {
       var staged = makeStaged();
       var normal = DC.edit.staging.moveToRank(staged, 'a', 3);
