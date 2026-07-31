@@ -42,6 +42,8 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
+**Reminder for this release:** this release bumps the service-worker cache to v2. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+
 ## Install on iPhone
 
 1. Open the GitHub Pages URL in **Safari** (must be Safari, not Chrome or another browser).
@@ -86,6 +88,14 @@ To export from FantasyPros: go to your Rankings page -> Export -> CSV, then past
 
 Re-importing preserves your Drafted/Target/Avoid marks for any player whose name and team match a player in the new file. Players that drop out of the new file lose their marks; new players start Available.
 
+Once you've manually reordered your rankings (see Edit your rankings in-app, below), Import Rankings automatically downloads a backup file before replacing the board with the imported one. See the iOS standalone note under Backup/restore if the download prompt doesn't appear.
+
+## Edit your rankings in-app
+
+Open Settings -> Edit Rankings to reorder the board by hand, without re-importing a file. Drag a row's handle to move a player, or tap a player's rank number to type an exact rank and jump straight there. Tap Done to commit your changes to the board, or Cancel to discard them; Cancel asks for confirmation first if you've moved anyone. Drafted players show their DRAFTED badge in the editor and can still be dragged or rank-jumped like anyone else. Searching inside edit mode is for finding a player: dragging is disabled while a search filter is active, but tapping a player's rank number to jump still works.
+
+Manual edits persist until your next Import Rankings.
+
 ## Backup / restore
 
 Settings -> Export Backup downloads a `draft-cockpit-backup.json` file containing your full state (rankings, marks, undo history, filters). To restore, paste or upload that same file into the Import box (Settings -> Import Rankings); it's auto-detected as a backup rather than a rankings file.
@@ -102,7 +112,7 @@ Re-import at any time via Settings -> Import Rankings using any of the supported
 
 ```
 draft-cockpit/
-  index.html              app shell; loads scripts in dependency order (data -> state -> importer -> ui -> app)
+  index.html              app shell; loads scripts in dependency order (data -> state -> importer -> ui -> edit -> app)
   styles.css              all styling (dark theme, safe-area insets)
   manifest.webmanifest    PWA manifest (icons, standalone display, start_url/scope "./")
   sw.js                   service worker: cache-first offline support; bump CACHE_NAME on any precached file change
@@ -112,6 +122,7 @@ draft-cockpit/
     state.js              state shape, reducer, localStorage load/save, schema migrations
     importer.js           rankings + backup file parsing (CSV/TSV/list/parenthesized/backup JSON)
     ui.js                 all rendering and event wiring (search, filters, undo, settings sheet)
+    edit.js               drag-to-reorder / tap-to-jump rankings editor (Settings -> Edit Rankings)
     app.js                entry point: creates the store, mounts the UI, registers the service worker
   icons/
     icon-192.png            PWA icon, 192x192
@@ -132,3 +143,13 @@ powershell -File scripts\make-icons.ps1
 ```
 
 This writes `icon-512.png`, `icon-192.png`, and `apple-touch-icon.png` into `icons/`.
+
+## App Store, later (optional)
+
+This is entirely optional and outside this project's zero-toolchain, zero-dependency philosophy. The app already installs like a native app via Add to Home Screen (see Install on iPhone, above); nothing below is required for that to work.
+
+If you ever want an actual App Store / Play Store listing:
+
+- **Capacitor** (capacitorjs.com) can wrap this static tree as-is into an Xcode / Android Studio project: `npx cap init`, then `npx cap add ios` (or `android`). This requires Node -- deliberately not part of this repo's normal workflow, but fine to run from a separate machine that has Node when the time comes.
+- **iOS submission** requires Xcode, which requires a Mac, plus an Apple Developer Program membership ($99/yr). From a Windows machine, the realistic path is a cloud-Mac build service (Codemagic, Ionic Appflow, GitHub-hosted macOS runners).
+- **PWABuilder** (pwabuilder.com) reads this app's existing manifest and service worker and can package it for the Microsoft Store or Android with less friction than Capacitor. Its iOS path still ends at Xcode/a Mac for signing.
