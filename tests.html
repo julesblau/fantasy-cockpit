@@ -987,13 +987,20 @@
       var loaded = DC.state.load();
       assertEq(loaded.schemaVersion, state.schemaVersion);
       assertEq(loaded.manuallyEdited, true, 'manuallyEdited survives save/load round trip');
-      assertEq(loaded.players.map(function (p) { return p.id; }), state.players.map(function (p) { return p.id; }), 'reordered player order survives round trip');
-      assertEq(loaded.players.map(function (p) { return p.rank; }), state.players.map(function (p) { return p.rank; }), 'renumbered ranks survive round trip');
+      state.players.forEach(function (p, i) {
+        assertEq(loaded.players[i].id, p.id);
+        assertEq(loaded.players[i].rank, p.rank);
+        assertEq(loaded.players[i].name, p.name);
+        assertEq(loaded.players[i].team, p.team);
+        assertEq(loaded.players[i].position, p.position);
+        assertEq(loaded.players[i].byeWeek, p.byeWeek);
+      });
       assertEq(loaded.filters, state.filters);
       assertEq(loaded.searchText, state.searchText);
       assertEq(loaded.undoStack, state.undoStack);
-      assertEq(Object.keys(loaded.marks).sort(), Object.keys(state.marks).sort(), 'same mark ids survive round trip');
-      assertEq(loaded.marks[order[0]], state.marks[order[0]], 'mark for swapped player survives round trip');
+      state.players.forEach(function (p) {
+        assertEq(loaded.marks[p.id], state.marks[p.id], 'mark for ' + p.id);
+      });
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
   })();
