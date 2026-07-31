@@ -4,12 +4,12 @@
 
   /** @typedef {"QB"|"RB"|"WR"|"TE"} Position */
   /** @typedef {{id:string, rank:number, name:string, team:string, position:Position, byeWeek:number}} Player */
-  /** @typedef {{drafted:boolean, target:boolean, avoid:boolean}} Marks */
+  /** @typedef {{drafted:boolean, target:boolean, avoid:boolean, mine:boolean}} Marks */
   /** @typedef {{playerId:string, timestamp:number}} UndoEntry */
-  /** @typedef {{position:("ALL"|Position), status:("AVAILABLE"|"TARGETS"|"AVOID"|"DRAFTED")}} Filters */
+  /** @typedef {{position:("ALL"|Position), status:("AVAILABLE"|"TARGETS"|"AVOID"|"DRAFTED"|"MINE")}} Filters */
   /**
    * @typedef {{
-   *   schemaVersion: 2,
+   *   schemaVersion: 3,
    *   players: Player[],
    *   marks: Object<string, Marks>,
    *   undoStack: UndoEntry[],
@@ -19,10 +19,10 @@
    * }} State
    */
 
-  var CURRENT_SCHEMA_VERSION = 2;
+  var CURRENT_SCHEMA_VERSION = 3;
   var STORAGE_KEY = 'draft-cockpit/state';
   var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true };
-  var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true };
+  var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true };
 
   /** @type {Object<number, function(*): State>} old-version-number -> upgrader to next version */
   var migrations = {};
@@ -32,12 +32,18 @@
              filters: v1.filters, searchText: v1.searchText, manuallyEdited: false };
   };
 
+  // pure pass-through: stamps schemaVersion itself, iterates nothing (mine healing is normalizeMarks' job)
+  migrations[2] = function (v2) {
+    return { schemaVersion: 3, players: v2.players, marks: v2.marks, undoStack: v2.undoStack,
+             filters: v2.filters, searchText: v2.searchText, manuallyEdited: v2.manuallyEdited };
+  };
+
   /** @returns {State} */
   function createSeedState() {
     var players = DC.data.SEED_PLAYERS;
     var marks = {};
     players.forEach(function (p) {
-      marks[p.id] = { drafted: false, target: false, avoid: false };
+      marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
     });
     return {
       schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -68,10 +74,18 @@
         if (!mark || mark.drafted) {
           return state;
         }
-        var next = setMark(state, action.playerId, { drafted: true });
+        var next = setMark(state, action.playerId, { drafted: true, mine: action.mine === true });
         next.undoStack = state.undoStack.concat([{ playerId: action.playerId, timestamp: Date.now() }]);
         next.searchText = '';
         return next;
+      }
+
+      case 'TOGGLE_MINE': {
+        var curMine = state.marks[action.playerId];
+        if (!curMine || !curMine.drafted) {
+          return state;
+        }
+        return setMark(state, action.playerId, { mine: !curMine.mine });
       }
 
       case 'UNDO_DRAFT': {
@@ -79,7 +93,7 @@
           return state;
         }
         var lastEntry = state.undoStack[state.undoStack.length - 1];
-        var afterUndo = setMark(state, lastEntry.playerId, { drafted: false });
+        var afterUndo = setMark(state, lastEntry.playerId, { drafted: false, mine: false });
         afterUndo.undoStack = state.undoStack.slice(0, -1);
         return afterUndo;
       }
@@ -89,7 +103,7 @@
         if (!undraftMark || !undraftMark.drafted) {
           return state;
         }
-        var afterUndraft = setMark(state, action.playerId, { drafted: false });
+        var afterUndraft = setMark(state, action.playerId, { drafted: false, mine: false });
         afterUndraft.undoStack = state.undoStack.filter(function (e) {
           return e.playerId !== action.playerId;
         });
@@ -128,7 +142,7 @@
       case 'RESET_DRAFT': {
         var resetDraftMarks = {};
         Object.keys(state.marks).forEach(function (id) {
-          resetDraftMarks[id] = Object.assign({}, state.marks[id], { drafted: false });
+          resetDraftMarks[id] = Object.assign({}, state.marks[id], { drafted: false, mine: false });
         });
         return Object.assign({}, state, { marks: resetDraftMarks, undoStack: [] });
       }
@@ -231,6 +245,8 @@
             return mark.avoid && !mark.drafted;
           case 'DRAFTED':
             return mark.drafted;
+          case 'MINE':
+            return mark.drafted && mark.mine;
           default:
             return true;
         }
@@ -250,6 +266,21 @@
     var counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
     state.players.forEach(function (p) {
       if (!state.marks[p.id].drafted) {
+        counts[p.position]++;
+      }
+    });
+    return counts;
+  }
+
+  /**
+   * @param {State} state
+   * @returns {{QB:number, RB:number, WR:number, TE:number}}
+   */
+  function myRosterCounts(state) {
+    var counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    state.players.forEach(function (p) {
+      var m = state.marks[p.id];
+      if (m && m.drafted && m.mine) {
         counts[p.position]++;
       }
     });
@@ -346,7 +377,8 @@
       if (target && avoid) {
         avoid = false;
       }
-      marks[p.id] = { drafted: drafted, target: target, avoid: avoid };
+      var mine = !!(m && m.drafted === true && m.mine === true);
+      marks[p.id] = { drafted: drafted, target: target, avoid: avoid, mine: mine };
     });
 
     var undoStack = state.undoStack.filter(function (e) {
@@ -394,7 +426,8 @@
         return createSeedState();
       }
 
-      var version = parsed.schemaVersion;
+      var initialVersion = parsed.schemaVersion;
+      var version = initialVersion;
       while (version < CURRENT_SCHEMA_VERSION) {
         var migrate = migrations[version];
         if (typeof migrate !== 'function') {
@@ -408,7 +441,12 @@
         return createSeedState();
       }
 
-      return normalizeMarks(parsed);
+      var result = normalizeMarks(parsed);
+      if (version !== initialVersion) {
+        // migration ran: persist the upgraded shape now instead of waiting for the next dispatch
+        save(result);
+      }
+      return result;
     } catch (e) {
       return createSeedState();
     }
@@ -460,6 +498,7 @@
     save: save,
     visiblePlayers: visiblePlayers,
     availableCountsByPosition: availableCountsByPosition,
+    myRosterCounts: myRosterCounts,
     pickNumber: pickNumber,
     matchesSearch: matchesSearch
   };

@@ -5,7 +5,7 @@
   /** @typedef {{id:string, rank:number, name:string, team:string, position:string, byeWeek:number}} Player */
 
   var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true };
-  var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true };
+  var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true };
   var MAX_WARNINGS = 10;
   var POSITION_TOKEN_RE = /^(QB|RB|WR|TE|K|DST|DEF|D\/ST)\d*$/i;
   var LEADING_RANK_RE = /^\d+[.)]?$/;

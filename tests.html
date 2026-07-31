@@ -220,13 +220,13 @@
 
     t('createSeedState: correct shape from DC.data.SEED_PLAYERS', function () {
       var s = DC.state.createSeedState();
-      assertEq(s.schemaVersion, 2);
+      assertEq(s.schemaVersion, 3);
       assertEq(s.players, DC.data.SEED_PLAYERS);
       assertEq(s.undoStack, []);
       assertEq(s.filters, { position: 'ALL', status: 'AVAILABLE' });
       assertEq(s.searchText, '');
       DC.data.SEED_PLAYERS.forEach(function (p) {
-        assertEq(s.marks[p.id], { drafted: false, target: false, avoid: false }, 'marks for ' + p.id);
+        assertEq(s.marks[p.id], { drafted: false, target: false, avoid: false, mine: false }, 'marks for ' + p.id);
       });
     });
 
@@ -402,7 +402,7 @@
       assertEq(next.players, newPlayers);
       assertEq(Object.keys(next.marks).sort(), ['b', 'c', 'z']);
       assertEq(next.marks.b, { drafted: false, target: true, avoid: false }, 'surviving mark for b preserved as-is');
-      assertEq(next.marks.c, { drafted: true, target: false, avoid: false }, 'surviving mark for c preserved as-is (still drafted)');
+      assertEq(next.marks.c, { drafted: true, target: false, avoid: false, mine: false }, 'surviving mark for c preserved as-is (still drafted; mine:false stamped by DRAFT_PLAYER)');
       assertEq(next.marks.z, { drafted: false, target: false, avoid: false }, 'new player z gets all-false marks');
       assertEq(next.undoStack.map(function (e) { return e.playerId; }), ['c'], 'a dropped (gone), c kept (still exists), order preserved');
       assertEq(next.filters, { position: 'ALL', status: 'AVAILABLE' });
@@ -711,7 +711,7 @@
 
     t('STORAGE_KEY and CURRENT_SCHEMA_VERSION constants', function () {
       assertEq(DC.state.STORAGE_KEY, 'draft-cockpit/state');
-      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 2);
+      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 3);
     });
 
     t('load(): missing key falls back to a fresh seed state', function () {
@@ -779,8 +779,8 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.marks.x1, { drafted: false, target: false, avoid: false });
-      assertEq(loaded.marks.x2, { drafted: false, target: false, avoid: false });
+      assertEq(loaded.marks.x1, { drafted: false, target: false, avoid: false, mine: false });
+      assertEq(loaded.marks.x2, { drafted: false, target: false, avoid: false, mine: false });
       DC.state.visiblePlayers(loaded);
       DC.state.availableCountsByPosition(loaded);
       assert(true, 'visiblePlayers/availableCountsByPosition ran without throwing');
@@ -801,7 +801,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.marks.x1, { drafted: false, target: true, avoid: false }, 'drafted healed to false, target preserved');
+      assertEq(loaded.marks.x1, { drafted: false, target: true, avoid: false, mine: false }, 'drafted healed to false, target preserved');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
@@ -860,7 +860,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.marks.x1, { drafted: false, target: true, avoid: false });
+      assertEq(loaded.marks.x1, { drafted: false, target: true, avoid: false, mine: false });
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
@@ -913,7 +913,7 @@
       }
     });
 
-    t('load(): v1 payload (no manuallyEdited field) migrates to v2, adding manuallyEdited:false and preserving everything else', function () {
+    t('load(): v1 payload (no manuallyEdited field) migrates to v3, adding manuallyEdited:false and mine:false, preserving everything else', function () {
       var payload = {
         schemaVersion: 1,
         players: makeHealPlayers(),
@@ -927,10 +927,13 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 2);
+      assertEq(loaded.schemaVersion, 3);
       assertEq(loaded.manuallyEdited, false);
       assertEq(loaded.players, payload.players);
-      assertEq(loaded.marks, payload.marks);
+      assertEq(loaded.marks, {
+        x1: { drafted: false, target: true, avoid: false, mine: false },
+        x2: { drafted: true, target: false, avoid: false, mine: false }
+      }, 'v1 marks carry no mine field; healed in as false (x2 has no mine:true to survive)');
       assertEq(loaded.undoStack, payload.undoStack);
       assertEq(loaded.filters, payload.filters);
       assertEq(loaded.searchText, payload.searchText);
@@ -1043,7 +1046,7 @@
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
-    t('integration: v1 restore path — backupApplyCheck accepts a v1 backup; raw save + load migrates to v2 preserving players/marks/undoStack', function () {
+    t('integration: v1 restore path — backupApplyCheck accepts a v1 backup; raw save + load migrates to v3 preserving players/marks/undoStack', function () {
       var seed = DC.state.createSeedState();
       var v1Payload = {
         schemaVersion: 1,
@@ -1061,11 +1064,383 @@
       // state, then rely on load()'s migrate/heal pipeline on the next boot.
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(v1Payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 2, 'migrated to current schema version');
+      assertEq(loaded.schemaVersion, 3, 'migrated to current schema version');
       assertEq(loaded.manuallyEdited, false, 'v1 payload had no flag; migration defaults it to false');
       assertEq(loaded.players, v1Payload.players, 'players preserved exactly');
       assertEq(loaded.marks, v1Payload.marks, 'marks preserved exactly');
       assertEq(loaded.undoStack, v1Payload.undoStack, 'undoStack preserved exactly');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+  })();
+  </script>
+
+  <!-- Round 3 Task 1: schema v3 - mine flag, TOGGLE_MINE, persist-after-migration -->
+  <script>
+  (function () {
+    'use strict';
+    section('state');
+
+    function makeMinePlayers() {
+      return [
+        { id: 'm1', rank: 1, name: 'Milo One', team: 'KC', position: 'QB', byeWeek: 9 },
+        { id: 'm2', rank: 2, name: 'Milo Two', team: 'DAL', position: 'RB', byeWeek: 7 },
+        { id: 'm3', rank: 3, name: 'Milo Three', team: 'MIA', position: 'WR', byeWeek: 10 }
+      ];
+    }
+
+    function makeMineMarks(players) {
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+      });
+      return marks;
+    }
+
+    function makeMineState() {
+      var players = makeMinePlayers();
+      return {
+        schemaVersion: 3,
+        players: players,
+        marks: makeMineMarks(players),
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false
+      };
+    }
+
+    t('DRAFT_PLAYER with mine:true sets mine on the mark', function () {
+      var state = makeMineState();
+      var next = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'm1', mine: true });
+      assertEq(next.marks.m1, { drafted: true, target: false, avoid: false, mine: true });
+    });
+
+    t('DRAFT_PLAYER without a mine param defaults mine to false', function () {
+      var state = makeMineState();
+      var next = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'm1' });
+      assertEq(next.marks.m1, { drafted: true, target: false, avoid: false, mine: false });
+    });
+
+    t('TOGGLE_MINE flips mine when the player is drafted', function () {
+      var state = makeMineState();
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'm1', mine: true });
+      var toggled = DC.state.reduce(state, { type: 'TOGGLE_MINE', playerId: 'm1' });
+      assertEq(toggled.marks.m1, { drafted: true, target: false, avoid: false, mine: false });
+      var toggledAgain = DC.state.reduce(toggled, { type: 'TOGGLE_MINE', playerId: 'm1' });
+      assertEq(toggledAgain.marks.m1, { drafted: true, target: false, avoid: false, mine: true });
+    });
+
+    t('TOGGLE_MINE on an undrafted player -> unchanged (same reference)', function () {
+      var state = makeMineState();
+      var next = DC.state.reduce(state, { type: 'TOGGLE_MINE', playerId: 'm1' });
+      assert(next === state, 'expected same reference for an undrafted player');
+    });
+
+    t('TOGGLE_MINE on an unknown id -> unchanged (same reference)', function () {
+      var state = makeMineState();
+      var next = DC.state.reduce(state, { type: 'TOGGLE_MINE', playerId: 'zzz' });
+      assert(next === state, 'expected same reference for unknown id');
+    });
+
+    t('UNDO_DRAFT clears mine along with drafted', function () {
+      var state = makeMineState();
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'm1', mine: true });
+      var next = DC.state.reduce(state, { type: 'UNDO_DRAFT' });
+      assertEq(next.marks.m1, { drafted: false, target: false, avoid: false, mine: false });
+    });
+
+    t('UNDRAFT_PLAYER clears mine along with drafted', function () {
+      var state = makeMineState();
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'm2', mine: true });
+      var next = DC.state.reduce(state, { type: 'UNDRAFT_PLAYER', playerId: 'm2' });
+      assertEq(next.marks.m2, { drafted: false, target: false, avoid: false, mine: false });
+    });
+
+    t('RESET_DRAFT clears mine along with drafted, keeps target/avoid', function () {
+      var state = makeMineState();
+      state = DC.state.reduce(state, { type: 'TOGGLE_TARGET', playerId: 'm2' });
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'm1', mine: true });
+      var next = DC.state.reduce(state, { type: 'RESET_DRAFT' });
+      assertEq(next.marks.m1, { drafted: false, target: false, avoid: false, mine: false });
+      assertEq(next.marks.m2.target, true, 'target should survive RESET_DRAFT');
+    });
+
+    t('IMPORT_PLAYERS preserves mine on a surviving player id', function () {
+      var state = makeMineState();
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'm2', mine: true });
+      var newPlayers = [
+        { id: 'm2', rank: 1, name: 'Milo Two', team: 'DAL', position: 'RB', byeWeek: 7 },
+        { id: 'm9', rank: 2, name: 'Milo Nine', team: 'NYG', position: 'RB', byeWeek: 12 }
+      ];
+      var next = DC.state.reduce(state, { type: 'IMPORT_PLAYERS', players: newPlayers });
+      assertEq(next.marks.m2, { drafted: true, target: false, avoid: false, mine: true }, 'surviving mark for m2 preserved as-is, including mine');
+    });
+
+    t('createSeedState: marks include mine:false', function () {
+      var s = DC.state.createSeedState();
+      DC.data.SEED_PLAYERS.forEach(function (p) {
+        assertEq(s.marks[p.id], { drafted: false, target: false, avoid: false, mine: false }, 'marks for ' + p.id);
+      });
+    });
+  })();
+  </script>
+
+  <!-- Round 3 Task 1: selectors — MINE filter + myRosterCounts -->
+  <script>
+  (function () {
+    'use strict';
+    section('selectors');
+
+    function makeMineSelectorPlayers() {
+      return [
+        { id: 's1', rank: 1, name: 'Sam One', team: 'KC', position: 'QB', byeWeek: 9 },
+        { id: 's2', rank: 2, name: 'Sam Two', team: 'DAL', position: 'RB', byeWeek: 7 },
+        { id: 's3', rank: 3, name: 'Sam Three', team: 'MIA', position: 'WR', byeWeek: 10 },
+        { id: 's4', rank: 4, name: 'Sam Four', team: 'KC', position: 'TE', byeWeek: 9 },
+        { id: 's5', rank: 5, name: 'Sam Five', team: 'SEA', position: 'RB', byeWeek: 13 }
+      ];
+    }
+
+    function makeMineSelectorState(overrides) {
+      var players = makeMineSelectorPlayers();
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+      });
+      var state = {
+        schemaVersion: 3,
+        players: players,
+        marks: marks,
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false
+      };
+      if (overrides && overrides.marks) {
+        Object.keys(overrides.marks).forEach(function (id) {
+          state.marks[id] = Object.assign({}, state.marks[id], overrides.marks[id]);
+        });
+      }
+      if (overrides && overrides.filters) {
+        state.filters = Object.assign({}, state.filters, overrides.filters);
+      }
+      return state;
+    }
+
+    t('visiblePlayers MINE status shows only drafted&&mine players, in rank order', function () {
+      var state = makeMineSelectorState({
+        filters: { status: 'MINE' },
+        marks: {
+          s2: { drafted: true, mine: true },
+          s4: { drafted: true, mine: false }, // drafted by someone else, not mine
+          s5: { drafted: true, mine: true }
+        }
+      });
+      var visible = DC.state.visiblePlayers(state);
+      assertEq(visible.map(function (p) { return p.id; }), ['s2', 's5']);
+    });
+
+    t('myRosterCounts counts drafted&&mine by position, independent of filters/searchText', function () {
+      var state = makeMineSelectorState({
+        marks: {
+          s2: { drafted: true, mine: true },  // RB
+          s4: { drafted: true, mine: false }, // TE, not mine
+          s5: { drafted: true, mine: true }   // RB
+        }
+      });
+      var counts = DC.state.myRosterCounts(state);
+      assertEq(counts, { QB: 0, RB: 2, WR: 0, TE: 0 });
+
+      var filteredState = Object.assign({}, state, {
+        filters: { position: 'WR', status: 'DRAFTED' },
+        searchText: 'zzz'
+      });
+      var counts2 = DC.state.myRosterCounts(filteredState);
+      assertEq(counts2, counts, 'counts should be independent of filters/searchText');
+    });
+
+    t('SET_STATUS_FILTER MINE, then re-selecting MINE toggles back to AVAILABLE', function () {
+      var state = makeMineSelectorState({});
+      var next = DC.state.reduce(state, { type: 'SET_STATUS_FILTER', status: 'MINE' });
+      assertEq(next.filters.status, 'MINE');
+      var toggled = DC.state.reduce(next, { type: 'SET_STATUS_FILTER', status: 'MINE' });
+      assertEq(toggled.filters.status, 'AVAILABLE');
+    });
+  })();
+  </script>
+
+  <!-- Round 3 Task 1: persistence — schema v3 migration chain, mine healing, persist-after-migration -->
+  <script>
+  (function () {
+    'use strict';
+    section('persistence');
+
+    function makePlayersV3() {
+      return [
+        { id: 'y1', rank: 1, name: 'Yusuf One', team: 'KC', position: 'QB', byeWeek: 9 },
+        { id: 'y2', rank: 2, name: 'Yusuf Two', team: 'DAL', position: 'RB', byeWeek: 7 }
+      ];
+    }
+
+    t('load(): v2->v3 migration preserves players/marks/undoStack/filters/searchText/manuallyEdited, heals mine:false in', function () {
+      var payload = {
+        schemaVersion: 2,
+        players: makePlayersV3(),
+        marks: {
+          y1: { drafted: false, target: true, avoid: false },
+          y2: { drafted: true, target: false, avoid: false }
+        },
+        undoStack: [{ playerId: 'y2', timestamp: 7 }],
+        filters: { position: 'WR', status: 'AVOID' },
+        searchText: 'xyz',
+        manuallyEdited: true
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.schemaVersion, 3);
+      assertEq(loaded.players, payload.players);
+      assertEq(loaded.marks, {
+        y1: { drafted: false, target: true, avoid: false, mine: false },
+        y2: { drafted: true, target: false, avoid: false, mine: false }
+      });
+      assertEq(loaded.undoStack, payload.undoStack);
+      assertEq(loaded.filters, payload.filters);
+      assertEq(loaded.searchText, payload.searchText);
+      assertEq(loaded.manuallyEdited, true);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): v1 payload chains through both migrations to v3, preserving players/marks/undoStack', function () {
+      var payload = {
+        schemaVersion: 1,
+        players: makePlayersV3(),
+        marks: {
+          y1: { drafted: true, target: false, avoid: false },
+          y2: { drafted: false, target: false, avoid: false }
+        },
+        undoStack: [{ playerId: 'y1', timestamp: 3 }],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: ''
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.schemaVersion, 3);
+      assertEq(loaded.players, payload.players);
+      assertEq(loaded.marks, {
+        y1: { drafted: true, target: false, avoid: false, mine: false },
+        y2: { drafted: false, target: false, avoid: false, mine: false }
+      });
+      assertEq(loaded.undoStack, payload.undoStack);
+      assertEq(loaded.manuallyEdited, false, 'v1->v2 migration stamps manuallyEdited false');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): mine:true without drafted:true is healed to mine:false', function () {
+      var payload = {
+        schemaVersion: 3,
+        players: makePlayersV3(),
+        marks: {
+          y1: { drafted: false, target: false, avoid: false, mine: true },
+          y2: { drafted: false, target: false, avoid: false, mine: false }
+        },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.marks.y1, { drafted: false, target: false, avoid: false, mine: false }, 'mine without drafted heals to false');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): a wrong-typed mine field is healed to false', function () {
+      var payload = {
+        schemaVersion: 3,
+        players: makePlayersV3(),
+        marks: {
+          y1: { drafted: true, target: false, avoid: false, mine: 'yes' },
+          y2: { drafted: false, target: false, avoid: false, mine: false }
+        },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.marks.y1, { drafted: true, target: false, avoid: false, mine: false }, 'wrong-typed mine heals to false, drafted preserved');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('save()/load() round trip preserves mine:true set via a real DRAFT_PLAYER dispatch', function () {
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+      var state = DC.state.createSeedState();
+      var firstId = state.players[0].id;
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: firstId, mine: true });
+      assertEq(state.marks[firstId].mine, true, 'precondition: mine set by dispatch');
+
+      DC.state.save(state);
+      var loaded = DC.state.load();
+      assertEq(loaded.marks[firstId], state.marks[firstId], 'mine survives save/load round trip');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): persist-after-migration — a v2 payload is upgraded and the v3 shape is written back to storage, with no dispatch', function () {
+      var payload = {
+        schemaVersion: 2,
+        players: makePlayersV3(),
+        marks: {
+          y1: { drafted: false, target: false, avoid: false },
+          y2: { drafted: false, target: false, avoid: false }
+        },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+
+      var storedAfter = JSON.parse(localStorage.getItem(DC.state.STORAGE_KEY));
+      assertEq(storedAfter.schemaVersion, 3, 'storage holds the migrated v3 shape immediately, before any dispatch');
+      assertEq(storedAfter, loaded, 'the exact returned state is what got persisted');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): a load that requires no migration writes nothing to storage', function () {
+      var state = DC.state.createSeedState();
+      DC.state.save(state);
+      var rawBefore = localStorage.getItem(DC.state.STORAGE_KEY);
+
+      DC.state.load();
+
+      var rawAfter = localStorage.getItem(DC.state.STORAGE_KEY);
+      assertEq(rawAfter, rawBefore, 'a current-version load must not rewrite storage');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+  })();
+  </script>
+
+  <!-- Round 3 Task 1: ui-templates backup-validation — MINE status filter enum addition -->
+  <script>
+  (function () {
+    'use strict';
+    section('ui-templates');
+
+    t('a state with filters.status "MINE" round-trips through save/load and through parseBackup', function () {
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+      var state = DC.state.createSeedState();
+      state = DC.state.reduce(state, { type: 'SET_STATUS_FILTER', status: 'MINE' });
+      assertEq(state.filters.status, 'MINE');
+
+      DC.state.save(state);
+      var loaded = DC.state.load();
+      assertEq(loaded.filters.status, 'MINE', 'save/load round trip preserves the MINE status filter');
+
+      var parsed = DC.importer.parseBackup(JSON.stringify(state));
+      assertEq(parsed.ok, true, 'expected parseBackup ok:true for a MINE-status backup — ' + (parsed.error || ''));
+      assertEq(parsed.state.filters.status, 'MINE');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
   })();
