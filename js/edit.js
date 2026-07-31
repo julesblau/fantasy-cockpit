@@ -364,9 +364,10 @@
       editRootEl.hidden = false;
       editRootEl.classList.remove('leaving');
       editRootEl.classList.add('entering');
-      setTimeout(function () {
+      void editRootEl.offsetHeight; // force a reflow so the entering styles commit before we remove the class
+      requestAnimationFrame(function () {
         editRootEl.classList.remove('entering');
-      }, 150);
+      });
     }
 
     function closeEdit() {
@@ -487,7 +488,7 @@
       }
 
       function onPointerMove(mev) {
-        if (activeDrag !== token) {
+        if (activeDrag !== token || mev.pointerId !== pointerId) {
           return;
         }
         lastPointerY = mev.clientY;
@@ -554,14 +555,14 @@
       }
 
       function onPointerUp(uev) {
-        if (activeDrag !== token) {
+        if (activeDrag !== token || uev.pointerId !== pointerId) {
           return;
         }
         finishDrag();
       }
 
       function onPointerCancel(cev) {
-        if (activeDrag !== token) {
+        if (activeDrag !== token || cev.pointerId !== pointerId) {
           return;
         }
         abortDrag();
@@ -598,6 +599,9 @@
 
       switch (action) {
         case 'cancel-edit':
+          if (staged === null) {
+            break; // already closing (e.g. a double-tap during the 150ms leaving window)
+          }
           if (diffMovedIds(originalOrderIds, staged).length === 0) {
             closeEdit();
           } else {
@@ -605,6 +609,9 @@
           }
           break;
         case 'done-edit': {
+          if (staged === null) {
+            break; // already closing (e.g. a double-tap during the 150ms leaving window)
+          }
           var committedPlayers = store.getState().players;
           if (stagedOrderChanged(staged, committedPlayers)) {
             store.dispatch({ type: 'REORDER_PLAYERS', order: idsOf(staged) });

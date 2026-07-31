@@ -2147,6 +2147,166 @@
   })();
   </script>
 
+  <!-- Task 4 review fixes: pointerId filtering on document-level drag listeners, the
+       inverted entrance animation, and a double-tap crash guard on Done/Cancel. -->
+  <script>
+  (function () {
+    'use strict';
+    section('reorder');
+
+    function buildEditFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML = '<div id="edit-root" hidden></div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    // A listener attached via addEventListener('click', ...) that throws does NOT propagate
+    // synchronously to the caller of .click() — the browser reports it as an uncaught
+    // exception (window's error event) instead. Capturing that is the only reliable way to
+    // detect a crash inside a delegated click handler from a synchronous DOM-fixture test.
+    function captureWindowErrors(fn) {
+      var errors = [];
+      function onError(ev) {
+        errors.push((ev && ev.error && ev.error.message) || (ev && ev.message) || String(ev));
+        if (ev && ev.preventDefault) {
+          ev.preventDefault();
+        }
+      }
+      window.addEventListener('error', onError);
+      try {
+        fn();
+      } finally {
+        window.removeEventListener('error', onError);
+      }
+      return errors;
+    }
+
+    t('drag: pointermove/pointerup/pointercancel from a mismatched pointerId are ignored; only the pointer that started the drag can end it', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var firstRow = editRoot.querySelector('#edit-list .player-row');
+        var handle = firstRow.querySelector('.drag-handle');
+        assert(handle, 'drag-handle should exist on the first row');
+
+        handle.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, pointerId: 1, button: 0, clientY: 100
+        }));
+        assert(firstRow.classList.contains('dragging'), 'drag should start on a real pointerdown');
+
+        // a second, unrelated pointer (pointerId 2) must not be able to move, end, or cancel this drag
+        document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 2, clientY: 900 }));
+        assert(firstRow.classList.contains('dragging'), 'a stray pointermove from a different pointerId must not affect the active drag');
+
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 2 }));
+        assert(firstRow.classList.contains('dragging'), 'a stray pointerup from a different pointerId must not end the drag');
+
+        document.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId: 2 }));
+        assert(firstRow.classList.contains('dragging'), 'a stray pointercancel from a different pointerId must not abort the drag');
+
+        // the pointer that actually started the drag can still end it normally
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+        assert(!firstRow.classList.contains('dragging'), 'the matching pointerId should still end the drag normally');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('open(): .entering is removed via requestAnimationFrame, not a delayed setTimeout, so the transition starts immediately', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var originalRaf = window.requestAnimationFrame;
+        var rafCalls = 0;
+        window.requestAnimationFrame = function (cb) {
+          rafCalls++;
+          cb();
+          return 0;
+        };
+        try {
+          DC.edit.open();
+        } finally {
+          window.requestAnimationFrame = originalRaf;
+        }
+
+        assert(rafCalls >= 1, 'open() should schedule the .entering removal via requestAnimationFrame');
+        assert(!editRoot.classList.contains('entering'), '.entering should already be gone once its rAF callback runs, not deferred behind a 150ms timeout');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('double-tapping Done during the leaving window dispatches exactly once and does not throw', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        var dispatchCount = 0;
+        var originalDispatch = store.dispatch;
+        store.dispatch = function (action) {
+          dispatchCount++;
+          return originalDispatch(action);
+        };
+
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var firstPlayer = DC.data.SEED_PLAYERS[0];
+        editRoot.querySelector('[data-action="rank-jump"][data-id="' + firstPlayer.id + '"]').click();
+        var input = editRoot.querySelector('.rank-input');
+        input.value = '7';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        editRoot.querySelector('[data-action="rank-jump-move"]').click();
+
+        var doneBtn = editRoot.querySelector('[data-action="done-edit"]');
+        var errors = captureWindowErrors(function () {
+          doneBtn.click();
+          doneBtn.click(); // second tap, still inside the (unflushed) 150ms leaving window — must not throw
+        });
+
+        assertEq(errors.length, 0, 'double-tapping Done must not throw: ' + (errors[0] || ''));
+        assertEq(dispatchCount, 1, 'exactly one dispatch expected even after a double-tap');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('double-tapping Cancel with no changes during the leaving window does not throw and never shows the discard card', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var cancelBtn = editRoot.querySelector('[data-action="cancel-edit"]');
+        var errors = captureWindowErrors(function () {
+          cancelBtn.click();
+          cancelBtn.click(); // second tap, still inside the (unflushed) 150ms leaving window — must not throw
+        });
+
+        assertEq(errors.length, 0, 'double-tapping Cancel must not throw: ' + (errors[0] || ''));
+        assert(!editRoot.querySelector('[data-action="discard-confirm"]'), 'no changes were made, so the discard card should never appear');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+  })();
+  </script>
+
   <!-- render results (runs last, after all test-section scripts) -->
   <script>
     (function () {
