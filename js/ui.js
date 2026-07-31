@@ -7,6 +7,7 @@
   var ARROW = '→';
   var STAR_GLYPH = '★';
   var NDASH_BYE = '—';
+  var LONG_PRESS_MS = 500;
 
   var STATUS_LABELS = { AVAILABLE: 'Available', TARGETS: 'Targets', AVOID: 'Avoid', DRAFTED: 'Drafted' };
   var POSITIONS = ['QB', 'RB', 'WR', 'TE'];
@@ -30,7 +31,8 @@
     'search-slash': '<circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line><line x1="5" y1="17" x2="17" y2="5"></line>',
     undo: '<path d="M3 11a8 8 0 1 1 2.34 5.66"></path><polyline points="3 5 3 11 9 11"></polyline>',
     gear: '<circle cx="12" cy="12" r="3"></circle><line x1="12" y1="2" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="22"></line><line x1="2" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="22" y2="12"></line><line x1="4.9" y1="4.9" x2="7" y2="7"></line><line x1="17" y1="17" x2="19.1" y2="19.1"></line><line x1="4.9" y1="19.1" x2="7" y2="17"></line><line x1="17" y1="7" x2="19.1" y2="4.9"></line>',
-    trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"></path><path d="M8 5H5a2 2 0 0 0 0 4h2"></path><path d="M16 5h3a2 2 0 0 1 0 4h-2"></path><line x1="12" y1="13" x2="12" y2="17"></line><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line>'
+    trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"></path><path d="M8 5H5a2 2 0 0 0 0 4h2"></path><path d="M16 5h3a2 2 0 0 1 0 4h-2"></path><line x1="12" y1="13" x2="12" y2="17"></line><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line>',
+    user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>'
   };
 
   /** @param {string} name @param {number} [size] pixel width/height, default 20 */
@@ -93,8 +95,13 @@
 
   function draftedRowHTML(view, pickNumber) {
     var pickText = typeof pickNumber === 'number' ? pickNumber : EMDASH;
+    var rowClasses = ['player-row'];
+    if (view.mine) {
+      rowClasses.push('is-mine');
+    }
+    var mineToggleClass = 'btn-toggle' + (view.mine ? ' on-mine' : '');
     return (
-      '<div class="player-row" data-id="' + esc(view.id) + '">' +
+      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
         '<div class="player-rank">' + view.rank + '</div>' +
         '<div class="player-info">' +
           '<div class="player-name">' +
@@ -104,6 +111,7 @@
           '<div class="player-meta">' + metaLine(view) + '</div>' +
         '</div>' +
         '<span class="pick-badge">Pick ' + pickText + '</span>' +
+        '<button class="' + mineToggleClass + '" data-action="toggle-mine" data-id="' + esc(view.id) + '">' + icon('user') + '</button>' +
         '<button class="btn-undraft" data-action="undraft" data-id="' + esc(view.id) + '">UNDO</button>' +
       '</div>'
     );
@@ -156,6 +164,7 @@
       '<button class="chip' + (filters.status === 'TARGETS' ? ' active-target' : '') + '" data-action="set-status" data-status="TARGETS">' + icon('star') + ' Targets</button>' +
       '<button class="chip' + (filters.status === 'AVOID' ? ' active-avoid' : '') + '" data-action="set-status" data-status="AVOID">' + icon('x') + ' Avoid</button>' +
       '<button class="chip' + (filters.status === 'DRAFTED' ? ' active-drafted' : '') + '" data-action="set-status" data-status="DRAFTED">' + icon('check') + ' Drafted</button>' +
+      '<button class="chip' + (filters.status === 'MINE' ? ' active-mine' : '') + '" data-action="set-status" data-status="MINE">' + icon('user') + ' Mine</button>' +
     '</div>';
 
     return positionRow + statusRow;
@@ -174,6 +183,17 @@
       : esc(STATUS_LABELS[filters.status] || filters.status || '');
     var n = typeof visibleCount === 'number' ? visibleCount : 0;
     return '<div class="summary">' + esc(posLabel) + ' ' + MIDDOT + ' ' + statusHTML + ' ' + EMDASH + ' ' + n + ' players</div>';
+  }
+
+  /**
+   * @param {{QB:number, RB:number, WR:number, TE:number}} counts
+   * @param {number} total
+   */
+  function rosterSummaryHTML(counts, total) {
+    var parts = POSITIONS.map(function (pos) {
+      return pos + ' ' + (counts[pos] || 0);
+    });
+    return '<div class="summary">My roster ' + EMDASH + ' ' + parts.join(' ' + MIDDOT + ' ') + ' (' + total + ' picks)</div>';
   }
 
   function emptyBody(iconName, title, sub, actionLabel, actionName) {
@@ -200,6 +220,8 @@
         return emptyBody('star', 'No targets yet', 'Tap the ' + STAR_GLYPH + ' on any player to mark them as a target.', null, null);
       case 'drafted':
         return emptyBody('check', 'No picks yet', 'Players you draft will show up here.', null, null);
+      case 'mine':
+        return emptyBody('user', 'No picks of yours yet', "Long-press DRAFT when it's your turn, or tag your picks in the Drafted view.", null, null);
       case 'combo': {
         var status = (detail && detail.status) || '';
         var position = (detail && detail.position) || '';
@@ -262,6 +284,7 @@
     statsStripHTML: statsStripHTML,
     chipsHTML: chipsHTML,
     summaryHTML: summaryHTML,
+    rosterSummaryHTML: rosterSummaryHTML,
     emptyStateHTML: emptyStateHTML,
     bottomBarHTML: bottomBarHTML,
     backupApplyCheck: backupApplyCheck,
@@ -515,9 +538,10 @@
       }, 0);
     }
 
-    // ---- draft tap / undo tap ----
+    // ---- draft tap / long-press / undo tap ----
 
-    function handleDraftTap(target) {
+    // shared by a normal tap (mine:false) and a fired long-press (mine:true)
+    function runDraftSequence(target, mine) {
       var row = target.closest('.player-row');
       if (!row) {
         return;
@@ -526,12 +550,87 @@
       if (row.classList.contains('exiting')) {
         return; // double-tap guard
       }
-      row.classList.add('flash-draft');
+      row.classList.add(mine ? 'flash-mine' : 'flash-draft');
       row.classList.add('exiting');
       setTimeout(function () {
-        store.dispatch({ type: 'DRAFT_PLAYER', playerId: id });
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: id, mine: mine });
       }, 150);
     }
+
+    function handleDraftTap(target) {
+      runDraftSequence(target, false);
+    }
+
+    // ---- long-press machinery: pointerdown arms a 500ms timer; pointerup/cancel/leave
+    // before it fires cancel back to a normal tap; firing marks mine:true and sets
+    // longPressFiredId so the click that always follows pointerup is suppressed once. ----
+
+    var pressTimer = null;
+    var pressBtn = null;
+    var pressPointerId = null;
+    var longPressFiredId = null;
+
+    function teardownPress() {
+      if (pressTimer !== null) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+      if (pressBtn) {
+        pressBtn.classList.remove('arming');
+        pressBtn.removeEventListener('pointerup', onPressUp);
+        pressBtn.removeEventListener('pointercancel', onPressEnd);
+        pressBtn.removeEventListener('pointerleave', onPressEnd);
+      }
+      pressBtn = null;
+      pressPointerId = null;
+    }
+
+    function onPressEnd(ev) {
+      if (ev.pointerId !== pressPointerId) {
+        return;
+      }
+      teardownPress();
+    }
+
+    function onPressUp(ev) {
+      if (ev.pointerId !== pressPointerId) {
+        return;
+      }
+      teardownPress(); // browser's ensuing click runs the normal mine:false path
+    }
+
+    function onPressFire(target, id) {
+      teardownPress();
+      longPressFiredId = id;
+      runDraftSequence(target, true);
+    }
+
+    appEl.addEventListener('pointerdown', function (ev) {
+      var target = ev.target.closest('.btn-draft');
+      if (!target || ev.button !== 0 || pressBtn) {
+        return;
+      }
+      var row = target.closest('.player-row');
+      if (row && row.classList.contains('exiting')) {
+        return;
+      }
+      var id = target.getAttribute('data-id');
+      pressBtn = target;
+      pressPointerId = ev.pointerId;
+      target.classList.add('arming');
+      target.addEventListener('pointerup', onPressUp);
+      target.addEventListener('pointercancel', onPressEnd);
+      target.addEventListener('pointerleave', onPressEnd);
+      pressTimer = setTimeout(function () {
+        onPressFire(target, id);
+      }, LONG_PRESS_MS);
+    });
+
+    appEl.addEventListener('contextmenu', function (ev) {
+      if (ev.target.closest('.btn-draft')) {
+        ev.preventDefault();
+      }
+    });
 
     function showUndoBanner(name) {
       if (undoBannerTimer) {
@@ -584,10 +683,17 @@
           store.dispatch({ type: 'TOGGLE_AVOID', playerId: id });
           break;
         case 'draft':
+          if (longPressFiredId === id) {
+            longPressFiredId = null; // the click that follows a fired long-press must not double-draft
+            break;
+          }
           handleDraftTap(target);
           break;
         case 'undraft':
           store.dispatch({ type: 'UNDRAFT_PLAYER', playerId: id });
+          break;
+        case 'toggle-mine':
+          store.dispatch({ type: 'TOGGLE_MINE', playerId: id });
           break;
         case 'set-position': {
           var pos = target.getAttribute('data-position');
@@ -685,6 +791,9 @@
       if (state.filters.status === 'DRAFTED') {
         return { kind: 'drafted' };
       }
+      if (state.filters.status === 'MINE') {
+        return { kind: 'mine' };
+      }
       var allDrafted = state.players.every(function (p) { return state.marks[p.id].drafted; });
       if (allDrafted) {
         return { kind: 'complete' };
@@ -710,7 +819,11 @@
       var counts = DC.state.availableCountsByPosition(state);
       statsEl.innerHTML = templates.statsStripHTML(counts, state.filters.position);
       chipsEl.innerHTML = templates.chipsHTML(state.filters);
-      summaryEl.innerHTML = templates.summaryHTML(state, visible.length);
+      if (state.filters.status === 'MINE' && !searching) {
+        summaryEl.innerHTML = templates.rosterSummaryHTML(DC.state.myRosterCounts(state), visible.length);
+      } else {
+        summaryEl.innerHTML = templates.summaryHTML(state, visible.length);
+      }
 
       if (visible.length === 0) {
         var empty = pickEmptyKind(state);

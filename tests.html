@@ -1891,12 +1891,23 @@
       assert(/class="stat active"[^>]*data-position="RB"/.test(html), 'RB marked active: ' + html);
     });
 
-    t('chipsHTML: renders 8 chips total; RB position + TARGETS status marked active', function () {
+    t('chipsHTML: renders 9 chips total (5 position + 4 status incl. Mine); RB position + TARGETS status marked active', function () {
       var html = DC.ui.templates.chipsHTML({ position: 'RB', status: 'TARGETS' });
       var chipMatches = html.match(/<button class="chip/g) || [];
-      assertEq(chipMatches.length, 8, 'expected 8 chips');
+      assertEq(chipMatches.length, 9, 'expected 9 chips');
       assert(/class="chip active-position"[^>]*data-position="RB"/.test(html), 'RB chip active-position: ' + html);
       assert(/class="chip active-target"[^>]*data-status="TARGETS"/.test(html), 'Targets chip active-target: ' + html);
+    });
+
+    // --- Task 2: Mine chip + MINE active state ---
+    t('chipsHTML: 4 status chips incl. Mine; MINE status marks the Mine chip active-mine', function () {
+      var html = DC.ui.templates.chipsHTML({ position: 'ALL', status: 'MINE' });
+      assert(/data-action="set-status" data-status="MINE"/.test(html), 'Mine chip present: ' + html);
+      assert(/class="chip active-mine"[^>]*data-status="MINE"/.test(html), 'Mine chip marked active-mine: ' + html);
+      assert(html.indexOf('Mine</button>') !== -1, 'Mine label rendered: ' + html);
+
+      var inactive = DC.ui.templates.chipsHTML({ position: 'ALL', status: 'DRAFTED' });
+      assert(!/active-mine/.test(inactive), 'Mine chip not active when status is DRAFTED: ' + inactive);
     });
 
     t('summaryHTML: formats position/status/count; search variant shows quoted query', function () {
@@ -3080,6 +3091,280 @@
         var moved = expected.splice(fromIndex, 1)[0];
         expected.splice(targetIndex - 1, 0, moved);
         assertEq(idsAfter, expected, 'committed order must match what the gap preview implied');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+  })();
+  </script>
+
+  <!-- Round 3 Task 2: ui.js pure-template tests — Mine chip/view, roster summary, mine toggle -->
+  <script>
+  (function () {
+    'use strict';
+    section('ui-templates');
+
+    t('playerRowHTML (drafted): toggle-mine button always present; .on-mine class + .is-mine row class only when view.mine', function () {
+      var base = { id: 'p10', rank: 15, name: 'Mine Guy', team: 'KC', position: 'RB', byeWeek: 9, drafted: true, target: false, avoid: false };
+      var mineView = Object.assign({}, base, { mine: true });
+      var notMineView = Object.assign({}, base, { mine: false });
+
+      var mineHtml = DC.ui.templates.playerRowHTML(mineView, { searching: false, statusFilter: 'DRAFTED', pickNumber: 4 });
+      var notMineHtml = DC.ui.templates.playerRowHTML(notMineView, { searching: false, statusFilter: 'DRAFTED', pickNumber: 5 });
+
+      assert(mineHtml.indexOf('data-action="toggle-mine"') !== -1, 'toggle-mine button present when mine: ' + mineHtml);
+      assert(notMineHtml.indexOf('data-action="toggle-mine"') !== -1, 'toggle-mine button present even when not mine: ' + notMineHtml);
+      assert(mineHtml.indexOf('on-mine') !== -1, 'on-mine class present when view.mine: ' + mineHtml);
+      assert(notMineHtml.indexOf('on-mine') === -1, 'on-mine class absent when !view.mine: ' + notMineHtml);
+      assert(mineHtml.indexOf('is-mine') !== -1, 'is-mine row class present when view.mine: ' + mineHtml);
+      assert(notMineHtml.indexOf('is-mine') === -1, 'is-mine row class absent when !view.mine: ' + notMineHtml);
+    });
+
+    t('rosterSummaryHTML: exact "My roster — QB 1 · RB 3 · WR 2 · TE 1 (7 picks)" format', function () {
+      var html = DC.ui.templates.rosterSummaryHTML({ QB: 1, RB: 3, WR: 2, TE: 1 }, 7);
+      assert(html.indexOf('My roster — QB 1 · RB 3 · WR 2 · TE 1 (7 picks)') !== -1, html);
+    });
+
+    t('emptyStateHTML: kind "mine" renders a distinct title/sub', function () {
+      var mine = DC.ui.templates.emptyStateHTML('mine');
+      assert(mine.indexOf('No picks of yours yet') !== -1, mine);
+      assert(mine.indexOf("Long-press DRAFT when it's your turn") !== -1, mine);
+      assert(mine !== DC.ui.templates.emptyStateHTML('drafted'), 'mine empty-state must differ from drafted empty-state');
+    });
+
+    t('playerRowHTML: MINE-view row (statusFilter "MINE") renders identically to the Drafted-view row for a drafted+mine player — same template call the render uses', function () {
+      var view = { id: 'p11', rank: 8, name: 'Roster Guy', team: 'BUF', position: 'WR', byeWeek: 5, drafted: true, target: false, avoid: false, mine: true };
+      var mineViewHtml = DC.ui.templates.playerRowHTML(view, { searching: false, statusFilter: 'MINE', pickNumber: 2 });
+      var draftedViewHtml = DC.ui.templates.playerRowHTML(view, { searching: false, statusFilter: 'DRAFTED', pickNumber: 2 });
+      assertEq(mineViewHtml, draftedViewHtml, 'MINE-view row should render via the identical drafted-row template output');
+      assert(mineViewHtml.indexOf('data-action="toggle-mine"') !== -1, 'toggle-mine present: ' + mineViewHtml);
+      assert(mineViewHtml.indexOf('Pick 2') !== -1, 'pick badge present: ' + mineViewHtml);
+      assert(mineViewHtml.indexOf('data-action="undraft"') !== -1, 'undo present: ' + mineViewHtml);
+    });
+  })();
+  </script>
+
+  <!-- Round 3 Task 2: ui.js DOM-fixture tests — long-press draft, toggle-mine, Mine chip -->
+  <script>
+  (function () {
+    'use strict';
+    section('roster-tracking');
+
+    function buildMountFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="stats-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    // Same auto-fire semantics as the established withSyncTimeouts pattern (edit.js tests):
+    // every setTimeout call made anywhere during fn(), including nested ones scheduled from
+    // inside an already-fired callback, runs synchronously and immediately.
+    function withSyncTimeouts(fn) {
+      var original = window.setTimeout;
+      window.setTimeout = function (cb) {
+        cb();
+        return 0;
+      };
+      try {
+        fn();
+      } finally {
+        window.setTimeout = original;
+      }
+    }
+
+    // Finer-grained control for the long-press's two nested timers (arm-fires at 500ms,
+    // which itself schedules the 150ms flash-then-dispatch): captures each setTimeout call
+    // into a queue instead of firing it, so a test can flush exactly one nested level at a
+    // time — needed to observe the real 0-150ms window where the button is still live and a
+    // trailing click must be suppressed, before the dispatch removes the row from the DOM.
+    function mockTimerQueue() {
+      var original = window.setTimeout;
+      var pending = [];
+      window.setTimeout = function (cb) {
+        pending.push(cb);
+        return pending.length;
+      };
+      return {
+        flushOne: function () {
+          var cb = pending.shift();
+          if (cb) {
+            cb();
+          }
+        },
+        restore: function () {
+          window.setTimeout = original;
+        }
+      };
+    }
+
+    function spyDispatch(store) {
+      var calls = [];
+      var original = store.dispatch;
+      store.dispatch = function (action) {
+        calls.push(action);
+        return original(action);
+      };
+      return { calls: calls, restore: function () { store.dispatch = original; } };
+    }
+
+    t('long-press: pointerdown, flush the 500ms arm timer, click while still live (suppressed), then flush the 150ms flash -> exactly ONE DRAFT_PLAYER dispatch with mine:true', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var btn = fixture.querySelector('.btn-draft[data-id="' + firstId + '"]');
+        assert(btn, 'expected a DRAFT button for the first seed player');
+
+        var timers = mockTimerQueue();
+        try {
+          btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+          assert(btn.classList.contains('arming'), 'arming class should be applied on pointerdown');
+          timers.flushOne(); // fires the 500ms arm timer: sets longPressFiredId, adds flash-mine+exiting, schedules the 150ms dispatch
+          assert(!btn.classList.contains('arming'), 'arming class should be removed once the long-press fires');
+          assertEq(spy.calls.length, 0, 'no dispatch yet - the 150ms flash-then-dispatch timer has not fired');
+
+          btn.click(); // the browser's ensuing click, arriving while the button is still live
+          assertEq(spy.calls.length, 0, 'click during the 0-150ms window must be suppressed, not dispatch a second time');
+
+          timers.flushOne(); // fires the 150ms flash-then-dispatch timer
+        } finally {
+          timers.restore();
+        }
+
+        var draftDispatches = spy.calls.filter(function (a) { return a.type === 'DRAFT_PLAYER'; });
+        assertEq(draftDispatches.length, 1, 'expected exactly one DRAFT_PLAYER dispatch');
+        assertEq(draftDispatches[0].playerId, firstId);
+        assertEq(draftDispatches[0].mine, true, 'long-press dispatch should carry mine:true');
+      } finally {
+        spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('short tap: pointerdown then pointerup before 500ms, then click -> ONE DRAFT_PLAYER dispatch with mine:false', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var btn = fixture.querySelector('.btn-draft[data-id="' + firstId + '"]');
+
+        btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+        assert(btn.classList.contains('arming'), 'arming class applied on pointerdown');
+        btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1 }));
+        assert(!btn.classList.contains('arming'), 'arming class removed once pointerup cancels before the 500ms timer fires');
+
+        withSyncTimeouts(function () {
+          btn.click(); // the browser's ensuing click runs the normal (mine:false) path
+        });
+
+        var draftDispatches = spy.calls.filter(function (a) { return a.type === 'DRAFT_PLAYER'; });
+        assertEq(draftDispatches.length, 1, 'expected exactly one DRAFT_PLAYER dispatch');
+        assertEq(draftDispatches[0].playerId, firstId);
+        assertEq(draftDispatches[0].mine, false, 'a short tap must mark mine:false');
+      } finally {
+        spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('pointerleave mid-press cancels the long-press: .arming removed, no dispatch', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var btn = fixture.querySelector('.btn-draft[data-id="' + firstId + '"]');
+
+        btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+        assert(btn.classList.contains('arming'), 'arming class applied on pointerdown');
+        btn.dispatchEvent(new PointerEvent('pointerleave', { bubbles: false, cancelable: true, pointerId: 1 }));
+
+        assert(!btn.classList.contains('arming'), 'arming class must be removed on pointerleave');
+        assertEq(spy.calls.length, 0, 'pointerleave must not dispatch anything');
+      } finally {
+        spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('toggle-mine: clicking the mine-toggle on a Drafted-view row flips TOGGLE_MINE and the .is-mine/.on-mine classes on re-render', function () {
+      var fixture = buildMountFixture();
+      var seed = DC.state.createSeedState();
+      var firstId = seed.players[0].id;
+      var drafted = DC.state.reduce(seed, { type: 'DRAFT_PLAYER', playerId: firstId, mine: true });
+      var initial = Object.assign({}, drafted, { filters: Object.assign({}, drafted.filters, { status: 'DRAFTED' }) });
+      var store = DC.state.createStore(initial);
+      try {
+        DC.ui.mount(store);
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        assert(row.classList.contains('is-mine'), 'row should start is-mine');
+        var toggleBtn = row.querySelector('[data-action="toggle-mine"]');
+        assert(toggleBtn.classList.contains('on-mine'), 'toggle button should start on-mine');
+
+        toggleBtn.click();
+        assertEq(store.getState().marks[firstId].mine, false, 'TOGGLE_MINE should flip mine to false');
+        row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        assert(!row.classList.contains('is-mine'), 'row should lose is-mine after re-render');
+        assert(!row.querySelector('[data-action="toggle-mine"]').classList.contains('on-mine'), 'toggle button should lose on-mine after re-render');
+
+        row.querySelector('[data-action="toggle-mine"]').click();
+        assertEq(store.getState().marks[firstId].mine, true, 'a second toggle should flip mine back to true');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('Mine chip: clicking it sets status MINE, renders the roster summary, and lists only mine-drafted rows; empty roster shows the mine empty-state', function () {
+      var fixture = buildMountFixture();
+      var seed = DC.state.createSeedState();
+      var store = DC.state.createStore(seed);
+      try {
+        DC.ui.mount(store);
+        var mineChip = fixture.querySelector('[data-action="set-status"][data-status="MINE"]');
+        assert(mineChip, 'expected a Mine chip');
+
+        mineChip.click();
+        assertEq(store.getState().filters.status, 'MINE');
+        var listEl = fixture.querySelector('#player-list');
+        assert(listEl.textContent.indexOf('No picks of yours yet') !== -1, 'empty mine roster should show the mine empty-state: ' + listEl.innerHTML);
+
+        var ids = seed.players.slice(0, 3).map(function (p) { return p.id; });
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: ids[0], mine: true });
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: ids[1], mine: true });
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: ids[2], mine: false });
+
+        var summaryText = fixture.querySelector('#summary-line').textContent;
+        assert(summaryText.indexOf('My roster') !== -1, 'roster summary should render: ' + summaryText);
+        assert(summaryText.indexOf('(2 picks)') !== -1, 'roster summary should count only mine picks: ' + summaryText);
+
+        var rows = listEl.querySelectorAll('.player-row');
+        assertEq(rows.length, 2, 'only the 2 mine-drafted players should be listed');
+        var rowIds = Array.prototype.map.call(rows, function (r) { return r.getAttribute('data-id'); }).sort();
+        assertEq(rowIds, [ids[0], ids[1]].sort(), 'the listed rows should be exactly the mine-drafted players');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);

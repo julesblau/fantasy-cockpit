@@ -180,6 +180,7 @@ body.searching #bottom-bar {
 
 .chip {
   flex: 1;
+  min-width: 0;
   height: 44px;
   border-radius: var(--radius-chip);
   background: var(--surface-2);
@@ -191,6 +192,8 @@ body.searching #bottom-bar {
   align-items: center;
   justify-content: center;
   gap: 4px;
+  padding: 0 2px;
+  white-space: nowrap;
 }
 
 .chip.active-position {
@@ -213,6 +216,12 @@ body.searching #bottom-bar {
 
 .chip.active-drafted {
   background: var(--accent-drafted);
+  color: #fff;
+  border-color: transparent;
+}
+
+.chip.active-mine {
+  background: var(--accent-position);
   color: #fff;
   border-color: transparent;
 }
@@ -304,15 +313,38 @@ button.player-rank {
   background: rgba(255, 69, 58, 0.18);
 }
 
+.btn-toggle.on-mine {
+  color: var(--accent-position);
+  background: rgba(10, 132, 255, 0.18);
+}
+
 .btn-draft {
   min-width: 64px;
   height: 44px;
   border-radius: var(--radius-button);
-  background: var(--accent-draft);
+  background-color: var(--accent-draft);
+  background-image: linear-gradient(to right, var(--accent-position), var(--accent-position));
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: 0% 100%;
   color: #000;
   font-size: 15px;
   font-weight: 700;
   border: none;
+  -webkit-touch-callout: none;
+}
+
+.btn-draft.arming {
+  animation: btn-arm-fill 500ms linear forwards;
+}
+
+@keyframes btn-arm-fill {
+  from {
+    background-size: 0% 100%;
+  }
+  to {
+    background-size: 100% 100%;
+  }
 }
 
 .player-row.is-target {
@@ -322,6 +354,10 @@ button.player-rank {
 .player-row.is-avoid {
   box-shadow: inset 3px 0 0 var(--accent-avoid);
   opacity: 0.55;
+}
+
+.player-row.is-mine {
+  box-shadow: inset 3px 0 0 var(--accent-position);
 }
 
 .player-row.is-drafted-search {
@@ -425,6 +461,19 @@ button.player-rank {
 @keyframes draft-flash {
   from {
     background: rgba(48, 209, 88, 0.25);
+  }
+  to {
+    background: var(--surface-2);
+  }
+}
+
+.player-row.flash-mine {
+  animation: mine-flash 150ms ease-out;
+}
+
+@keyframes mine-flash {
+  from {
+    background: rgba(10, 132, 255, 0.25);
   }
   to {
     background: var(--surface-2);
