@@ -32,6 +32,7 @@
   <script src="./js/state.js"></script>
   <script src="./js/importer.js"></script>
   <script src="./js/ui.js"></script>
+  <script src="./js/edit.js"></script>
 
   <!-- harness (defined before test sections) -->
   <script>
@@ -1644,6 +1645,223 @@
       } finally {
         document.body.removeChild(fixture);
       }
+    });
+  })();
+  </script>
+
+  <!-- Task 3: edit.js pure staging + geometry + template tests -->
+  <script>
+  (function () {
+    'use strict';
+    section('reorder');
+
+    function makeStaged() {
+      return [
+        { id: 'a', rank: 1, name: 'Aaron Ace', team: 'KC', position: 'QB', byeWeek: 9 },
+        { id: 'b', rank: 2, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7 },
+        { id: 'c', rank: 3, name: 'Cody Catch', team: 'MIA', position: 'WR', byeWeek: 10 },
+        { id: 'd', rank: 4, name: 'Dave Deep', team: 'KC', position: 'TE', byeWeek: 9 },
+        { id: 'e', rank: 5, name: 'Erik End', team: 'SEA', position: 'RB', byeWeek: 13 }
+      ];
+    }
+
+    // ---- staging ----
+
+    t('fromPlayers: fresh copies, same ids/order, but different object references', function () {
+      var players = makeStaged();
+      var staged = DC.edit.staging.fromPlayers(players);
+      assertEq(DC.edit.staging.idsOf(staged), ['a', 'b', 'c', 'd', 'e']);
+      staged.forEach(function (p, i) {
+        assert(p !== players[i], 'expected a shallow copy, not the same reference, at index ' + i);
+        assertEq(p, players[i], 'copy should be deep-equal to original at index ' + i);
+      });
+    });
+
+    t('moveByIndex: forward move shifts the item and closes the gap', function () {
+      var staged = makeStaged();
+      var next = DC.edit.staging.moveByIndex(staged, 0, 3);
+      assertEq(DC.edit.staging.idsOf(next), ['b', 'c', 'd', 'a', 'e']);
+    });
+
+    t('moveByIndex: backward move shifts the item back', function () {
+      var staged = makeStaged();
+      var next = DC.edit.staging.moveByIndex(staged, 3, 0);
+      assertEq(DC.edit.staging.idsOf(next), ['d', 'a', 'b', 'c', 'e']);
+    });
+
+    t('moveByIndex: fromIndex === toIndex -> same reference', function () {
+      var staged = makeStaged();
+      var next = DC.edit.staging.moveByIndex(staged, 2, 2);
+      assert(next === staged, 'expected same reference when fromIndex === toIndex');
+    });
+
+    t('moveByIndex: out-of-range fromIndex -> same reference', function () {
+      var staged = makeStaged();
+      assert(DC.edit.staging.moveByIndex(staged, -1, 2) === staged, 'negative fromIndex');
+      assert(DC.edit.staging.moveByIndex(staged, 5, 2) === staged, 'fromIndex === length');
+      assert(DC.edit.staging.moveByIndex(staged, 99, 2) === staged, 'fromIndex way out of range');
+    });
+
+    t('moveByIndex: toIndex clamps into [0, length-1]', function () {
+      var staged = makeStaged();
+      var overshootHigh = DC.edit.staging.moveByIndex(staged, 0, 999);
+      assertEq(DC.edit.staging.idsOf(overshootHigh), ['b', 'c', 'd', 'e', 'a'], 'clamped to last index');
+      var overshootLow = DC.edit.staging.moveByIndex(staged, 4, -999);
+      assertEq(DC.edit.staging.idsOf(overshootLow), ['e', 'a', 'b', 'c', 'd'], 'clamped to first index');
+    });
+
+    t('moveToRank: normal move, clamp-low (toRank 0), clamp-high (toRank beyond length)', function () {
+      var staged = makeStaged();
+      var normal = DC.edit.staging.moveToRank(staged, 'a', 3);
+      assertEq(DC.edit.staging.idsOf(normal), ['b', 'c', 'a', 'd', 'e'], 'rank 3 -> index 2');
+
+      var clampLow = DC.edit.staging.moveToRank(staged, 'e', 0);
+      assertEq(DC.edit.staging.idsOf(clampLow), ['e', 'a', 'b', 'c', 'd'], 'toRank 0 clamps to rank 1 -> index 0');
+
+      var clampHigh = DC.edit.staging.moveToRank(staged, 'a', 999);
+      assertEq(DC.edit.staging.idsOf(clampHigh), ['b', 'c', 'd', 'e', 'a'], 'toRank overshoot clamps to last rank');
+    });
+
+    t('moveToRank: unknown id -> same reference', function () {
+      var staged = makeStaged();
+      var next = DC.edit.staging.moveToRank(staged, 'zzz', 2);
+      assert(next === staged, 'expected same reference for unknown id');
+    });
+
+    t('idsOf: maps players to their ids in order', function () {
+      assertEq(DC.edit.staging.idsOf(makeStaged()), ['a', 'b', 'c', 'd', 'e']);
+    });
+
+    t('stagedOrderChanged: false on identical order (different array references), true on swap, true on length mismatch', function () {
+      var committed = makeStaged();
+      var identicalCopy = DC.edit.staging.fromPlayers(committed);
+      assert(identicalCopy !== committed, 'precondition: fromPlayers returns a different reference');
+      assertEq(DC.edit.staging.stagedOrderChanged(identicalCopy, committed), false);
+
+      var swapped = DC.edit.staging.moveByIndex(identicalCopy, 1, 2);
+      assertEq(DC.edit.staging.stagedOrderChanged(swapped, committed), true);
+
+      var shorter = committed.slice(0, 4);
+      assertEq(DC.edit.staging.stagedOrderChanged(shorter, committed), true, 'length mismatch should be true');
+    });
+
+    t('diffMovedIds: identical order -> empty array', function () {
+      var original = DC.edit.staging.idsOf(makeStaged());
+      var staged = DC.edit.staging.fromPlayers(makeStaged());
+      assertEq(DC.edit.staging.diffMovedIds(original, staged), []);
+    });
+
+    t('diffMovedIds: adjacent swap -> exactly those 2 ids', function () {
+      var staged = makeStaged();
+      var original = DC.edit.staging.idsOf(staged);
+      var swapped = DC.edit.staging.moveByIndex(staged, 1, 2);
+      assertEq(DC.edit.staging.diffMovedIds(original, swapped).sort(), ['b', 'c']);
+    });
+
+    t('diffMovedIds: a shift across the whole range reports every displaced id', function () {
+      var staged = makeStaged();
+      var original = DC.edit.staging.idsOf(staged);
+      var shifted = DC.edit.staging.moveByIndex(staged, 0, 2); // a moves past b,c
+      assertEq(DC.edit.staging.idsOf(shifted), ['b', 'c', 'a', 'd', 'e']);
+      assertEq(DC.edit.staging.diffMovedIds(original, shifted).sort(), ['a', 'b', 'c']);
+    });
+
+    // ---- geometry ----
+
+    t('dropIndexFromPointer: pointer at top -> index 0', function () {
+      assertEq(DC.edit.geom.dropIndexFromPointer(0, 0, 40, 10), 0);
+    });
+
+    t('dropIndexFromPointer: pointer past bottom with scroll -> count', function () {
+      assertEq(DC.edit.geom.dropIndexFromPointer(400, 50, 40, 10), 10);
+    });
+
+    t('dropIndexFromPointer: exact half-row midpoint rounds up (JS Math.round behavior)', function () {
+      assertEq(DC.edit.geom.dropIndexFromPointer(20, 0, 40, 10), 1, '0.5 rows -> rounds to 1');
+      assertEq(DC.edit.geom.dropIndexFromPointer(60, 0, 40, 10), 2, '1.5 rows -> rounds to 2');
+    });
+
+    t('dropIndexFromPointer: far negative and far past-bottom pointers clamp to [0, count]', function () {
+      assertEq(DC.edit.geom.dropIndexFromPointer(-100000, 0, 40, 10), 0, 'far negative clamps to 0');
+      assertEq(DC.edit.geom.dropIndexFromPointer(100000, 0, 40, 10), 10, 'far past-bottom clamps to count');
+    });
+
+    t('dropIndexFromPointer: rowStep <= 0 guard returns 0', function () {
+      assertEq(DC.edit.geom.dropIndexFromPointer(500, 100, 0, 10), 0, 'rowStep 0');
+      assertEq(DC.edit.geom.dropIndexFromPointer(500, 100, -5, 10), 0, 'rowStep negative');
+    });
+
+    t('clampRank: parses and clamps valid strings/numbers; rejects unparseable input', function () {
+      assertEq(DC.edit.geom.clampRank('17', 252), 17);
+      assertEq(DC.edit.geom.clampRank('0', 252), 1, 'clamp-low: 0 -> 1');
+      assertEq(DC.edit.geom.clampRank('999', 252), 252, 'clamp-high: 999 -> 252');
+      assertEq(DC.edit.geom.clampRank('', 252), null, 'empty string unparseable');
+      assertEq(DC.edit.geom.clampRank('abc', 252), null, 'non-numeric unparseable');
+      assertEq(DC.edit.geom.clampRank('-3', 252), null, 'negative sign unparseable');
+      assertEq(DC.edit.geom.clampRank('3.5', 252), null, 'decimal unparseable');
+      assertEq(DC.edit.geom.clampRank(17, 252), 17, 'numeric input parses the same as its string form');
+    });
+
+    t('rankJumpTargetIndex: rank 1 -> index 0; rank count -> index count-1; overshoot clamps', function () {
+      assertEq(DC.edit.geom.rankJumpTargetIndex(100, 1, 252), 0);
+      assertEq(DC.edit.geom.rankJumpTargetIndex(0, 252, 252), 251);
+      assertEq(DC.edit.geom.rankJumpTargetIndex(0, 9999, 252), 251, 'overshoot clamps to last index');
+      assertEq(DC.edit.geom.rankJumpTargetIndex(0, -5, 252), 0, 'undershoot clamps to first index');
+    });
+
+    // ---- templates ----
+
+    function baseEditView(overrides) {
+      return Object.assign({
+        id: 'ja-marr-chase-cin', rank: 1, name: "Ja'Marr Chase", team: 'CIN', position: 'WR', byeWeek: 10,
+        drafted: false, target: false, avoid: false
+      }, overrides);
+    }
+
+    t('editRowHTML: has a .drag-handle carrying data-id, with no data-action (drag is pointer-driven)', function () {
+      var html = DC.edit.templates.editRowHTML(baseEditView(), { moved: false });
+      assert(/<div class="drag-handle" data-id="ja-marr-chase-cin"/.test(html), 'drag-handle with data-id: ' + html);
+      var handleMatch = html.match(/<div class="drag-handle"[^>]*>/);
+      assert(handleMatch, 'drag-handle element found');
+      assert(handleMatch[0].indexOf('data-action') === -1, 'drag-handle must not carry data-action: ' + handleMatch[0]);
+    });
+
+    t('editRowHTML: .player-rank is tappable with data-action="rank-jump" and matching data-id', function () {
+      var html = DC.edit.templates.editRowHTML(baseEditView(), { moved: false });
+      assert(/class="player-rank" data-action="rank-jump" data-id="ja-marr-chase-cin"/.test(html), 'rank-jump action present: ' + html);
+      assert(html.indexOf('>1<') !== -1, 'rank value 1 shown: ' + html);
+    });
+
+    t('editRowHTML: DRAFTED pill + is-drafted-search only render when view.drafted is true', function () {
+      var notDrafted = DC.edit.templates.editRowHTML(baseEditView({ drafted: false }), {});
+      assert(notDrafted.indexOf('is-drafted-search') === -1, 'no is-drafted-search when not drafted: ' + notDrafted);
+      assert(notDrafted.indexOf('drafted-pill') === -1, 'no drafted-pill when not drafted: ' + notDrafted);
+
+      var drafted = DC.edit.templates.editRowHTML(baseEditView({ drafted: true }), {});
+      assert(drafted.indexOf('is-drafted-search') !== -1, 'is-drafted-search present when drafted: ' + drafted);
+      assert(drafted.indexOf('drafted-pill') !== -1 && drafted.indexOf('DRAFTED') !== -1, 'DRAFTED pill present when drafted: ' + drafted);
+    });
+
+    t('editRowHTML: .row-moved only renders when ctx.moved is true', function () {
+      var notMoved = DC.edit.templates.editRowHTML(baseEditView(), { moved: false });
+      assert(notMoved.indexOf('row-moved') === -1, 'no row-moved when ctx.moved false: ' + notMoved);
+
+      var moved = DC.edit.templates.editRowHTML(baseEditView(), { moved: true });
+      assert(moved.indexOf('row-moved') !== -1, 'row-moved present when ctx.moved true: ' + moved);
+
+      var noCtx = DC.edit.templates.editRowHTML(baseEditView(), undefined);
+      assert(noCtx.indexOf('row-moved') === -1, 'missing ctx should not throw and should not render row-moved: ' + noCtx);
+    });
+
+    t('editRowHTML: name is HTML-escaped (Ja\'Marr Chase fixture)', function () {
+      var html = DC.edit.templates.editRowHTML(baseEditView(), {});
+      assert(html.indexOf('Ja&#39;Marr Chase') !== -1, 'apostrophe escaped: ' + html);
+      assert(html.indexOf("Ja'Marr Chase") === -1, 'raw apostrophe must not appear unescaped: ' + html);
+    });
+
+    t('editRowHTML: byeWeek 0 renders as "Bye —"', function () {
+      var html = DC.edit.templates.editRowHTML(baseEditView({ byeWeek: 0 }), {});
+      assert(html.indexOf('Bye —') !== -1, 'byeWeek 0 -> Bye —: ' + html);
     });
   })();
   </script>
