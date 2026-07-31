@@ -431,13 +431,16 @@
         return dropIndexFromPointer(pointerYRelativeToList, listEl.scrollTop, rowStep, staged.length);
       }
 
+      // preview must mirror finishDrag's commit: downward shifts (fromIndex, target) exclusive of
+      // target itself (finishDrag's toIndex = target - 1 leaves the target row's own slot as the
+      // destination, not part of the displaced set); upward shifts [target, fromIndex).
       function applyGapShifts(newTargetIndex) {
         rows.forEach(function (r, idx) {
           if (idx === fromIndex) {
             return;
           }
           var shift = 0;
-          if (newTargetIndex > fromIndex && idx > fromIndex && idx <= newTargetIndex) {
+          if (newTargetIndex > fromIndex && idx > fromIndex && idx < newTargetIndex) {
             shift = -rowStep;
           } else if (newTargetIndex < fromIndex && idx < fromIndex && idx >= newTargetIndex) {
             shift = rowStep;

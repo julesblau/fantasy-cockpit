@@ -233,13 +233,14 @@
 
   /**
    * Pure decision for the backup-apply flow (Task 5 controller integration requirement):
-   * a backup written by a different schema version must not silently reach
+   * a backup written by a newer schema version must not silently reach
    * DC.state.save + reload, since load() would then discard it back to seed.
    * @param {{schemaVersion:*}} backupState
    * @returns {{ok:true}|{ok:false, error:string}}
    */
   function backupApplyCheck(backupState) {
     if (backupState && typeof backupState.schemaVersion === 'number' &&
+        backupState.schemaVersion >= 1 && backupState.schemaVersion % 1 === 0 &&
         backupState.schemaVersion <= DC.state.CURRENT_SCHEMA_VERSION) {
       return { ok: true };
     }

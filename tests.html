@@ -1587,6 +1587,19 @@
       assertEq(nonNumber.error, 'This backup is from a different app version.');
     });
 
+    // --- final review: unmigratable numeric schemaVersion values must be rejected too ---
+    t('backupApplyCheck: schemaVersion 0 is rejected (no schema that old exists) with the unchanged error string', function () {
+      var result = DC.ui.templates.backupApplyCheck({ schemaVersion: 0, players: [{}] });
+      assertEq(result.ok, false, 'schemaVersion 0 should be rejected');
+      assertEq(result.error, 'This backup is from a different app version.');
+    });
+
+    t('backupApplyCheck: non-integer schemaVersion (1.5) is rejected with the unchanged error string', function () {
+      var result = DC.ui.templates.backupApplyCheck({ schemaVersion: 1.5, players: [{}] });
+      assertEq(result.ok, false, 'schemaVersion 1.5 should be rejected');
+      assertEq(result.error, 'This backup is from a different app version.');
+    });
+
     // --- fix: two-tap confirm arm state must not survive a sheet close, and arming one
     // button must disarm any other pending confirm (mounts DC.ui into a hidden, throwaway
     // DOM fixture — no other way to exercise this DOM-wired logic) ---
@@ -2563,6 +2576,126 @@
         // the original drag (pointerId 1) must still end normally — proof its listeners were never orphaned
         document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
         assert(!rows[0].classList.contains('dragging'), 'the original drag should still end normally via its own pointerId');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+  })();
+  </script>
+
+  <!-- Final review fix wave: downward-drag gap preview must match finishDrag's commit (was one
+       slot too far, and produced a grab-jitter shift with zero pointer movement). These fixtures
+       need REAL layout (offsetHeight/getBoundingClientRect), so unlike the display:none fixtures
+       above, the root here uses visibility:hidden (preserves layout, keeps it unpainted). -->
+  <script>
+  (function () {
+    'use strict';
+    section('reorder');
+
+    function buildLaidOutEditFixture() {
+      var root = document.createElement('div');
+      root.style.position = 'fixed';
+      root.style.top = '0';
+      root.style.left = '0';
+      root.style.visibility = 'hidden';
+      root.innerHTML = '<div id="edit-root" hidden></div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    t('drag: pointerdown alone (no movement) never adds .gap-shift — grab-jitter fix', function () {
+      var fixture = buildLaidOutEditFixture();
+      var originalRaf = window.requestAnimationFrame;
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var listEl = editRoot.querySelector('#edit-list');
+        var rows = listEl.querySelectorAll('.player-row');
+        var fromIndex = 2;
+        var row = rows[fromIndex];
+        var handle = row.querySelector('.drag-handle');
+        assert(handle, 'drag-handle should exist on the grabbed row');
+
+        var rowRect = row.getBoundingClientRect();
+        assert(rowRect.height > 0, 'fixture must have real layout (non-zero row height) for this test to be meaningful');
+        // grab low in the row (75% down) so dropIndexFromPointer's round() lands on fromIndex+1
+        // even with zero pointer movement — this is the "finger sits partway down the row" case.
+        var grabClientY = rowRect.top + rowRect.height * 0.75;
+
+        // startDrag schedules its first autoScrollTick via requestAnimationFrame; stub it to fire
+        // exactly once synchronously (autoScrollTick reschedules itself — only let that 2nd, 3rd, ...
+        // call through as a no-op so we don't recurse forever) so the jitter tick is observable
+        // without waiting on a real animation frame.
+        var rafCalls = 0;
+        window.requestAnimationFrame = function (cb) {
+          rafCalls++;
+          if (rafCalls === 1) {
+            cb();
+          }
+          return 0;
+        };
+
+        handle.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, pointerId: 1, button: 0, clientY: grabClientY
+        }));
+
+        assert(rafCalls >= 1, 'expected the drag loop to schedule at least one animation frame tick');
+        var shifted = listEl.querySelectorAll('.player-row.gap-shift');
+        assertEq(shifted.length, 0, 'no row should preview a gap-shift before the pointer has moved at all');
+
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+      } finally {
+        window.requestAnimationFrame = originalRaf;
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('drag: downward gap preview matches the commit — the row exactly at the drop target is not shown as shifting, and the staged order after drop matches what the preview implied', function () {
+      var fixture = buildLaidOutEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var listEl = editRoot.querySelector('#edit-list');
+        var rows = listEl.querySelectorAll('.player-row');
+        var fromIndex = 1;
+        var targetIndex = 4; // landedIndex: dropIndexFromPointer's 0..count slot, downward of fromIndex
+
+        var idsBefore = Array.prototype.map.call(rows, function (r) { return r.getAttribute('data-id'); });
+
+        var fromRow = rows[fromIndex];
+        var handle = fromRow.querySelector('.drag-handle');
+        var targetRow = rows[targetIndex];
+        var targetRect = targetRow.getBoundingClientRect();
+        assert(targetRect.height > 0, 'fixture must have real layout (non-zero row height) for this test to be meaningful');
+
+        handle.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, pointerId: 1, button: 0, clientY: fromRow.getBoundingClientRect().top + 1
+        }));
+        // move the pointer to the target row's exact top edge -> dropIndexFromPointer rounds to targetIndex precisely
+        document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientY: targetRect.top }));
+
+        // preview: rows strictly between fromIndex and targetIndex shift up; targetIndex itself must NOT
+        // (it is the destination slot finishDrag's toIndex = targetIndex - 1 opens, not a displaced row)
+        for (var i = 0; i < rows.length; i++) {
+          var shouldShift = i > fromIndex && i < targetIndex;
+          assertEq(rows[i].classList.contains('gap-shift'), shouldShift, 'row ' + i + ' gap-shift state during preview');
+        }
+
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+
+        var idsAfter = Array.prototype.map.call(listEl.querySelectorAll('.player-row'), function (r) { return r.getAttribute('data-id'); });
+        var expected = idsBefore.slice();
+        var moved = expected.splice(fromIndex, 1)[0];
+        expected.splice(targetIndex - 1, 0, moved);
+        assertEq(idsAfter, expected, 'committed order must match what the gap preview implied');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
