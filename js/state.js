@@ -9,22 +9,28 @@
   /** @typedef {{position:("ALL"|Position), status:("AVAILABLE"|"TARGETS"|"AVOID"|"DRAFTED")}} Filters */
   /**
    * @typedef {{
-   *   schemaVersion: 1,
+   *   schemaVersion: 2,
    *   players: Player[],
    *   marks: Object<string, Marks>,
    *   undoStack: UndoEntry[],
    *   filters: Filters,
-   *   searchText: string
+   *   searchText: string,
+   *   manuallyEdited: boolean
    * }} State
    */
 
-  var CURRENT_SCHEMA_VERSION = 1;
+  var CURRENT_SCHEMA_VERSION = 2;
   var STORAGE_KEY = 'draft-cockpit/state';
   var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true };
   var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true };
 
   /** @type {Object<number, function(*): State>} old-version-number -> upgrader to next version */
   var migrations = {};
+
+  migrations[1] = function (v1) {
+    return { schemaVersion: 2, players: v1.players, marks: v1.marks, undoStack: v1.undoStack,
+             filters: v1.filters, searchText: v1.searchText, manuallyEdited: false };
+  };
 
   /** @returns {State} */
   function createSeedState() {
@@ -39,7 +45,8 @@
       marks: marks,
       undoStack: [],
       filters: { position: 'ALL', status: 'AVAILABLE' },
-      searchText: ''
+      searchText: '',
+      manuallyEdited: false
     };
   }
 
@@ -156,8 +163,23 @@
           marks: newMarks,
           undoStack: newUndoStack,
           filters: { position: 'ALL', status: 'AVAILABLE' },
-          searchText: ''
+          searchText: '',
+          manuallyEdited: false
         };
+      }
+
+      case 'REORDER_PLAYERS': {
+        var order = action.order;
+        if (!Array.isArray(order) || order.length !== state.players.length) return state;
+        var byId = {}; state.players.forEach(function (p) { byId[p.id] = p; });
+        var seen = {};
+        for (var i = 0; i < order.length; i++) {
+          var id = order[i];
+          if (typeof id !== 'string' || !byId[id] || seen[id]) return state;
+          seen[id] = true;
+        }
+        var reordered = order.map(function (id, idx) { return Object.assign({}, byId[id], { rank: idx + 1 }); });
+        return Object.assign({}, state, { players: reordered, manuallyEdited: true });
       }
 
       default:
@@ -337,7 +359,8 @@
       marks: marks,
       undoStack: undoStack,
       filters: state.filters,
-      searchText: state.searchText
+      searchText: state.searchText,
+      manuallyEdited: (typeof state.manuallyEdited === 'boolean' ? state.manuallyEdited : false)
     };
   }
 

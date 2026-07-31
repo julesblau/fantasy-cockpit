@@ -219,7 +219,7 @@
 
     t('createSeedState: correct shape from DC.data.SEED_PLAYERS', function () {
       var s = DC.state.createSeedState();
-      assertEq(s.schemaVersion, 1);
+      assertEq(s.schemaVersion, 2);
       assertEq(s.players, DC.data.SEED_PLAYERS);
       assertEq(s.undoStack, []);
       assertEq(s.filters, { position: 'ALL', status: 'AVAILABLE' });
@@ -440,6 +440,77 @@
       assert(savedRaw !== null, 'store should have persisted state to localStorage on change');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
+
+    t('createSeedState: includes manuallyEdited:false', function () {
+      var s = DC.state.createSeedState();
+      assertEq(s.manuallyEdited, false);
+    });
+
+    t('REORDER_PLAYERS: valid full permutation renumbers rank 1..N in new order, sets manuallyEdited true', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['e', 'c', 'a', 'd', 'b'] });
+      assertEq(next.players.map(function (p) { return p.id; }), ['e', 'c', 'a', 'd', 'b']);
+      assertEq(next.players.map(function (p) { return p.rank; }), [1, 2, 3, 4, 5]);
+      assertEq(next.manuallyEdited, true);
+    });
+
+    t('REORDER_PLAYERS: marks and undoStack are the same reference as before (===)', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'a' });
+      var next = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['e', 'd', 'c', 'b', 'a'] });
+      assert(next.marks === state.marks, 'marks should be same reference');
+      assert(next.undoStack === state.undoStack, 'undoStack should be same reference');
+    });
+
+    t('REORDER_PLAYERS: wrong-length order -> same state reference', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['a', 'b', 'c', 'd'] });
+      assert(next === state, 'expected same reference for wrong-length order');
+    });
+
+    t('REORDER_PLAYERS: duplicate id -> same state reference', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['a', 'b', 'c', 'd', 'a'] });
+      assert(next === state, 'expected same reference for duplicate id');
+    });
+
+    t('REORDER_PLAYERS: unknown id -> same state reference', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['a', 'b', 'c', 'd', 'zzz'] });
+      assert(next === state, 'expected same reference for unknown id');
+    });
+
+    t('REORDER_PLAYERS: identical order still commits a fresh object and sets manuallyEdited true', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['a', 'b', 'c', 'd', 'e'] });
+      assert(next !== state, 'expected a new state object even for a no-op order');
+      assertEq(next.manuallyEdited, true);
+      assertEq(next.players.map(function (p) { return p.id; }), ['a', 'b', 'c', 'd', 'e']);
+    });
+
+    t('REORDER_PLAYERS: a drafted player moved to a new rank keeps drafted mark and pickNumber', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'a' });
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'c' });
+      assertEq(DC.state.pickNumber(state, 'c'), 2);
+      var next = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['e', 'd', 'c', 'b', 'a'] });
+      var movedC = next.players.filter(function (p) { return p.id === 'c'; })[0];
+      assertEq(movedC.rank, 3, 'c moved to rank 3');
+      assertEq(next.marks.c.drafted, true, 'drafted mark preserved through reorder');
+      assertEq(DC.state.pickNumber(next, 'c'), 2, 'pick number unaffected by reorder');
+    });
+
+    t('IMPORT_PLAYERS clears manuallyEdited to false', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['e', 'd', 'c', 'b', 'a'] });
+      assertEq(state.manuallyEdited, true, 'precondition: manuallyEdited set by reorder');
+      var newPlayers = [
+        { id: 'b', rank: 1, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7 },
+        { id: 'z', rank: 2, name: 'Zeke New', team: 'NYG', position: 'RB', byeWeek: 12 }
+      ];
+      var next = DC.state.reduce(state, { type: 'IMPORT_PLAYERS', players: newPlayers });
+      assertEq(next.manuallyEdited, false);
+    });
   })();
   </script>
 
@@ -639,7 +710,7 @@
 
     t('STORAGE_KEY and CURRENT_SCHEMA_VERSION constants', function () {
       assertEq(DC.state.STORAGE_KEY, 'draft-cockpit/state');
-      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 1);
+      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 2);
     });
 
     t('load(): missing key falls back to a fresh seed state', function () {
@@ -839,6 +910,91 @@
         JSON.parse = origParse;
         localStorage.removeItem(DC.state.STORAGE_KEY);
       }
+    });
+
+    t('load(): v1 payload (no manuallyEdited field) migrates to v2, adding manuallyEdited:false and preserving everything else', function () {
+      var payload = {
+        schemaVersion: 1,
+        players: makeHealPlayers(),
+        marks: {
+          x1: { drafted: false, target: true, avoid: false },
+          x2: { drafted: true, target: false, avoid: false }
+        },
+        undoStack: [{ playerId: 'x2', timestamp: 42 }],
+        filters: { position: 'RB', status: 'AVAILABLE' },
+        searchText: 'abc'
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.schemaVersion, 2);
+      assertEq(loaded.manuallyEdited, false);
+      assertEq(loaded.players, payload.players);
+      assertEq(loaded.marks, payload.marks);
+      assertEq(loaded.undoStack, payload.undoStack);
+      assertEq(loaded.filters, payload.filters);
+      assertEq(loaded.searchText, payload.searchText);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): heals a wrong-typed manuallyEdited field to false', function () {
+      var payload = {
+        schemaVersion: 2,
+        players: makeHealPlayers(),
+        marks: {
+          x1: { drafted: false, target: false, avoid: false },
+          x2: { drafted: false, target: false, avoid: false }
+        },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: 'yes'
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.manuallyEdited, false);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): v2 payload missing manuallyEdited field heals to false', function () {
+      var payload = {
+        schemaVersion: 2,
+        players: makeHealPlayers(),
+        marks: {
+          x1: { drafted: false, target: false, avoid: false },
+          x2: { drafted: false, target: false, avoid: false }
+        },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: ''
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.manuallyEdited, false);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('save()/load() round trip preserves manuallyEdited:true from a real REORDER_PLAYERS dispatch', function () {
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+      var state = DC.state.createSeedState();
+      var order = state.players.map(function (p) { return p.id; });
+      var tmp = order[0];
+      order[0] = order[1];
+      order[1] = tmp;
+      state = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: order });
+      assertEq(state.manuallyEdited, true, 'precondition: manuallyEdited set by reorder');
+
+      DC.state.save(state);
+      var loaded = DC.state.load();
+      assertEq(loaded.schemaVersion, state.schemaVersion);
+      assertEq(loaded.manuallyEdited, true, 'manuallyEdited survives save/load round trip');
+      assertEq(loaded.players.map(function (p) { return p.id; }), state.players.map(function (p) { return p.id; }), 'reordered player order survives round trip');
+      assertEq(loaded.players.map(function (p) { return p.rank; }), state.players.map(function (p) { return p.rank; }), 'renumbered ranks survive round trip');
+      assertEq(loaded.filters, state.filters);
+      assertEq(loaded.searchText, state.searchText);
+      assertEq(loaded.undoStack, state.undoStack);
+      assertEq(Object.keys(loaded.marks).sort(), Object.keys(state.marks).sort(), 'same mark ids survive round trip');
+      assertEq(loaded.marks[order[0]], state.marks[order[0]], 'mark for swapped player survives round trip');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
     });
   })();
   </script>
