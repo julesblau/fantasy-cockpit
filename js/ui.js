@@ -239,7 +239,8 @@
    * @returns {{ok:true}|{ok:false, error:string}}
    */
   function backupApplyCheck(backupState) {
-    if (backupState && backupState.schemaVersion === DC.state.CURRENT_SCHEMA_VERSION) {
+    if (backupState && typeof backupState.schemaVersion === 'number' &&
+        backupState.schemaVersion <= DC.state.CURRENT_SCHEMA_VERSION) {
       return { ok: true };
     }
     return { ok: false, error: 'This backup is from a different app version.' };

@@ -1003,6 +1003,70 @@
       });
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
+
+    // --- Task 2: backupApplyCheck loosening — end-to-end apply-backup integration ---
+
+    t('integration: full v2 backup round-trip — REORDER_PLAYERS -> stringify -> parseBackup -> backupApplyCheck -> save -> load', function () {
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+      var state = DC.state.createSeedState();
+      var order = state.players.map(function (p) { return p.id; });
+      var tmp = order[0];
+      order[0] = order[1];
+      order[1] = tmp;
+      state = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: order });
+      assertEq(state.manuallyEdited, true, 'precondition: manuallyEdited set by reorder');
+
+      var text = JSON.stringify(state);
+      var parsed = DC.importer.parseBackup(text);
+      assertEq(parsed.ok, true, 'expected parseBackup ok:true — ' + (parsed.error || ''));
+
+      var check = DC.ui.templates.backupApplyCheck(parsed.state);
+      assertEq(check.ok, true, 'expected backupApplyCheck ok:true — ' + (check.error || ''));
+
+      DC.state.save(parsed.state);
+      var loaded = DC.state.load();
+
+      // per-field/per-player comparisons (not a single top-level assertEq) because REORDER_PLAYERS
+      // changes players' order without touching marks' key-insertion order, while load()'s
+      // normalizeMarks rebuilds marks in (new) player order — same content, different key order,
+      // which the harness's JSON.stringify-based deepEqual would otherwise flag as unequal.
+      assertEq(loaded.schemaVersion, state.schemaVersion);
+      assertEq(loaded.manuallyEdited, true, 'manuallyEdited survives the full apply-backup pipeline');
+      assertEq(loaded.filters, state.filters);
+      assertEq(loaded.searchText, state.searchText);
+      assertEq(loaded.undoStack, state.undoStack);
+      state.players.forEach(function (p, i) {
+        assertEq(loaded.players[i], p, 'player at index ' + i);
+        assertEq(loaded.marks[p.id], state.marks[p.id], 'mark for ' + p.id);
+      });
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('integration: v1 restore path — backupApplyCheck accepts a v1 backup; raw save + load migrates to v2 preserving players/marks/undoStack', function () {
+      var seed = DC.state.createSeedState();
+      var v1Payload = {
+        schemaVersion: 1,
+        players: seed.players,
+        marks: seed.marks,
+        undoStack: [],
+        filters: seed.filters,
+        searchText: seed.searchText
+      };
+
+      var check = DC.ui.templates.backupApplyCheck(v1Payload);
+      assertEq(check.ok, true, 'expected backupApplyCheck ok:true for a migratable v1 backup — ' + (check.error || ''));
+
+      // this is exactly what applyBackup() does on ok: save the raw (unmigrated) backup
+      // state, then rely on load()'s migrate/heal pipeline on the next boot.
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(v1Payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.schemaVersion, 2, 'migrated to current schema version');
+      assertEq(loaded.manuallyEdited, false, 'v1 payload had no flag; migration defaults it to false');
+      assertEq(loaded.players, v1Payload.players, 'players preserved exactly');
+      assertEq(loaded.marks, v1Payload.marks, 'marks preserved exactly');
+      assertEq(loaded.undoStack, v1Payload.undoStack, 'undoStack preserved exactly');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
   })();
   </script>
 
@@ -1195,6 +1259,30 @@
 
       var notAnObject = DC.importer.parseBackup(JSON.stringify([1, 2, 3]));
       assertEq(notAnObject.ok, false);
+    });
+
+    // --- Task 2: backupApplyCheck loosening — parseBackup structural validity is version-agnostic ---
+    t('parseBackup: v2-shaped backup (schemaVersion:2, manuallyEdited:true present) is structurally valid', function () {
+      var state = DC.state.createSeedState();
+      state = Object.assign({}, state, { manuallyEdited: true });
+      var result = DC.importer.parseBackup(JSON.stringify(state));
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.state.manuallyEdited, true);
+    });
+
+    t('parseBackup: v1-shaped backup (schemaVersion:1, no manuallyEdited field) is structurally valid', function () {
+      var seed = DC.state.createSeedState();
+      var v1Payload = {
+        schemaVersion: 1,
+        players: seed.players,
+        marks: seed.marks,
+        undoStack: seed.undoStack,
+        filters: seed.filters,
+        searchText: seed.searchText
+      };
+      var result = DC.importer.parseBackup(JSON.stringify(v1Payload));
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.state.schemaVersion, 1);
     });
 
     // --- Fixture 8: duplicate player lines ---
@@ -1480,6 +1568,22 @@
       assertEq(okResult.ok, true, 'matching version accepted');
       assertEq(badResult.ok, false, 'mismatched version rejected');
       assert(/different app version/i.test(badResult.error), 'human error mentions version mismatch: ' + badResult.error);
+    });
+
+    // --- Task 2: backupApplyCheck loosening — older migratable backups must be accepted ---
+    t('backupApplyCheck: v1-shaped (older, migratable) backup is accepted', function () {
+      var v1State = { schemaVersion: 1, players: [{}] };
+      var result = DC.ui.templates.backupApplyCheck(v1State);
+      assertEq(result.ok, true, 'a migratable older schemaVersion should be accepted — ' + (result.error || ''));
+    });
+
+    t('backupApplyCheck: missing or non-number schemaVersion is rejected with the unchanged error string', function () {
+      var missing = DC.ui.templates.backupApplyCheck({ players: [{}] });
+      var nonNumber = DC.ui.templates.backupApplyCheck({ schemaVersion: '2', players: [{}] });
+      assertEq(missing.ok, false, 'missing schemaVersion should be rejected');
+      assertEq(missing.error, 'This backup is from a different app version.');
+      assertEq(nonNumber.ok, false, 'string-typed schemaVersion should be rejected, not coerced');
+      assertEq(nonNumber.error, 'This backup is from a different app version.');
     });
 
     // --- fix: two-tap confirm arm state must not survive a sheet close, and arming one
