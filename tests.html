@@ -1890,6 +1890,263 @@
   })();
   </script>
 
+  <!-- Task 4: edit.js mount/open/close DOM-fixture tests (real mount, real clicks — same
+       hidden-container pattern as the two-tap-confirm fixture above). Real pointer-drag
+       physics (drag-handle pointerdown/move/up, edge auto-scroll) are manual/E2E scope per
+       the codebase's established boundary and are not exercised here. -->
+  <script>
+  (function () {
+    'use strict';
+    section('reorder');
+
+    function buildEditFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML = '<div id="edit-root" hidden></div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    // Production close()/open() defer their real DOM effects behind setTimeout(150) to let
+    // the .entering/.leaving CSS transition play. Tests exercise the REAL code path (not a
+    // stub) but flush that timer synchronously so assertions don't depend on wall-clock time.
+    function withSyncTimeouts(fn) {
+      var original = window.setTimeout;
+      window.setTimeout = function (cb) {
+        cb();
+        return 0;
+      };
+      try {
+        fn();
+      } finally {
+        window.setTimeout = original;
+      }
+    }
+
+    t('DC.edit.mount + open(): builds #edit-root once, lists all players in rank order, topbar/Done/Cancel present', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        assert(editRoot, 'edit-root should exist');
+        assertEq(editRoot.hidden, false, 'edit-root should be visible after open()');
+        assert(editRoot.querySelector('.edit-topbar-title'), 'topbar title should render');
+        assert(editRoot.querySelector('[data-action="cancel-edit"]'), 'Cancel button present');
+        assert(editRoot.querySelector('[data-action="done-edit"]'), 'Done button present');
+
+        var rows = editRoot.querySelectorAll('#edit-list .player-row');
+        assertEq(rows.length, DC.data.SEED_PLAYERS.length, 'expected one row per player');
+
+        var ids = Array.prototype.map.call(rows, function (r) { return r.getAttribute('data-id'); });
+        assertEq(ids, DC.data.SEED_PLAYERS.map(function (p) { return p.id; }), 'rows should be in rank order');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('rank-jump: tap rank, set input, click Move -> staged order changes and .restored is applied to the moved row', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var firstPlayer = DC.data.SEED_PLAYERS[0];
+        var rankBtn = editRoot.querySelector('[data-action="rank-jump"][data-id="' + firstPlayer.id + '"]');
+        assert(rankBtn, 'rank-jump button should exist for the first player');
+        rankBtn.click();
+
+        var card = editRoot.querySelector('.edit-card');
+        var input = card.querySelector('.rank-input');
+        var moveBtn = card.querySelector('[data-action="rank-jump-move"]');
+        assert(input && moveBtn, 'rank-jump card should render an input and a Move button');
+        assertEq(input.value, '1', 'input prefilled with the current staged rank (index+1)');
+
+        input.value = '5';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        assertEq(moveBtn.disabled, false, 'Move should be enabled for a valid in-range rank');
+
+        moveBtn.click();
+
+        var rows = editRoot.querySelectorAll('#edit-list .player-row');
+        var ids = Array.prototype.map.call(rows, function (r) { return r.getAttribute('data-id'); });
+        assertEq(ids.indexOf(firstPlayer.id), 4, 'player should now sit at index 4 (rank 5)');
+
+        var movedRow = editRoot.querySelector('[data-id="' + firstPlayer.id + '"]');
+        assert(movedRow.classList.contains('restored'), '.restored should be applied to the moved row');
+        assert(!card.parentNode.querySelector('.rank-input'), 'rank-jump card should be dismissed after Move');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('Done after a move dispatches exactly one REORDER_PLAYERS with the full new order; store re-ranked; overlay hidden', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        var dispatchCount = 0;
+        var lastAction = null;
+        var originalDispatch = store.dispatch;
+        store.dispatch = function (action) {
+          dispatchCount++;
+          lastAction = action;
+          return originalDispatch(action);
+        };
+
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var firstPlayer = DC.data.SEED_PLAYERS[0];
+        editRoot.querySelector('[data-action="rank-jump"][data-id="' + firstPlayer.id + '"]').click();
+        var input = editRoot.querySelector('.rank-input');
+        input.value = '10';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        editRoot.querySelector('[data-action="rank-jump-move"]').click();
+
+        var doneBtn = editRoot.querySelector('[data-action="done-edit"]');
+        withSyncTimeouts(function () {
+          doneBtn.click();
+        });
+
+        assertEq(dispatchCount, 1, 'exactly one dispatch expected');
+        assertEq(lastAction.type, 'REORDER_PLAYERS');
+        assertEq(lastAction.order.length, DC.data.SEED_PLAYERS.length, 'order should cover every player');
+        assertEq(lastAction.order[9], firstPlayer.id, 'moved player should land at rank 10 (index 9)');
+
+        var state = store.getState();
+        assertEq(state.players[9].id, firstPlayer.id, 'store player order should reflect the move');
+        assertEq(state.players[9].rank, 10, 'store rank should be renumbered');
+
+        assertEq(editRoot.hidden, true, 'overlay should be hidden after Done');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('Done with no changes dispatches nothing; overlay hidden', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        var dispatchCount = 0;
+        var originalDispatch = store.dispatch;
+        store.dispatch = function (action) {
+          dispatchCount++;
+          return originalDispatch(action);
+        };
+
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var doneBtn = editRoot.querySelector('[data-action="done-edit"]');
+        withSyncTimeouts(function () {
+          doneBtn.click();
+        });
+
+        assertEq(dispatchCount, 0, 'no dispatch expected when nothing changed');
+        assertEq(editRoot.hidden, true, 'overlay should be hidden after Done');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('Cancel with changes shows a discard card; Keep Editing keeps the overlay open; Discard Changes closes with zero dispatches and an unchanged store', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        var dispatchCount = 0;
+        var originalDispatch = store.dispatch;
+        store.dispatch = function (action) {
+          dispatchCount++;
+          return originalDispatch(action);
+        };
+        var originalPlayers = store.getState().players;
+
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var firstPlayer = DC.data.SEED_PLAYERS[0];
+        editRoot.querySelector('[data-action="rank-jump"][data-id="' + firstPlayer.id + '"]').click();
+        var input = editRoot.querySelector('.rank-input');
+        input.value = '3';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        editRoot.querySelector('[data-action="rank-jump-move"]').click();
+
+        var cancelBtn = editRoot.querySelector('[data-action="cancel-edit"]');
+        cancelBtn.click();
+
+        assert(editRoot.querySelector('[data-action="discard-confirm"]'), 'discard-confirm card should render Discard Changes');
+        var keepBtn = editRoot.querySelector('[data-action="discard-keep"]');
+        assert(keepBtn, 'discard-confirm card should render Keep Editing');
+        assertEq(editRoot.hidden, false, 'overlay should stay open while the discard card is showing');
+
+        keepBtn.click();
+        assertEq(editRoot.hidden, false, 'Keep Editing should keep the overlay open');
+        assert(!editRoot.querySelector('[data-action="discard-confirm"]'), 'discard card should be dismissed by Keep Editing');
+
+        cancelBtn.click();
+        var discardBtn = editRoot.querySelector('[data-action="discard-confirm"]');
+        assert(discardBtn, 'discard card should reappear on a second Cancel');
+
+        withSyncTimeouts(function () {
+          discardBtn.click();
+        });
+
+        assertEq(dispatchCount, 0, 'discarding must never dispatch');
+        assertEq(editRoot.hidden, true, 'overlay should be hidden after discarding');
+        assertEq(store.getState().players, originalPlayers, 'store players should be unchanged after discard');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('edit search filters the list and sets edit-searching; clearing restores the full list without touching the main search', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var searchInput = editRoot.querySelector('.edit-search-input');
+        assert(searchInput, 'edit search input should exist');
+
+        var targetPlayer = DC.data.SEED_PLAYERS[DC.data.SEED_PLAYERS.length - 1];
+        searchInput.value = targetPlayer.name;
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+        assert(editRoot.classList.contains('edit-searching'), 'edit-searching class should be set while searching');
+        var filteredRows = editRoot.querySelectorAll('#edit-list .player-row');
+        assert(filteredRows.length < DC.data.SEED_PLAYERS.length, 'search should filter down the list');
+        assert(filteredRows.length >= 1, 'search should still find the target player');
+
+        searchInput.value = '';
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+        assert(!editRoot.classList.contains('edit-searching'), 'edit-searching class should clear once the query is empty');
+        var restoredRows = editRoot.querySelectorAll('#edit-list .player-row');
+        assertEq(restoredRows.length, DC.data.SEED_PLAYERS.length, 'clearing search restores the full list');
+
+        assert(!document.body.classList.contains('searching'), 'the main app search machinery (body.searching) must not be touched by the edit search');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+  })();
+  </script>
+
   <!-- render results (runs last, after all test-section scripts) -->
   <script>
     (function () {

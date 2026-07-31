@@ -19,6 +19,7 @@
   --radius-card: 12px;
   --radius-button: 10px;
   --radius-sheet: 16px;
+  --shadow-lift: 0 8px 24px rgba(0, 0, 0, 0.45);
   color-scheme: dark;
 }
 
@@ -246,6 +247,21 @@ body.searching #bottom-bar {
   color: rgba(255, 255, 255, 0.45);
 }
 
+button.player-rank {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+}
+
+#edit-list button.player-rank {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
 .player-info {
   flex: 1;
   min-width: 0;
@@ -310,6 +326,46 @@ body.searching #bottom-bar {
 
 .player-row.is-drafted-search {
   opacity: 0.4;
+}
+
+.player-row.row-moved {
+  box-shadow: inset 3px 0 0 var(--accent-position);
+}
+
+.player-row.dragging {
+  z-index: 10;
+  position: relative;
+  background: var(--surface-3);
+  transform-origin: center;
+  box-shadow: var(--shadow-lift);
+}
+
+.player-row.gap-shift {
+  transition: transform 120ms ease-out;
+}
+
+.player-row.settled {
+  animation: drop-settle 100ms ease-out;
+}
+
+@keyframes drop-settle {
+  from {
+    transform: scale(1.02);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.drag-handle {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-3);
+  touch-action: none;
 }
 
 .drafted-pill {
@@ -520,4 +576,154 @@ body.searching #bottom-bar {
   font-size: 15px;
   font-weight: 600;
   min-height: 44px;
+}
+
+/* edit rankings mode */
+#edit-root {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-base);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 150ms ease-out, transform 150ms ease-out;
+}
+
+#edit-root[hidden] {
+  display: none;
+}
+
+#edit-root.entering,
+#edit-root.leaving {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.edit-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: env(safe-area-inset-top) 8px 0;
+  min-height: 44px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+
+.edit-topbar-btn {
+  min-width: 44px;
+  height: 44px;
+  background: none;
+  border: none;
+  font-size: 17px;
+}
+
+.edit-cancel {
+  color: var(--text-2);
+}
+
+.edit-done {
+  color: var(--accent-position);
+  font-weight: 700;
+}
+
+.edit-topbar-title {
+  flex: 1;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.edit-topbar-done-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.edit-count-pill {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-position);
+  background: rgba(10, 132, 255, 0.18);
+  border-radius: var(--radius-chip);
+  padding: 4px 8px;
+}
+
+#edit-list {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: 8px 16px;
+  position: relative;
+}
+
+#edit-root.edit-searching .drag-handle {
+  opacity: 0.35;
+}
+
+.edit-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--surface-1);
+  border-radius: var(--radius-sheet);
+  padding: 16px;
+  min-width: 260px;
+}
+
+.edit-card-title {
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+
+.rank-input {
+  display: block;
+  width: 100%;
+  height: 44px;
+  font-size: 17px;
+  text-align: center;
+  background: var(--surface-2);
+  color: var(--text-1);
+  border: none;
+  border-radius: var(--radius-button);
+  padding: 0 12px;
+  margin-bottom: 12px;
+  color-scheme: dark;
+}
+
+.edit-card-primary,
+.edit-card-danger,
+.edit-card-secondary {
+  width: 100%;
+  height: 44px;
+  border-radius: var(--radius-button);
+  border: none;
+  font-size: 15px;
+  font-weight: 700;
+  margin-top: 8px;
+}
+
+.edit-card-primary {
+  background: var(--accent-position);
+  color: #fff;
+}
+
+.edit-card-primary:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.edit-card-danger {
+  background: var(--accent-avoid);
+  color: #fff;
+}
+
+.edit-card-secondary {
+  background: var(--surface-3);
+  color: var(--text-1);
 }

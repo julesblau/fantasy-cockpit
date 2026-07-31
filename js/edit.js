@@ -185,6 +185,484 @@
     );
   }
 
+  // ---- mount / render (impure — DOM + store wiring) --------------------------
+
+  function attrSelector(id) {
+    return String(id).replace(/"/g, '\\"');
+  }
+
+  var AUTO_SCROLL_EDGE = 64;
+  var AUTO_SCROLL_MAX_SPEED = 16;
+
+  function mount(store) {
+    var editRootEl = document.getElementById('edit-root');
+
+    editRootEl.innerHTML =
+      '<div class="edit-topbar">' +
+        '<button type="button" class="edit-topbar-btn edit-cancel" data-action="cancel-edit">Cancel</button>' +
+        '<div class="edit-topbar-title">Edit Rankings</div>' +
+        '<div class="edit-topbar-done-wrap">' +
+          '<span class="edit-count-pill" hidden></span>' +
+          '<button type="button" class="edit-topbar-btn edit-done" data-action="done-edit">Done</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="search-bar">' +
+        '<input type="text" class="search-input edit-search-input" placeholder="Search players by name, team, or position" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">' +
+        '<button type="button" class="search-clear edit-search-clear" data-action="edit-search-clear" aria-label="Clear search">' + (DC.ui && DC.ui.icon ? DC.ui.icon('x') : '×') + '</button>' +
+      '</div>' +
+      '<div id="edit-list"></div>' +
+      '<div class="scrim edit-scrim" hidden></div>' +
+      '<div class="edit-card" hidden></div>';
+
+    var countPillEl = editRootEl.querySelector('.edit-count-pill');
+    var searchInputEl = editRootEl.querySelector('.edit-search-input');
+    var searchClearBtn = editRootEl.querySelector('.edit-search-clear');
+    var listEl = editRootEl.querySelector('#edit-list');
+    var scrimEl = editRootEl.querySelector('.edit-scrim');
+    var cardEl = editRootEl.querySelector('.edit-card');
+
+    // ---- closure state (mirrors ui.js's importPreviewState pattern; lives here, not in the store) ----
+
+    var staged = null; // Array|null — working copy of players while the editor is open
+    var marksAtOpen = null; // Object<string, Marks> — snapshot taken at open(), never mutated
+    var originalOrderIds = null; // string[] — id order snapshot taken at open()
+    var editSearchText = '';
+    var activeDrag = null; // per-drag token object; identity-checked by every drag callback
+
+    // ---- edit-card primitive (rank-jump + discard-confirm share this) ----
+
+    function showEditCard(html, scrimAction) {
+      cardEl.innerHTML = html;
+      cardEl.hidden = false;
+      scrimEl.setAttribute('data-action', scrimAction);
+      scrimEl.hidden = false;
+    }
+
+    function hideEditCard() {
+      cardEl.hidden = true;
+      cardEl.innerHTML = '';
+      scrimEl.hidden = true;
+      scrimEl.removeAttribute('data-action');
+    }
+
+    function openRankJumpCard(playerId) {
+      var ids = idsOf(staged);
+      var idx = ids.indexOf(playerId);
+      if (idx === -1) {
+        return;
+      }
+      var player = staged[idx];
+      var html =
+        '<div class="edit-card-title">Move ' + esc(player.name) + ' to rank</div>' +
+        '<input type="text" class="rank-input" inputmode="numeric" pattern="[0-9]*" value="' + (idx + 1) + '">' +
+        '<button type="button" class="edit-card-primary" data-action="rank-jump-move" data-id="' + esc(playerId) + '">Move</button>';
+      showEditCard(html, 'rank-jump-cancel');
+
+      var input = cardEl.querySelector('.rank-input');
+      var moveBtn = cardEl.querySelector('.edit-card-primary');
+
+      function refreshDisabled() {
+        moveBtn.disabled = clampRank(input.value, staged.length) === null;
+      }
+      input.addEventListener('input', refreshDisabled);
+      input.addEventListener('keydown', function (kev) {
+        if (kev.key === 'Enter' && !moveBtn.disabled) {
+          commitRankJump(playerId, input.value);
+        }
+      });
+      refreshDisabled();
+      input.select();
+    }
+
+    function commitRankJump(playerId, rawValue) {
+      var n = clampRank(rawValue, staged.length);
+      if (n === null) {
+        return;
+      }
+      staged = moveToRank(staged, playerId, n);
+      hideEditCard();
+      renderEditList();
+
+      var rowEl = listEl.querySelector('[data-id="' + attrSelector(playerId) + '"]');
+      if (rowEl) {
+        var listHeight = listEl.clientHeight;
+        var rowTop = rowEl.offsetTop;
+        var rowHeight = rowEl.offsetHeight;
+        var target = rowTop - listHeight / 2 + rowHeight / 2;
+        var maxScroll = Math.max(0, listEl.scrollHeight - listEl.clientHeight);
+        listEl.scrollTop = Math.max(0, Math.min(maxScroll, target));
+
+        rowEl.classList.add('restored');
+        rowEl.addEventListener('animationend', function onDone() {
+          rowEl.classList.remove('restored');
+          rowEl.removeEventListener('animationend', onDone);
+        });
+      }
+    }
+
+    function openDiscardCard() {
+      var html =
+        '<div class="edit-card-title">Discard your ranking changes?</div>' +
+        '<button type="button" class="edit-card-danger" data-action="discard-confirm">Discard Changes</button>' +
+        '<button type="button" class="edit-card-secondary" data-action="discard-keep">Keep Editing</button>';
+      showEditCard(html, 'discard-keep');
+    }
+
+    // ---- render ----
+
+    function updateCountPill(n) {
+      if (n > 0) {
+        countPillEl.hidden = false;
+        countPillEl.textContent = String(n);
+      } else {
+        countPillEl.hidden = true;
+        countPillEl.textContent = '';
+      }
+    }
+
+    function renderEditList() {
+      var movedIds = diffMovedIds(originalOrderIds, staged);
+      var movedSet = {};
+      movedIds.forEach(function (id) {
+        movedSet[id] = true;
+      });
+
+      var indexOfId = {};
+      staged.forEach(function (p, i) {
+        indexOfId[p.id] = i;
+      });
+
+      var searching = editSearchText.trim() !== '';
+      editRootEl.classList.toggle('edit-searching', searching);
+
+      var rows = searching
+        ? staged.filter(function (p) { return DC.state.matchesSearch(p, editSearchText); })
+        : staged;
+
+      listEl.innerHTML = rows.map(function (p) {
+        var view = Object.assign({}, p, marksAtOpen[p.id], { rank: indexOfId[p.id] + 1 });
+        return editRowHTML(view, { moved: !!movedSet[p.id] });
+      }).join('');
+
+      updateCountPill(movedIds.length);
+      searchClearBtn.style.display = editSearchText !== '' ? '' : 'none';
+    }
+
+    // ---- open / close lifecycle ----
+
+    function open() {
+      var state = store.getState();
+      staged = fromPlayers(state.players);
+      marksAtOpen = state.marks;
+      originalOrderIds = idsOf(state.players);
+      editSearchText = '';
+      searchInputEl.value = '';
+      hideEditCard();
+      renderEditList();
+      listEl.scrollTop = 0;
+
+      editRootEl.hidden = false;
+      editRootEl.classList.remove('leaving');
+      editRootEl.classList.add('entering');
+      setTimeout(function () {
+        editRootEl.classList.remove('entering');
+      }, 150);
+    }
+
+    function closeEdit() {
+      hideEditCard();
+      editRootEl.classList.remove('entering');
+      editRootEl.classList.add('leaving');
+      staged = null;
+      marksAtOpen = null;
+      originalOrderIds = null;
+      setTimeout(function () {
+        editRootEl.hidden = true;
+        editRootEl.classList.remove('leaving');
+        editRootEl.classList.remove('edit-searching');
+      }, 150);
+    }
+
+    // ---- drag mechanics (pointer events on .drag-handle) ----
+
+    function startDrag(ev, handle) {
+      var row = handle.closest('.player-row');
+      if (!row) {
+        return;
+      }
+      var rows = Array.prototype.slice.call(listEl.querySelectorAll('.player-row'));
+      var fromIndex = rows.indexOf(row);
+      if (fromIndex === -1) {
+        return;
+      }
+
+      var token = {};
+      activeDrag = token;
+
+      var pointerId = ev.pointerId;
+      try {
+        handle.setPointerCapture(pointerId);
+      } catch (e) {
+        // capture is best-effort; a drag that never captures still works via document listeners
+      }
+
+      var startClientY = ev.clientY;
+      var startScrollTop = listEl.scrollTop;
+      var marginBottom = parseFloat(getComputedStyle(row).marginBottom) || 0;
+      var rowStep = row.offsetHeight + marginBottom;
+      var lastPointerY = ev.clientY;
+      var currentTargetIndex = fromIndex;
+      var rafId = null;
+
+      row.classList.add('dragging');
+
+      function onTouchMove(tev) {
+        if (activeDrag !== token) {
+          return;
+        }
+        tev.preventDefault();
+      }
+      document.addEventListener('touchmove', onTouchMove, { passive: false });
+
+      function computeTargetIndex(clientY) {
+        var listRect = listEl.getBoundingClientRect();
+        var pointerYRelativeToList = clientY - listRect.top;
+        return dropIndexFromPointer(pointerYRelativeToList, listEl.scrollTop, rowStep, staged.length);
+      }
+
+      function applyGapShifts(newTargetIndex) {
+        rows.forEach(function (r, idx) {
+          if (idx === fromIndex) {
+            return;
+          }
+          var shift = 0;
+          if (newTargetIndex > fromIndex && idx > fromIndex && idx <= newTargetIndex) {
+            shift = -rowStep;
+          } else if (newTargetIndex < fromIndex && idx < fromIndex && idx >= newTargetIndex) {
+            shift = rowStep;
+          }
+          if (shift !== 0) {
+            r.classList.add('gap-shift');
+            r.style.transform = 'translateY(' + shift + 'px)';
+          } else {
+            r.classList.remove('gap-shift');
+            r.style.transform = '';
+          }
+        });
+        currentTargetIndex = newTargetIndex;
+      }
+
+      function updateDragVisual() {
+        // the row stays a normal flow child of the scrolling list, so its un-transformed
+        // screen position already moves by -scrollDelta on its own; add scrollDelta back so
+        // the row stays pinned to the pointer instead of drifting during edge auto-scroll
+        var scrollDelta = listEl.scrollTop - startScrollTop;
+        row.style.transform = 'translateY(' + (lastPointerY - startClientY + scrollDelta) + 'px) scale(1.02)';
+        var newTargetIndex = computeTargetIndex(lastPointerY);
+        if (newTargetIndex !== currentTargetIndex) {
+          applyGapShifts(newTargetIndex);
+        }
+      }
+
+      function autoScrollTick() {
+        if (activeDrag !== token) {
+          return;
+        }
+        var listRect = listEl.getBoundingClientRect();
+        var clampedY = Math.max(listRect.top, Math.min(listRect.bottom, lastPointerY));
+        var distTop = clampedY - listRect.top;
+        var distBottom = listRect.bottom - clampedY;
+        var maxScroll = Math.max(0, listEl.scrollHeight - listEl.clientHeight);
+        var speed = 0;
+        if (distTop < AUTO_SCROLL_EDGE) {
+          speed = -(((AUTO_SCROLL_EDGE - distTop) / AUTO_SCROLL_EDGE) * AUTO_SCROLL_MAX_SPEED);
+        } else if (distBottom < AUTO_SCROLL_EDGE) {
+          speed = ((AUTO_SCROLL_EDGE - distBottom) / AUTO_SCROLL_EDGE) * AUTO_SCROLL_MAX_SPEED;
+        }
+        if (speed !== 0 && maxScroll > 0) {
+          listEl.scrollTop = Math.max(0, Math.min(maxScroll, listEl.scrollTop + speed));
+        }
+        updateDragVisual();
+        rafId = requestAnimationFrame(autoScrollTick);
+      }
+
+      function onPointerMove(mev) {
+        if (activeDrag !== token) {
+          return;
+        }
+        lastPointerY = mev.clientY;
+        updateDragVisual();
+      }
+
+      function teardownDrag() {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+        }
+        document.removeEventListener('touchmove', onTouchMove);
+        document.removeEventListener('pointermove', onPointerMove);
+        document.removeEventListener('pointerup', onPointerUp);
+        document.removeEventListener('pointercancel', onPointerCancel);
+        window.removeEventListener('resize', onViewportChange);
+        window.removeEventListener('orientationchange', onViewportChange);
+        if (window.visualViewport) {
+          window.visualViewport.removeEventListener('resize', onViewportChange);
+        }
+        try {
+          handle.releasePointerCapture(pointerId);
+        } catch (e) {
+          // no-op: capture may already be released (e.g. by the browser on pointercancel)
+        }
+        rows.forEach(function (r) {
+          r.classList.remove('gap-shift');
+          r.classList.remove('dragging');
+          r.style.transform = '';
+        });
+        activeDrag = null;
+      }
+
+      function abortDrag() {
+        if (activeDrag !== token) {
+          return;
+        }
+        teardownDrag();
+        // staged is intentionally left untouched — abort never commits a move
+      }
+
+      function finishDrag() {
+        if (activeDrag !== token) {
+          return;
+        }
+        var landedIndex = currentTargetIndex;
+        teardownDrag();
+        if (landedIndex !== fromIndex) {
+          // dropIndexFromPointer returns a slot in [0..count]; a slot AFTER fromIndex already
+          // accounts for the dragged row's own vacated position, so shift the destination back
+          // by 1 to get a valid moveByIndex toIndex (moveByIndex itself clamps).
+          var toIndex = landedIndex > fromIndex ? landedIndex - 1 : landedIndex;
+          var movedId = staged[fromIndex].id;
+          staged = moveByIndex(staged, fromIndex, toIndex);
+          renderEditList();
+          var newRow = listEl.querySelector('[data-id="' + attrSelector(movedId) + '"]');
+          if (newRow) {
+            newRow.classList.add('settled');
+            newRow.addEventListener('animationend', function onDone() {
+              newRow.classList.remove('settled');
+              newRow.removeEventListener('animationend', onDone);
+            });
+          }
+        }
+      }
+
+      function onPointerUp(uev) {
+        if (activeDrag !== token) {
+          return;
+        }
+        finishDrag();
+      }
+
+      function onPointerCancel(cev) {
+        if (activeDrag !== token) {
+          return;
+        }
+        abortDrag();
+      }
+
+      function onViewportChange() {
+        if (activeDrag !== token) {
+          return;
+        }
+        abortDrag();
+      }
+
+      document.addEventListener('pointermove', onPointerMove);
+      document.addEventListener('pointerup', onPointerUp);
+      document.addEventListener('pointercancel', onPointerCancel);
+      window.addEventListener('resize', onViewportChange);
+      window.addEventListener('orientationchange', onViewportChange);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', onViewportChange);
+      }
+
+      rafId = requestAnimationFrame(autoScrollTick);
+    }
+
+    // ---- event wiring ----
+
+    editRootEl.addEventListener('click', function (ev) {
+      var target = ev.target.closest('[data-action]');
+      if (!target) {
+        return;
+      }
+      var action = target.getAttribute('data-action');
+      var id = target.getAttribute('data-id');
+
+      switch (action) {
+        case 'cancel-edit':
+          if (diffMovedIds(originalOrderIds, staged).length === 0) {
+            closeEdit();
+          } else {
+            openDiscardCard();
+          }
+          break;
+        case 'done-edit': {
+          var committedPlayers = store.getState().players;
+          if (stagedOrderChanged(staged, committedPlayers)) {
+            store.dispatch({ type: 'REORDER_PLAYERS', order: idsOf(staged) });
+          }
+          closeEdit();
+          break;
+        }
+        case 'rank-jump':
+          openRankJumpCard(id);
+          break;
+        case 'rank-jump-move': {
+          var input = cardEl.querySelector('.rank-input');
+          commitRankJump(id, input ? input.value : '');
+          break;
+        }
+        case 'rank-jump-cancel':
+          hideEditCard();
+          break;
+        case 'discard-confirm':
+          hideEditCard();
+          closeEdit();
+          break;
+        case 'discard-keep':
+          hideEditCard();
+          break;
+        case 'edit-search-clear':
+          editSearchText = '';
+          searchInputEl.value = '';
+          renderEditList();
+          break;
+        default:
+          break;
+      }
+    });
+
+    searchInputEl.addEventListener('input', function () {
+      editSearchText = searchInputEl.value;
+      renderEditList();
+    });
+
+    listEl.addEventListener('pointerdown', function (ev) {
+      if (ev.button !== 0) {
+        return;
+      }
+      var handle = ev.target.closest('.drag-handle');
+      if (!handle) {
+        return;
+      }
+      if (editRootEl.classList.contains('edit-searching')) {
+        return; // disabled while searching — see .edit-searching .drag-handle in styles.css
+      }
+      startDrag(ev, handle);
+    });
+
+    DC.edit.open = open;
+    DC.edit.close = closeEdit;
+  }
+
   DC.edit = {
     staging: {
       fromPlayers: fromPlayers,
@@ -201,6 +679,7 @@
     },
     templates: {
       editRowHTML: editRowHTML
-    }
+    },
+    mount: mount
   };
 })();
