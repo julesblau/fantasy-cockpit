@@ -246,6 +246,16 @@
     return { ok: false, error: 'This backup is from a different app version.' };
   }
 
+  /**
+   * Pure decision for the import auto-backup interlock (Task 5): a manually
+   * reordered board must be backed up before an import overwrites it.
+   * @param {{manuallyEdited:*}} state
+   * @returns {boolean}
+   */
+  function shouldAutoBackupBeforeImport(state) {
+    return !!(state && state.manuallyEdited);
+  }
+
   var templates = {
     playerRowHTML: playerRowHTML,
     statsStripHTML: statsStripHTML,
@@ -253,7 +263,8 @@
     summaryHTML: summaryHTML,
     emptyStateHTML: emptyStateHTML,
     bottomBarHTML: bottomBarHTML,
-    backupApplyCheck: backupApplyCheck
+    backupApplyCheck: backupApplyCheck,
+    shouldAutoBackupBeforeImport: shouldAutoBackupBeforeImport
   };
 
   // ---- mount / render (impure — DOM + store wiring) --------------------------
@@ -290,6 +301,7 @@
         '<button class="sheet-row" data-action="reset-draft">Reset Draft</button>' +
         '<button class="sheet-row" data-action="reset-targets-avoid">Reset Targets/Avoid</button>' +
         '<button class="sheet-row destructive" data-action="clear-all-data">Clear All Data</button>' +
+        '<button class="sheet-row" data-action="edit-rankings">Edit Rankings</button>' +
         '<button class="sheet-row" data-action="toggle-import">Import Rankings</button>' +
         '<div class="import-area" hidden>' +
           '<textarea class="import-textarea" placeholder="Paste rankings or a backup JSON file&#39;s contents here"></textarea>' +
@@ -407,7 +419,11 @@
       }
       if (importPreviewState.kind === 'rankings') {
         var r = importPreviewState.result;
-        var msg = 'Parsed ' + r.players.length + ' players (skipped ' + r.skipped + ' K/DST)';
+        var msg = '';
+        if (store.getState().manuallyEdited) {
+          msg += "You've manually reordered rankings — a backup will download automatically before this replaces them. ";
+        }
+        msg += 'Parsed ' + r.players.length + ' players (skipped ' + r.skipped + ' K/DST)';
         if (r.warnings && r.warnings.length) {
           msg += ' ' + EMDASH + ' ' + r.warnings.length + ' warning(s)';
         }
@@ -447,6 +463,9 @@
     function applyRankings() {
       if (!importPreviewState || importPreviewState.kind !== 'rankings') {
         return;
+      }
+      if (DC.ui.templates.shouldAutoBackupBeforeImport(store.getState())) {
+        handleExport(); // captures the pre-import, manually-ordered state
       }
       store.dispatch({ type: 'IMPORT_PLAYERS', players: importPreviewState.result.players });
       closeSettings();
@@ -602,6 +621,10 @@
           break;
         case 'toggle-import':
           toggleImportArea();
+          break;
+        case 'edit-rankings':
+          closeSettings();
+          DC.edit.open();
           break;
         case 'reset-draft':
           confirmAction(target, function () {

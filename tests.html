@@ -1646,6 +1646,174 @@
         document.body.removeChild(fixture);
       }
     });
+
+    // --- Task 5: entry point + import auto-backup interlock ---
+
+    var TASK5_RANKINGS_TEXT = [
+      '1. Aaron Ace KC QB',
+      '2. Bobby Back DAL RB',
+      '3. Cody Catch MIA WR',
+      '4. Dave Deep SEA TE',
+      '5. Erik End BUF QB'
+    ].join('\n');
+
+    t('shouldAutoBackupBeforeImport: false for seed; true after REORDER_PLAYERS; false again after IMPORT_PLAYERS', function () {
+      var seed = DC.state.createSeedState();
+      assertEq(DC.ui.templates.shouldAutoBackupBeforeImport(seed), false, 'seed state should not require a backup');
+
+      var order = seed.players.slice().reverse().map(function (p) { return p.id; });
+      var reordered = DC.state.reduce(seed, { type: 'REORDER_PLAYERS', order: order });
+      assertEq(DC.ui.templates.shouldAutoBackupBeforeImport(reordered), true, 'a manual reorder should require a backup before the next import');
+
+      var imported = DC.state.reduce(reordered, { type: 'IMPORT_PLAYERS', players: reordered.players });
+      assertEq(DC.ui.templates.shouldAutoBackupBeforeImport(imported), false, 'a fresh import clears manuallyEdited, so no backup should be required right after');
+    });
+
+    t('sheet: Edit Rankings row sits above Import Rankings, closes the sheet, and calls DC.edit.open', function () {
+      var fixture = buildMountFixture();
+      var realEdit = window.DC.edit;
+      var opened = false;
+      window.DC.edit = { open: function () { opened = true; } };
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.ui.mount(store);
+
+        var sheetEl = fixture.querySelector('.sheet');
+        var editBtn = sheetEl.querySelector('[data-action="edit-rankings"]');
+        var importBtn = sheetEl.querySelector('[data-action="toggle-import"]');
+        assert(editBtn && importBtn, 'expected both the edit-rankings and toggle-import rows to exist');
+
+        var rows = Array.prototype.slice.call(sheetEl.children);
+        assert(rows.indexOf(editBtn) < rows.indexOf(importBtn), 'edit-rankings row should be positioned above Import Rankings');
+
+        fixture.querySelector('[data-action="open-settings"]').click();
+        editBtn.click();
+
+        assert(opened, 'DC.edit.open should have been called');
+        assertEq(sheetEl.hidden, true, 'sheet should be hidden after tapping edit-rankings');
+      } finally {
+        window.DC.edit = realEdit;
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('applyRankings: manuallyEdited true auto-backs-up (createObjectURL) BEFORE the single IMPORT_PLAYERS dispatch', function () {
+      var fixture = buildMountFixture();
+      var seed = DC.state.createSeedState();
+      var store = DC.state.createStore(Object.assign({}, seed, { manuallyEdited: true }));
+
+      var seq = 0;
+      var createCalls = [];
+      var dispatchCalls = [];
+      var originalCreateObjectURL = URL.createObjectURL;
+      var originalDispatch = store.dispatch;
+
+      URL.createObjectURL = function (blob) {
+        createCalls.push({ seq: seq++, blob: blob });
+        return 'blob:test-stub';
+      };
+      store.dispatch = function (action) {
+        dispatchCalls.push({ seq: seq++, action: action });
+        return originalDispatch(action);
+      };
+
+      try {
+        DC.ui.mount(store);
+
+        fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="toggle-import"]').click();
+        fixture.querySelector('.import-textarea').value = TASK5_RANKINGS_TEXT;
+        fixture.querySelector('[data-action="import-parse"]').click();
+
+        var applyBtn = fixture.querySelector('[data-action="import-apply-rankings"]');
+        assert(applyBtn, 'import-apply-rankings button should render after a successful rankings parse');
+        applyBtn.click(); // first tap: arm
+        applyBtn.click(); // second tap: confirm -> applyRankings()
+
+        var importDispatches = dispatchCalls.filter(function (d) { return d.action.type === 'IMPORT_PLAYERS'; });
+        assertEq(importDispatches.length, 1, 'expected exactly one IMPORT_PLAYERS dispatch');
+        assertEq(createCalls.length, 1, 'expected exactly one createObjectURL (backup) call when manuallyEdited is true');
+        assert(createCalls[0].seq < importDispatches[0].seq, 'backup export must run before the IMPORT_PLAYERS dispatch');
+        // Blob content is intentionally NOT asserted here: Blob#text() is async and reading it
+        // would require the test itself to go async; call-order + call-count is sufficient to
+        // prove the ordering invariant synchronously, per the Task 5 spec.
+      } finally {
+        URL.createObjectURL = originalCreateObjectURL;
+        store.dispatch = originalDispatch;
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('applyRankings: manuallyEdited false skips the auto-backup — no createObjectURL call, import still proceeds', function () {
+      var fixture = buildMountFixture();
+      var seed = DC.state.createSeedState();
+      var store = DC.state.createStore(Object.assign({}, seed, { manuallyEdited: false }));
+
+      var createCalls = [];
+      var dispatchCalls = [];
+      var originalCreateObjectURL = URL.createObjectURL;
+      var originalDispatch = store.dispatch;
+
+      URL.createObjectURL = function (blob) {
+        createCalls.push(blob);
+        return 'blob:test-stub';
+      };
+      store.dispatch = function (action) {
+        dispatchCalls.push(action);
+        return originalDispatch(action);
+      };
+
+      try {
+        DC.ui.mount(store);
+
+        fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="toggle-import"]').click();
+        fixture.querySelector('.import-textarea').value = TASK5_RANKINGS_TEXT;
+        fixture.querySelector('[data-action="import-parse"]').click();
+
+        var applyBtn = fixture.querySelector('[data-action="import-apply-rankings"]');
+        applyBtn.click(); // arm
+        applyBtn.click(); // confirm
+
+        var importDispatches = dispatchCalls.filter(function (a) { return a.type === 'IMPORT_PLAYERS'; });
+        assertEq(importDispatches.length, 1, 'import should still proceed with exactly one dispatch');
+        assertEq(createCalls.length, 0, 'no backup should be created when manuallyEdited is false');
+      } finally {
+        URL.createObjectURL = originalCreateObjectURL;
+        store.dispatch = originalDispatch;
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('renderImportPreview: manuallyEdited true prepends the auto-backup note to the rankings preview; false does not', function () {
+      function previewTextFor(manuallyEdited) {
+        var fixture = buildMountFixture();
+        try {
+          var seed = DC.state.createSeedState();
+          var store = DC.state.createStore(Object.assign({}, seed, { manuallyEdited: manuallyEdited }));
+          DC.ui.mount(store);
+
+          fixture.querySelector('[data-action="open-settings"]').click();
+          fixture.querySelector('[data-action="toggle-import"]').click();
+          fixture.querySelector('.import-textarea').value = TASK5_RANKINGS_TEXT;
+          fixture.querySelector('[data-action="import-parse"]').click();
+
+          return fixture.querySelector('.import-preview').textContent;
+        } finally {
+          document.body.removeChild(fixture);
+          localStorage.removeItem(DC.state.STORAGE_KEY);
+        }
+      }
+
+      var withEdit = previewTextFor(true);
+      assert(withEdit.indexOf('backup will download automatically') !== -1, 'manuallyEdited true should show the auto-backup note: ' + withEdit);
+
+      var withoutEdit = previewTextFor(false);
+      assert(withoutEdit.indexOf('backup will download automatically') === -1, 'manuallyEdited false should not show the auto-backup note: ' + withoutEdit);
+    });
   })();
   </script>
 
