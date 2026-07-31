@@ -887,10 +887,10 @@
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
-    t('load(): a throw from deep inside normalizeMarks still falls back to seed instead of crashing the boot', function () {
+    t('load(): a throw from deep inside normalize still falls back to seed instead of crashing the boot', function () {
       var trickyPlayers = makeHealPlayers();
       trickyPlayers.forEach = function () {
-        throw new TypeError('simulated crash inside normalizeMarks');
+        throw new TypeError('simulated crash inside normalize');
       };
       var payload = {
         schemaVersion: 1,
@@ -1037,7 +1037,7 @@
 
       // per-field/per-player comparisons (not a single top-level assertEq) because REORDER_PLAYERS
       // changes players' order without touching marks' key-insertion order, while load()'s
-      // normalizeMarks rebuilds marks in (new) player order — same content, different key order,
+      // normalize rebuilds marks in (new) player order — same content, different key order,
       // which the harness's JSON.stringify-based deepEqual would otherwise flag as unequal.
       assertEq(loaded.schemaVersion, state.schemaVersion);
       assertEq(loaded.manuallyEdited, true, 'manuallyEdited survives the full apply-backup pipeline');
@@ -3489,6 +3489,35 @@
       assertEq(next.manuallyEdited, true);
       assert(next.marks === state.marks, 'marks should be same reference, exactly as before tiers existed');
       assert(next.undoStack === state.undoStack, 'undoStack should be same reference');
+    });
+
+    t('REORDER_PLAYERS: an order-only reorder on an untiered board produces byte-identical player objects to the pre-fix reducer (normalizeTiers is a true no-op here)', function () {
+      var state = makeBaseState();
+      var order = ['e', 'c', 'a', 'd', 'b'];
+      var byId = {};
+      state.players.forEach(function (p) { byId[p.id] = p; });
+      var expected = order.map(function (id, idx) { return Object.assign({}, byId[id], { rank: idx + 1 }); });
+
+      var next = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: order });
+      assertEq(next.players, expected, 'normalizeTiers must be a no-op on an all-untiered board, so back-compat is untouched by construction');
+    });
+
+    t('REORDER_PLAYERS: a board with tiers (set via a prior tiers-bearing reorder) stays monotone through a LATER order-only reorder that would otherwise violate it', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, {
+        type: 'REORDER_PLAYERS',
+        order: ['a', 'b', 'c', 'd', 'e'],
+        tiers: { a: 1, b: 2, c: 2, d: 3, e: 3 }
+      });
+      assertEq(state.players.map(function (p) { return p.tier; }), [1, 2, 2, 3, 3], 'precondition: tiered and monotone in this order');
+
+      // reversing the order with no tiers param would otherwise persist tiers [3,3,2,2,1] mid-session
+      var next = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['e', 'd', 'c', 'b', 'a'] });
+      var tiers = next.players.map(function (p) { return p.tier; });
+      for (var i = 1; i < tiers.length; i++) {
+        assert(tiers[i] >= tiers[i - 1], 'tier must be monotone non-decreasing at index ' + i + ': ' + JSON.stringify(tiers));
+      }
+      assertEq(tiers, [3, 3, 3, 3, 3], 'c/b/a get clamped up to the running max carried in from e/d — an order-only reorder must never persist a non-monotone board');
     });
 
     t('REORDER_PLAYERS: invalid per-id tier values (string, float, zero, negative) heal to null; unknown ids in the map are ignored', function () {

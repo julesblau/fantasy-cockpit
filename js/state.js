@@ -389,8 +389,12 @@
             var t = (v === null) ? null : (Number.isInteger(v) && v >= 1 ? v : null);
             return Object.assign({}, p, { tier: t });
           });
-          reordered = normalizeTiers(reordered);
         }
+        // always re-normalize, tiers param or not: a plain drag-reorder on an already-tiered
+        // board can shuffle tiers out of monotone order too, and that must never persist
+        // mid-session (only healed on next load()). A no-op on an all-null-tier board, so
+        // today's untiered back-compat is unchanged by construction.
+        reordered = normalizeTiers(reordered);
         return Object.assign({}, state, { players: reordered, manuallyEdited: true });
       }
 
