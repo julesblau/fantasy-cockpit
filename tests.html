@@ -3259,6 +3259,44 @@
       }
     });
 
+    t('long-press flag does not leak past its own dispatch: after the row exits with no trailing click delivered (detached case), the NEXT normal tap on that id must not be swallowed', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var btn = fixture.querySelector('.btn-draft[data-id="' + firstId + '"]');
+
+        var timers = mockTimerQueue();
+        try {
+          btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+          timers.flushOne(); // fires the 500ms arm timer: sets longPressFiredId, adds flash-mine+exiting, schedules the 150ms dispatch
+          timers.flushOne(); // fires the 150ms dispatch: row exits, DOM is replaced - no synthetic click delivered (the detached-node case)
+        } finally {
+          timers.restore();
+        }
+        assertEq(spy.calls.filter(function (a) { return a.type === 'DRAFT_PLAYER'; }).length, 1, 'sanity: the long-press itself dispatched once');
+
+        store.dispatch({ type: 'UNDRAFT_PLAYER', playerId: firstId }); // back to Available; re-renders a fresh DRAFT button for the same id
+
+        var freshBtn = fixture.querySelector('.btn-draft[data-id="' + firstId + '"]');
+        assert(freshBtn, 'expected a fresh DRAFT button after undraft');
+        withSyncTimeouts(function () {
+          freshBtn.click(); // a plain, unrelated tap - must not be swallowed by the stale flag
+        });
+
+        var draftDispatches = spy.calls.filter(function (a) { return a.type === 'DRAFT_PLAYER'; });
+        assertEq(draftDispatches.length, 2, 'expected the long-press dispatch plus this new tap - the flag must not have swallowed it');
+        assertEq(draftDispatches[1].playerId, firstId);
+        assertEq(draftDispatches[1].mine, false, 'the fresh tap should be a normal mine:false draft');
+      } finally {
+        spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
     t('short tap: pointerdown then pointerup before 500ms, then click -> ONE DRAFT_PLAYER dispatch with mine:false', function () {
       var fixture = buildMountFixture();
       var store = DC.state.createStore(DC.state.createSeedState());

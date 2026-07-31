@@ -553,6 +553,9 @@
       row.classList.add(mine ? 'flash-mine' : 'flash-draft');
       row.classList.add('exiting');
       setTimeout(function () {
+        // clear here, not in the click handler: a click before this point is blocked by the
+        // .exiting guard above; after this point the row is gone and no click can arrive.
+        longPressFiredId = null;
         store.dispatch({ type: 'DRAFT_PLAYER', playerId: id, mine: mine });
       }, 150);
     }
