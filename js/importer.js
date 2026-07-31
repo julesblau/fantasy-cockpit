@@ -2,7 +2,7 @@
   'use strict';
   window.DC = window.DC || {};
 
-  /** @typedef {{id:string, rank:number, name:string, team:string, position:string, byeWeek:number}} Player */
+  /** @typedef {{id:string, rank:number, name:string, team:string, position:string, byeWeek:number, tier:(number|null)}} Player */
 
   var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true };
   var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true };
@@ -14,7 +14,8 @@
     PLAYER: 'name', 'PLAYER NAME': 'name', NAME: 'name',
     TEAM: 'team',
     POS: 'position', POSITION: 'position',
-    BYE: 'bye', 'BYE WEEK': 'bye'
+    BYE: 'bye', 'BYE WEEK': 'bye',
+    TIERS: 'tier', TIER: 'tier'
   };
 
   // ---- format detection ----------------------------------------------------
@@ -47,6 +48,8 @@
   /**
    * Mirrors DC.state's structural validator (state.js isValidState) so a
    * corrupt/foreign backup file never reaches localStorage via DC.state.save.
+   * Field-agnostic: only checks the fields below exist with the right shape,
+   * so v4 extras (per-player tier, top-level league) pass through untouched.
    */
   function isValidBackupState(obj) {
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
@@ -192,12 +195,23 @@
       name: col('name'),
       team: col('team'),
       positionRaw: col('position'),
-      byeRaw: col('bye')
+      byeRaw: col('bye'),
+      tierRaw: col('tier')
     };
   }
 
   function normalizePosition(raw) {
     return (raw || '').replace(/\d+$/, '').toUpperCase();
+  }
+
+  // base-10 int >= 1 only; "", "0", floats ("2.5"), and other junk -> null
+  function parseTierCell(raw) {
+    var s = (raw || '').trim();
+    if (!/^\d+$/.test(s)) {
+      return null;
+    }
+    var n = parseInt(s, 10);
+    return n >= 1 ? n : null;
   }
 
   function addWarning(ctx, msg) {
@@ -214,7 +228,7 @@
   }
 
   /**
-   * @param {{name:string, team:string, positionRaw:string, byeRaw:string}} raw
+   * @param {{name:string, team:string, positionRaw:string, byeRaw:string, tierRaw:string}} raw
    * @param {{players:Player[], skipped:number, warningsRaw:string[], seenIds:Object<string,boolean>}} ctx
    */
   function finalizeCandidate(raw, ctx) {
@@ -251,6 +265,9 @@
       byeWeek = byeNum;
     }
 
+    // headerless lines carry no tierRaw at all -> parseTierCell('') -> null; no heuristic here
+    var tier = parseTierCell(raw.tierRaw);
+
     var id = DC.data.slug(name, team);
     if (ctx.seenIds[id]) {
       addWarning(ctx, 'Skipped duplicate player "' + name + '" (' + team + ').');
@@ -263,7 +280,9 @@
       name: name,
       team: team,
       position: position,
-      byeWeek: byeWeek
+      byeWeek: byeWeek,
+      // as parsed from the file, un-normalized — IMPORT_PLAYERS reducer owns tier monotonicity, not this parser
+      tier: tier
     });
   }
 

@@ -1533,7 +1533,12 @@
       var chase = result.players.filter(function (p) { return p.name === "Ja'Marr Chase"; })[0];
       assertEq(chase.byeWeek, 6, 'bye from BYE WEEK column, matches CIN default here');
       assertEq(chase.team, 'CIN');
+      assertEq(chase.tier, null, 'junk TIERS cell "Tier 1, Elite" -> null, row still parses');
       assertEq(DC.importer.detectFormat(CSV_TEXT), 'rankings');
+      assertEq(result.players.filter(function (p) { return p.name === 'Justin Jefferson'; })[0].tier, 1);
+      assertEq(result.players.filter(function (p) { return p.name === 'Christian McCaffrey'; })[0].tier, 2);
+      assertEq(result.players.filter(function (p) { return p.name === 'Brock Bowers'; })[0].tier, 3);
+      assertEq(result.players.filter(function (p) { return p.name === 'Derrick Henry'; })[0].tier, 4);
     });
 
     // --- Fixture 2: TSV (tab-delimited), same shape ---
@@ -1602,7 +1607,8 @@
         name: 'Christian McCaffrey',
         team: 'SF',
         position: 'RB',
-        byeWeek: DC.data.TEAM_BYE_WEEKS.SF
+        byeWeek: DC.data.TEAM_BYE_WEEKS.SF,
+        tier: null
       });
       assertEq(result.players[4].team, 'BUF');
       assertEq(result.players[4].position, 'QB');
@@ -1846,6 +1852,100 @@
       assertEq(result.players.length, 5, 'the 5 real numbered-list lines should all parse');
       assertEq(result.players[0].name, 'Christian McCaffrey');
       assert(result.skipped >= 1, 'the lone "Player" line has no position and should be skipped (not silently dropped as a header)');
+    });
+
+    // --- Task 2: importer TIERS column ---
+
+    var TIER_SINGULAR_HEADER = 'RK,TIER,PLAYER,TEAM,POS,BYE';
+    var TIER_SINGULAR_ROWS = [
+      '1,1,Christian McCaffrey,SF,RB,13',
+      '2,1,Josh Allen,BUF,QB,5',
+      '3,2,Brock Bowers,LV,TE,10',
+      '4,2,Bijan Robinson,ATL,RB,5',
+      '5,3,Justin Jefferson,MIN,WR,11'
+    ];
+    var TIER_SINGULAR_TEXT = [TIER_SINGULAR_HEADER].concat(TIER_SINGULAR_ROWS).join('\n');
+
+    t('parseRankings: TIER (singular) header variant works', function () {
+      var result = DC.importer.parseRankings(TIER_SINGULAR_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.map(function (p) { return p.tier; }), [1, 1, 2, 2, 3]);
+    });
+
+    var JUNK_TIER_HEADER = 'RK,TIER,PLAYER,TEAM,POS,BYE';
+    var JUNK_TIER_ROWS = [
+      '1,,Christian McCaffrey,SF,RB,13',
+      '2,0,Josh Allen,BUF,QB,5',
+      '3,abc,Brock Bowers,LV,TE,10',
+      '4,2.5,Bijan Robinson,ATL,RB,5',
+      '5,1,Justin Jefferson,MIN,WR,11'
+    ];
+    var JUNK_TIER_TEXT = [JUNK_TIER_HEADER].concat(JUNK_TIER_ROWS).join('\n');
+
+    t('parseRankings: junk tier cells ("", "0", "abc", "2.5") -> tier null, row still parses', function () {
+      var result = DC.importer.parseRankings(JUNK_TIER_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 5, 'every row still parses despite junk tier cells');
+      assertEq(result.players.map(function (p) { return p.tier; }), [null, null, null, null, 1]);
+    });
+
+    t('parseRankings: headerless numbered list carries tier:null on every player (no tier heuristic)', function () {
+      var result = DC.importer.parseRankings(NUMBERED_LIST_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      result.players.forEach(function (p) {
+        assertEq(p.tier, null, 'tier for ' + p.name);
+      });
+    });
+
+    t('parseRankings: emitted player has canonical key order id, rank, name, team, position, byeWeek, tier', function () {
+      var header = 'RK,TIER,PLAYER,TEAM,POS,BYE';
+      var rows = [
+        '1,2,Christian McCaffrey,SF,RB,13',
+        '2,2,Josh Allen,BUF,QB,5',
+        '3,2,Brock Bowers,LV,TE,10',
+        '4,2,Bijan Robinson,ATL,RB,5',
+        '5,2,Justin Jefferson,MIN,WR,11'
+      ];
+      var text = [header].concat(rows).join('\n');
+      var result = DC.importer.parseRankings(text);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players[0], {
+        id: DC.data.slug('Christian McCaffrey', 'SF'),
+        rank: 1,
+        name: 'Christian McCaffrey',
+        team: 'SF',
+        position: 'RB',
+        byeWeek: 13,
+        tier: 2
+      }, 'stringify-equality guards exact key order');
+    });
+
+    var NONMONOTONE_HEADER = 'RK,TIER,PLAYER,TEAM,POS,BYE';
+    var NONMONOTONE_ROWS = [
+      '1,3,Christian McCaffrey,SF,RB,13',
+      '2,1,Josh Allen,BUF,QB,5',
+      '3,2,Brock Bowers,LV,TE,10',
+      '4,1,Bijan Robinson,ATL,RB,5',
+      '5,4,Justin Jefferson,MIN,WR,11'
+    ];
+    var NONMONOTONE_TEXT = [NONMONOTONE_HEADER].concat(NONMONOTONE_ROWS).join('\n');
+
+    t('parseRankings: non-monotone tiers in the file are preserved as-is (reducer normalizes later, not parseRankings)', function () {
+      var result = DC.importer.parseRankings(NONMONOTONE_TEXT);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.map(function (p) { return p.tier; }), [3, 1, 2, 1, 4], 'tiers preserved exactly as given, no monotonic normalization here');
+    });
+
+    t('parseBackup: v4-shaped backup (players carry tier, league field present) passes structural validation untouched', function () {
+      var seed = DC.state.createSeedState();
+      var v4Payload = Object.assign({}, seed, {
+        players: seed.players.map(function (p, i) { return Object.assign({}, p, { tier: (i % 3) + 1 }); }),
+        league: { size: 12, slot: 4, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } }
+      });
+      var result = DC.importer.parseBackup(JSON.stringify(v4Payload));
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.state.players[0].tier, 1);
+      assertEq(result.state.league.size, 12);
     });
   })();
   </script>
