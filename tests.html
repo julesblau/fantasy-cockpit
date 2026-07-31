@@ -220,11 +220,15 @@
 
     t('createSeedState: correct shape from DC.data.SEED_PLAYERS', function () {
       var s = DC.state.createSeedState();
-      assertEq(s.schemaVersion, 3);
-      assertEq(s.players, DC.data.SEED_PLAYERS);
+      assertEq(s.schemaVersion, 4);
+      s.players.forEach(function (p, i) {
+        var seed = DC.data.SEED_PLAYERS[i];
+        assertEq(p, { id: seed.id, rank: seed.rank, name: seed.name, team: seed.team, position: seed.position, byeWeek: seed.byeWeek, tier: null }, 'seed player ' + i);
+      });
       assertEq(s.undoStack, []);
       assertEq(s.filters, { position: 'ALL', status: 'AVAILABLE' });
       assertEq(s.searchText, '');
+      assertEq(s.league, null);
       DC.data.SEED_PLAYERS.forEach(function (p) {
         assertEq(s.marks[p.id], { drafted: false, target: false, avoid: false, mine: false }, 'marks for ' + p.id);
       });
@@ -711,7 +715,7 @@
 
     t('STORAGE_KEY and CURRENT_SCHEMA_VERSION constants', function () {
       assertEq(DC.state.STORAGE_KEY, 'draft-cockpit/state');
-      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 3);
+      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 4);
     });
 
     t('load(): missing key falls back to a fresh seed state', function () {
@@ -913,7 +917,7 @@
       }
     });
 
-    t('load(): v1 payload (no manuallyEdited field) migrates to v3, adding manuallyEdited:false and mine:false, preserving everything else', function () {
+    t('load(): v1 payload (no manuallyEdited field) migrates through v2/v3/v4, adding manuallyEdited:false, mine:false, tier:null, league:null, preserving everything else', function () {
       var payload = {
         schemaVersion: 1,
         players: makeHealPlayers(),
@@ -927,9 +931,9 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 3);
+      assertEq(loaded.schemaVersion, 4);
       assertEq(loaded.manuallyEdited, false);
-      assertEq(loaded.players, payload.players);
+      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null }); }), 'players preserved, tier healed null onto each');
       assertEq(loaded.marks, {
         x1: { drafted: false, target: true, avoid: false, mine: false },
         x2: { drafted: true, target: false, avoid: false, mine: false }
@@ -937,6 +941,7 @@
       assertEq(loaded.undoStack, payload.undoStack);
       assertEq(loaded.filters, payload.filters);
       assertEq(loaded.searchText, payload.searchText);
+      assertEq(loaded.league, null, 'v1 payload has no league; migration chain adds league:null');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
@@ -1046,7 +1051,7 @@
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
-    t('integration: v1 restore path — backupApplyCheck accepts a v1 backup; raw save + load migrates to v3 preserving players/marks/undoStack', function () {
+    t('integration: v1 restore path — backupApplyCheck accepts a v1 backup; raw save + load migrates to v4 preserving players/marks/undoStack', function () {
       var seed = DC.state.createSeedState();
       var v1Payload = {
         schemaVersion: 1,
@@ -1064,7 +1069,7 @@
       // state, then rely on load()'s migrate/heal pipeline on the next boot.
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(v1Payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 3, 'migrated to current schema version');
+      assertEq(loaded.schemaVersion, 4, 'migrated to current schema version');
       assertEq(loaded.manuallyEdited, false, 'v1 payload had no flag; migration defaults it to false');
       assertEq(loaded.players, v1Payload.players, 'players preserved exactly');
       assertEq(loaded.marks, v1Payload.marks, 'marks preserved exactly');
@@ -1291,7 +1296,7 @@
       ];
     }
 
-    t('load(): v2->v3 migration preserves players/marks/undoStack/filters/searchText/manuallyEdited, heals mine:false in', function () {
+    t('load(): v2->v3->v4 migration preserves players/marks/undoStack/filters/searchText/manuallyEdited, heals mine:false and tier:null in, adds league:null', function () {
       var payload = {
         schemaVersion: 2,
         players: makePlayersV3(),
@@ -1306,8 +1311,8 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 3);
-      assertEq(loaded.players, payload.players);
+      assertEq(loaded.schemaVersion, 4);
+      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null }); }));
       assertEq(loaded.marks, {
         y1: { drafted: false, target: true, avoid: false, mine: false },
         y2: { drafted: true, target: false, avoid: false, mine: false }
@@ -1316,10 +1321,11 @@
       assertEq(loaded.filters, payload.filters);
       assertEq(loaded.searchText, payload.searchText);
       assertEq(loaded.manuallyEdited, true);
+      assertEq(loaded.league, null);
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
-    t('load(): v1 payload chains through both migrations to v3, preserving players/marks/undoStack', function () {
+    t('load(): v1 payload chains through all three migrations to v4, preserving players/marks/undoStack, healing tier:null and league:null', function () {
       var payload = {
         schemaVersion: 1,
         players: makePlayersV3(),
@@ -1333,14 +1339,15 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 3);
-      assertEq(loaded.players, payload.players);
+      assertEq(loaded.schemaVersion, 4);
+      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null }); }));
       assertEq(loaded.marks, {
         y1: { drafted: true, target: false, avoid: false, mine: false },
         y2: { drafted: false, target: false, avoid: false, mine: false }
       });
       assertEq(loaded.undoStack, payload.undoStack);
-      assertEq(loaded.manuallyEdited, false, 'v1->v2 migration stamps manuallyEdited false');
+      assertEq(loaded.manuallyEdited, false, 'v1->v2 migration stamps manuallyEdited false; passes through v3->v4 unchanged');
+      assertEq(loaded.league, null, 'v3->v4 migration adds league:null');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
@@ -1395,7 +1402,7 @@
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
-    t('load(): persist-after-migration — a v2 payload is upgraded and the v3 shape is written back to storage, with no dispatch', function () {
+    t('load(): persist-after-migration — a v2 payload is upgraded through v3 to v4 and the v4 shape is written back to storage, with no dispatch', function () {
       var payload = {
         schemaVersion: 2,
         players: makePlayersV3(),
@@ -1412,7 +1419,29 @@
       var loaded = DC.state.load();
 
       var storedAfter = JSON.parse(localStorage.getItem(DC.state.STORAGE_KEY));
-      assertEq(storedAfter.schemaVersion, 3, 'storage holds the migrated v3 shape immediately, before any dispatch');
+      assertEq(storedAfter.schemaVersion, 4, 'storage holds the migrated v4 shape immediately, before any dispatch');
+      assertEq(storedAfter, loaded, 'the exact returned state is what got persisted');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): persist-after-migration — a v3 payload upgraded straight to v4 is written back to storage immediately, with no dispatch', function () {
+      var payload = {
+        schemaVersion: 3,
+        players: makePlayersV3(),
+        marks: {
+          y1: { drafted: false, target: false, avoid: false, mine: false },
+          y2: { drafted: false, target: false, avoid: false, mine: false }
+        },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+
+      var storedAfter = JSON.parse(localStorage.getItem(DC.state.STORAGE_KEY));
+      assertEq(storedAfter.schemaVersion, 4, 'storage holds the migrated v4 shape immediately, before any dispatch');
       assertEq(storedAfter, loaded, 'the exact returned state is what got persisted');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
@@ -3407,6 +3436,543 @@
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
       }
+    });
+  })();
+  </script>
+
+  <!-- Round 4 Task 1: schema v4 — REORDER tiers param, SET_LEAGUE, IMPORT_PLAYERS tier normalize -->
+  <script>
+  (function () {
+    'use strict';
+    section('state');
+
+    function makeBaseState() {
+      var players = [
+        { id: 'a', rank: 1, name: 'Aaron Ace', team: 'KC', position: 'QB', byeWeek: 9 },
+        { id: 'b', rank: 2, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7 },
+        { id: 'c', rank: 3, name: 'Cody Catch', team: 'MIA', position: 'WR', byeWeek: 10 },
+        { id: 'd', rank: 4, name: 'Dave Deep', team: 'KC', position: 'TE', byeWeek: 9 },
+        { id: 'e', rank: 5, name: 'Erik End', team: 'SEA', position: 'RB', byeWeek: 13 }
+      ];
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+      });
+      return {
+        schemaVersion: 4,
+        players: players,
+        marks: marks,
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false,
+        league: null
+      };
+    }
+
+    t('REORDER_PLAYERS: tiers param applies per-id tiers then normalizes a non-monotone map into monotone order', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, {
+        type: 'REORDER_PLAYERS',
+        order: ['a', 'b', 'c', 'd', 'e'],
+        tiers: { a: 2, b: 1, c: 1, d: 3, e: 3 }
+      });
+      assertEq(next.players.map(function (p) { return p.tier; }), [2, 2, 2, 3, 3], 'normalizeTiers clamps b and c up to running max 2');
+    });
+
+    t('REORDER_PLAYERS: without a tiers param, behaves byte-identically to the pre-tiers reducer (order/rank/manuallyEdited/marks/undoStack unaffected)', function () {
+      var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'a' });
+      var next = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['e', 'c', 'a', 'd', 'b'] });
+      assertEq(next.players.map(function (p) { return p.id; }), ['e', 'c', 'a', 'd', 'b']);
+      assertEq(next.players.map(function (p) { return p.rank; }), [1, 2, 3, 4, 5]);
+      assertEq(next.manuallyEdited, true);
+      assert(next.marks === state.marks, 'marks should be same reference, exactly as before tiers existed');
+      assert(next.undoStack === state.undoStack, 'undoStack should be same reference');
+    });
+
+    t('REORDER_PLAYERS: invalid per-id tier values (string, float, zero, negative) heal to null; unknown ids in the map are ignored', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, {
+        type: 'REORDER_PLAYERS',
+        order: ['a', 'b', 'c', 'd', 'e'],
+        tiers: { a: '2', b: 1.5, c: 0, d: -1, e: 1, zzz: 9 }
+      });
+      assertEq(next.players.map(function (p) { return p.tier; }), [null, null, null, null, 1]);
+    });
+
+    t('IMPORT_PLAYERS: normalizes incoming tiers before storing (non-monotone incoming tiers come out monotone); league carries over unchanged', function () {
+      var state = makeBaseState();
+      var league = { size: 10, slot: 2, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      state = DC.state.reduce(state, { type: 'SET_LEAGUE', league: league });
+      var newPlayers = [
+        { id: 'b', rank: 1, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7, tier: 2 },
+        { id: 'c', rank: 2, name: 'Cody Catch', team: 'MIA', position: 'WR', byeWeek: 10, tier: 1 },
+        { id: 'z', rank: 3, name: 'Zeke New', team: 'NYG', position: 'RB', byeWeek: 12, tier: 5 }
+      ];
+      var next = DC.state.reduce(state, { type: 'IMPORT_PLAYERS', players: newPlayers });
+      assertEq(next.players.map(function (p) { return p.tier; }), [2, 2, 5], 'c healed up to running max 2 from b');
+      assertEq(next.league, league, 'league is untouched by a rankings import');
+    });
+
+    t('SET_LEAGUE: valid/invalid/null table — reducer accepts only exact-int, in-bounds leagues; rejects (same ref) anything else, including values healing would coerce', function () {
+      var state = makeBaseState();
+
+      var validLeague = { size: 12, slot: 4, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var afterValid = DC.state.reduce(state, { type: 'SET_LEAGUE', league: validLeague });
+      assertEq(afterValid.league, validLeague);
+
+      var afterNull = DC.state.reduce(afterValid, { type: 'SET_LEAGUE', league: null });
+      assertEq(afterNull.league, null, 'null clears the league');
+
+      var slotTooBig = { size: 8, slot: 9, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 5 } };
+      var r1 = DC.state.reduce(state, { type: 'SET_LEAGUE', league: slotTooBig });
+      assert(r1 === state, 'slot > size must be rejected with the same reference');
+
+      var sizeTooSmall = { size: 3, slot: 1, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 5 } };
+      var r2 = DC.state.reduce(state, { type: 'SET_LEAGUE', league: sizeTooSmall });
+      assert(r2 === state, 'size below 4 must be rejected with the same reference');
+
+      var floatSize = { size: 12.5, slot: 1, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 5 } };
+      var r3 = DC.state.reduce(state, { type: 'SET_LEAGUE', league: floatSize });
+      assert(r3 === state, 'a genuinely fractional size must be rejected, not rounded');
+
+      var stringSize = { size: '12', slot: 1, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 5 } };
+      var r4 = DC.state.reduce(state, { type: 'SET_LEAGUE', league: stringSize });
+      assert(r4 === state, 'a string-typed size must be rejected by the strict reducer validator (healing-only coercion)');
+
+      var missingRoster = { size: 10, slot: 1, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1 } };
+      var r5 = DC.state.reduce(state, { type: 'SET_LEAGUE', league: missingRoster });
+      assert(r5 === state, 'a roster missing BENCH must be rejected');
+
+      var negRoster = { size: 10, slot: 1, snake: false, roster: { QB: -1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 5 } };
+      var r6 = DC.state.reduce(state, { type: 'SET_LEAGUE', league: negRoster });
+      assert(r6 === state, 'a negative roster requirement must be rejected');
+    });
+  })();
+  </script>
+
+  <!-- Round 4 Task 1: tier invariant helpers — clampTierAt / normalizeTiers / stepperBounds -->
+  <script>
+  (function () {
+    'use strict';
+    section('state');
+
+    function makeInvariantPlayers(tiers) {
+      var ids = ['i1', 'i2', 'i3', 'i4', 'i5', 'i6'];
+      return ids.map(function (id, idx) {
+        return { id: id, rank: idx + 1, name: 'Inv ' + idx, team: 'KC', position: 'RB', byeWeek: 9, tier: tiers[idx] };
+      });
+    }
+
+    t('clampTierAt: table — mid-board clamps both directions, null desired passes through, index itself is skipped, unbounded on an all-null board', function () {
+      var players = makeInvariantPlayers([1, null, 3, null, 5, null]);
+      assertEq(DC.state.clampTierAt(players, 1, 10), 3, 'clamps down to the nearest tiered-below (3)');
+      assertEq(DC.state.clampTierAt(players, 1, -5), 1, 'clamps up to the nearest tiered-above (1)');
+      assertEq(DC.state.clampTierAt(players, 1, 2), 2, 'within bounds -> unchanged');
+      assertEq(DC.state.clampTierAt(players, 1, null), null, 'a null desired tier always passes through');
+      assertEq(DC.state.clampTierAt(players, 0, 100), 3, 'index 0 has no tiered-above; its own tier (1) is not used as a bound on itself');
+
+      var allNull = makeInvariantPlayers([null, null, null, null, null, null]);
+      assertEq(DC.state.clampTierAt(allNull, 3, 7), 7, 'an all-null board is fully unbounded');
+    });
+
+    t('normalizeTiers: table — already-monotone stays the same reference, a violation gets clamped upward, nulls are skipped in place', function () {
+      var monotone = makeInvariantPlayers([1, 1, 2, null, 2, 4]);
+      assert(DC.state.normalizeTiers(monotone) === monotone, 'already-monotone input returns the same array reference');
+
+      var violated = makeInvariantPlayers([3, 1, null, 2, 5, 1]);
+      var fixed = DC.state.normalizeTiers(violated);
+      assert(fixed !== violated, 'a violation must return a new array');
+      assertEq(fixed.map(function (p) { return p.tier; }), [3, 3, null, 3, 5, 5]);
+      assertEq(fixed.map(function (p) { return p.id; }), violated.map(function (p) { return p.id; }), 'order/ids preserved');
+    });
+
+    t('stepperBounds: table — bounded both sides, top-of-board (no above), bottom-of-board (no below), all-null board is fully open; untiered player also gets start, tiered player does not', function () {
+      var players = makeInvariantPlayers([1, null, 3, null, 5, null]);
+      assertEq(DC.state.stepperBounds(players, 1), { min: 1, max: 3, start: 1 }, 'untiered mid-board: bounded both sides, start defaults to nearest-above');
+      assertEq(DC.state.stepperBounds(players, 0), { min: 1, max: 3 }, 'a TIERED player (index 0) gets no start key; top of board has no tiered-above so min defaults to 1');
+      assertEq(DC.state.stepperBounds(players, 5), { min: 5, max: null, start: 5 }, 'bottom of board: no tiered-below, max is unbounded (null)');
+
+      var allNull = makeInvariantPlayers([null, null, null, null, null, null]);
+      assertEq(DC.state.stepperBounds(allNull, 2), { min: 1, max: null, start: 1 }, 'an all-null board is fully open, start defaults to 1');
+    });
+  })();
+  </script>
+
+  <!-- Round 4 Task 1: board-signal selectors — pickMath / lastInTierIds / likelyGoneIds / valueFlagIds / rosterNeeds -->
+  <script>
+  (function () {
+    'use strict';
+    section('selectors');
+
+    function makePickMathPlayers(n) {
+      var arr = [];
+      for (var i = 1; i <= n; i++) {
+        arr.push({ id: 'pm' + i, rank: i, name: 'PM ' + i, team: 'KC', position: 'RB', byeWeek: 9, tier: null });
+      }
+      return arr;
+    }
+
+    function makePickMathState(overrides) {
+      var players = makePickMathPlayers(30);
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+      });
+      var draftedCount = (overrides && overrides.draftedCount) || 0;
+      for (var d = 0; d < draftedCount; d++) {
+        marks[players[d].id].drafted = true;
+      }
+      return {
+        schemaVersion: 4,
+        players: players,
+        marks: marks,
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false,
+        league: (overrides && overrides.league !== undefined) ? overrides.league : null
+      };
+    }
+
+    t('pickMath: null when league is unset', function () {
+      assertEq(DC.state.pickMath(makePickMathState({})), null);
+    });
+
+    t('pickMath: snake table, N=12 s=1 — round 1/2/3 overall picks (1, 24, 25)', function () {
+      var league = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      assertEq(DC.state.pickMath(makePickMathState({ league: league, draftedCount: 0 })).myNextPick, 1);
+      assertEq(DC.state.pickMath(makePickMathState({ league: league, draftedCount: 1 })).myNextPick, 24);
+      assertEq(DC.state.pickMath(makePickMathState({ league: league, draftedCount: 24 })).myNextPick, 25);
+    });
+
+    t('pickMath: snake table, N=12 s=12 — round 1/2 overall picks (12, 13)', function () {
+      var league = { size: 12, slot: 12, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      assertEq(DC.state.pickMath(makePickMathState({ league: league, draftedCount: 0 })).myNextPick, 12);
+      assertEq(DC.state.pickMath(makePickMathState({ league: league, draftedCount: 12 })).myNextPick, 13);
+    });
+
+    t('pickMath: linear (snake:false), N=12 s=5 — round 1/2/3 overall picks (5, 17, 29)', function () {
+      var league = { size: 12, slot: 5, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      assertEq(DC.state.pickMath(makePickMathState({ league: league, draftedCount: 0 })).myNextPick, 5);
+      assertEq(DC.state.pickMath(makePickMathState({ league: league, draftedCount: 5 })).myNextPick, 17);
+      assertEq(DC.state.pickMath(makePickMathState({ league: league, draftedCount: 17 })).myNextPick, 29);
+    });
+
+    t('pickMath: picksMade/currentPick/round/pickInRound mid-round values', function () {
+      var league = { size: 10, slot: 3, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var math = DC.state.pickMath(makePickMathState({ league: league, draftedCount: 13 }));
+      assertEq(math.picksMade, 13);
+      assertEq(math.currentPick, 14);
+      assertEq(math.round, 2);
+      assertEq(math.pickInRound, 4);
+    });
+
+    t('pickMath: isMyPick is exactly true at the boundary pick and false one pick before', function () {
+      var league = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var atMyPick = DC.state.pickMath(makePickMathState({ league: league, draftedCount: 23 }));
+      assertEq(atMyPick.isMyPick, true);
+      assertEq(atMyPick.picksUntilMine, 0);
+      var before = DC.state.pickMath(makePickMathState({ league: league, draftedCount: 22 }));
+      assertEq(before.isMyPick, false);
+      assertEq(before.picksUntilMine, 1);
+    });
+
+    function makeTierGroupPlayers() {
+      return [
+        { id: 'g1', rank: 1, name: 'G One', team: 'KC', position: 'RB', byeWeek: 9, tier: 1 },
+        { id: 'g2', rank: 2, name: 'G Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1 },
+        { id: 'g3', rank: 3, name: 'G Three', team: 'MIA', position: 'WR', byeWeek: 10, tier: 1 },
+        { id: 'g4', rank: 4, name: 'G Four', team: 'KC', position: 'RB', byeWeek: 9, tier: null },
+        { id: 'g5', rank: 5, name: 'G Five', team: 'SEA', position: 'WR', byeWeek: 13, tier: 2 }
+      ];
+    }
+
+    function makeTierGroupState(marksOverride) {
+      var players = makeTierGroupPlayers();
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+      });
+      if (marksOverride) {
+        Object.keys(marksOverride).forEach(function (id) {
+          marks[id] = Object.assign({}, marks[id], marksOverride[id]);
+        });
+      }
+      return { schemaVersion: 4, players: players, marks: marks, undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null };
+    }
+
+    t('lastInTierIds: sole available survivor in a (position,tier) group is flagged; a two-left group is not; null tier is never flagged; drafted players are excluded', function () {
+      var state = makeTierGroupState({});
+      var ids = DC.state.lastInTierIds(state);
+      assertEq(!!ids.g1, false, 'two RB tier-1 players available: not sole survivor');
+      assertEq(!!ids.g2, false);
+      assertEq(!!ids.g3, true, 'sole available WR tier-1');
+      assertEq(!!ids.g4, false, 'null tier is never flagged');
+      assertEq(!!ids.g5, true, 'sole available WR tier-2');
+
+      var afterDraft = makeTierGroupState({ g1: { drafted: true } });
+      var ids2 = DC.state.lastInTierIds(afterDraft);
+      assertEq(!!ids2.g2, true, 'g2 is now the sole available RB tier-1 player');
+      assertEq(!!ids2.g1, false, 'a drafted player is never flagged even though it would otherwise anchor the group');
+    });
+
+    t('likelyGoneIds: empty when picksUntilMine is 0 (my pick) or league is unset', function () {
+      var league = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var atMyPick = makePickMathState({ league: league, draftedCount: 23 });
+      assertEq(Object.keys(DC.state.likelyGoneIds(atMyPick)).length, 0, 'empty when it is currently my pick');
+
+      var noLeague = makePickMathState({});
+      assertEq(Object.keys(DC.state.likelyGoneIds(noLeague)).length, 0, 'empty when league is unset');
+    });
+
+    t('likelyGoneIds: flags exactly the first K available players in board order, where K = picksUntilMine', function () {
+      var league = { size: 12, slot: 5, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var state = makePickMathState({ league: league, draftedCount: 0 });
+      var math = DC.state.pickMath(state);
+      assertEq(math.picksUntilMine, 4);
+      var ids = DC.state.likelyGoneIds(state);
+      assertEq(Object.keys(ids).sort(), ['pm1', 'pm2', 'pm3', 'pm4'].sort());
+    });
+
+    function makeValuePlayers() {
+      var arr = [];
+      for (var i = 1; i <= 250; i++) {
+        arr.push({ id: 'v' + i, rank: i, name: 'V ' + i, team: 'KC', position: 'RB', byeWeek: 9, tier: null });
+      }
+      return arr;
+    }
+
+    function makeValueState(draftedRanks) {
+      var players = makeValuePlayers();
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+      });
+      draftedRanks.forEach(function (r) {
+        marks['v' + r].drafted = true;
+      });
+      return { schemaVersion: 4, players: players, marks: marks, undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null };
+    }
+
+    t('valueFlagIds: drift boundary — exactly VALUE_DRIFT_MIN flags, one less does not; works with league null', function () {
+      var draftedRanks = [];
+      for (var r = 21; r <= 39; r++) { draftedRanks.push(r); }
+      var state = makeValueState(draftedRanks);
+      var ids = DC.state.valueFlagIds(state);
+      assertEq(!!ids.v10, true, 'drift exactly VALUE_DRIFT_MIN (20-10) flags');
+      assertEq(!!ids.v11, false, 'drift VALUE_DRIFT_MIN-1 (20-11) does not flag');
+    });
+
+    t('valueFlagIds: rank ceiling boundary — rank at VALUE_RANK_CEILING is eligible, one past it is excluded even with sufficient drift', function () {
+      var draftedRanks = [];
+      for (var r = 111; r <= 220; r++) { draftedRanks.push(r); }
+      var state = makeValueState(draftedRanks);
+      var ids = DC.state.valueFlagIds(state);
+      assertEq(!!ids.v100, true, 'rank 100 at the ceiling with drift 11 -> flagged');
+      assertEq(!!ids.v101, false, 'rank 101 exceeds the ceiling despite drift 10');
+    });
+
+    function makeRosterPlayers() {
+      return [
+        { id: 'r1', rank: 1, name: 'R One', team: 'KC', position: 'QB', byeWeek: 9, tier: null },
+        { id: 'r2', rank: 2, name: 'R Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: null },
+        { id: 'r3', rank: 3, name: 'R Three', team: 'MIA', position: 'RB', byeWeek: 10, tier: null },
+        { id: 'r4', rank: 4, name: 'R Four', team: 'KC', position: 'WR', byeWeek: 9, tier: null },
+        { id: 'r5', rank: 5, name: 'R Five', team: 'SEA', position: 'TE', byeWeek: 13, tier: null },
+        { id: 'r6', rank: 6, name: 'R Six', team: 'NYG', position: 'QB', byeWeek: 12, tier: null },
+        { id: 'r7', rank: 7, name: 'R Seven', team: 'BUF', position: 'RB', byeWeek: 5, tier: null }
+      ];
+    }
+
+    function makeRosterState(pickOrder, league) {
+      var players = makeRosterPlayers();
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+      });
+      var undoStack = [];
+      pickOrder.forEach(function (id, idx) {
+        marks[id] = { drafted: true, target: false, avoid: false, mine: true };
+        undoStack.push({ playerId: id, timestamp: idx });
+      });
+      return { schemaVersion: 4, players: players, marks: marks, undoStack: undoStack, filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: league };
+    }
+
+    t('rosterNeeds: fills the direct position slot first, then FLEX for RB/WR/TE overflow, then bench; QB never flexes; null without a league', function () {
+      var league = { size: 10, slot: 1, snake: true, roster: { QB: 1, RB: 1, WR: 1, TE: 1, FLEX: 1, BENCH: 2 } };
+      var state = makeRosterState(['r1', 'r6', 'r2', 'r3', 'r7'], league);
+      var needs = DC.state.rosterNeeds(state);
+      assertEq(needs.QB, { filled: 1, req: 1 });
+      assertEq(needs.RB, { filled: 1, req: 1 });
+      assertEq(needs.FLEX, { filled: 1, req: 1 });
+      assertEq(needs.BENCH, { filled: 2 });
+      assertEq(needs.WR, { filled: 0, req: 1 });
+      assertEq(needs.TE, { filled: 0, req: 1 });
+
+      var noLeague = makeRosterState(['r1'], null);
+      assertEq(DC.state.rosterNeeds(noLeague), null, 'null without a league');
+    });
+  })();
+  </script>
+
+  <!-- Round 4 Task 1: persistence — v3->v4 migration content, tier/league healing, real-dispatch round trip -->
+  <script>
+  (function () {
+    'use strict';
+    section('persistence');
+
+    t('load(): v3->v4 migration is a pure pass-through — all seven v3 fields preserved untouched, league:null added, tier healed null onto every player', function () {
+      var payload = {
+        schemaVersion: 3,
+        players: [
+          { id: 'w1', rank: 1, name: 'W One', team: 'KC', position: 'QB', byeWeek: 9 },
+          { id: 'w2', rank: 2, name: 'W Two', team: 'DAL', position: 'RB', byeWeek: 7 }
+        ],
+        marks: {
+          w1: { drafted: false, target: true, avoid: false, mine: false },
+          w2: { drafted: true, target: false, avoid: false, mine: true }
+        },
+        undoStack: [{ playerId: 'w2', timestamp: 5 }],
+        filters: { position: 'WR', status: 'TARGETS' },
+        searchText: 'zeb',
+        manuallyEdited: true
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.schemaVersion, 4);
+      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null }); }));
+      assertEq(loaded.marks, payload.marks);
+      assertEq(loaded.undoStack, payload.undoStack);
+      assertEq(loaded.filters, payload.filters);
+      assertEq(loaded.searchText, payload.searchText);
+      assertEq(loaded.manuallyEdited, true);
+      assertEq(loaded.league, null);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): wrong-typed/invalid tier values heal to null (string, float, zero, negative); a valid positive int tier survives', function () {
+      var payload = {
+        schemaVersion: 4,
+        players: [
+          { id: 'h1', rank: 1, name: 'H One', team: 'KC', position: 'QB', byeWeek: 9, tier: '3' },
+          { id: 'h2', rank: 2, name: 'H Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1.5 },
+          { id: 'h3', rank: 3, name: 'H Three', team: 'MIA', position: 'WR', byeWeek: 10, tier: 0 },
+          { id: 'h4', rank: 4, name: 'H Four', team: 'KC', position: 'TE', byeWeek: 9, tier: -2 },
+          { id: 'h5', rank: 5, name: 'H Five', team: 'SEA', position: 'RB', byeWeek: 13, tier: 4 }
+        ],
+        marks: {
+          h1: { drafted: false, target: false, avoid: false, mine: false },
+          h2: { drafted: false, target: false, avoid: false, mine: false },
+          h3: { drafted: false, target: false, avoid: false, mine: false },
+          h4: { drafted: false, target: false, avoid: false, mine: false },
+          h5: { drafted: false, target: false, avoid: false, mine: false }
+        },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false,
+        league: null
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.players.map(function (p) { return p.tier; }), [null, null, null, null, 4]);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): a non-monotone tier sequence (e.g. a hand-edited or foreign backup) is normalized on load, keeping the invariant unbreakable through the heal path too', function () {
+      var payload = {
+        schemaVersion: 4,
+        players: [
+          { id: 'm1', rank: 1, name: 'M One', team: 'KC', position: 'QB', byeWeek: 9, tier: 3 },
+          { id: 'm2', rank: 2, name: 'M Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1 },
+          { id: 'm3', rank: 3, name: 'M Three', team: 'MIA', position: 'WR', byeWeek: 10, tier: null },
+          { id: 'm4', rank: 4, name: 'M Four', team: 'KC', position: 'TE', byeWeek: 9, tier: 5 }
+        ],
+        marks: {
+          m1: { drafted: false, target: false, avoid: false, mine: false },
+          m2: { drafted: false, target: false, avoid: false, mine: false },
+          m3: { drafted: false, target: false, avoid: false, mine: false },
+          m4: { drafted: false, target: false, avoid: false, mine: false }
+        },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false,
+        league: null
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.players.map(function (p) { return p.tier; }), [3, 3, null, 5], 'tier 1 on m2 is clamped up to the running max (3) from m1');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): a non-conforming league heals to null (wrong type, missing fields, slot > size, out-of-range size, non-boolean snake)', function () {
+      function payloadWithLeague(league) {
+        return {
+          schemaVersion: 4,
+          players: [{ id: 'lg1', rank: 1, name: 'LG One', team: 'KC', position: 'QB', byeWeek: 9, tier: null }],
+          marks: { lg1: { drafted: false, target: false, avoid: false, mine: false } },
+          undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false,
+          league: league
+        };
+      }
+      var cases = [
+        'not an object',
+        { size: 12 },
+        { size: 12, slot: 13, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } },
+        { size: 25, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } },
+        { size: 12, slot: 1, snake: 'yes', roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } }
+      ];
+      cases.forEach(function (badLeague, i) {
+        localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payloadWithLeague(badLeague)));
+        var loaded = DC.state.load();
+        assertEq(loaded.league, null, 'case ' + i + ' should heal to null');
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      });
+    });
+
+    t('load(): a conforming-but-dirty league (float/string ints) coerces on load, rather than being rejected', function () {
+      var dirtyLeague = { size: '12', slot: 4.0, snake: true, roster: { QB: '1', RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var payload = {
+        schemaVersion: 4,
+        players: [{ id: 'dg1', rank: 1, name: 'DG One', team: 'KC', position: 'QB', byeWeek: 9, tier: null }],
+        marks: { dg1: { drafted: false, target: false, avoid: false, mine: false } },
+        undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false,
+        league: dirtyLeague
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.league, { size: 12, slot: 4, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } });
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('save()/load() round trip preserves tier (set via REORDER_PLAYERS tiers) and league (set via SET_LEAGUE) through real dispatches', function () {
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+      var state = DC.state.createSeedState();
+      var ids = state.players.slice(0, 3).map(function (p) { return p.id; });
+      var tiersMap = {};
+      tiersMap[ids[0]] = 1;
+      tiersMap[ids[1]] = 2;
+      tiersMap[ids[2]] = 2;
+      state = DC.state.reduce(state, {
+        type: 'REORDER_PLAYERS',
+        order: state.players.map(function (p) { return p.id; }),
+        tiers: tiersMap
+      });
+      var league = { size: 8, slot: 3, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 5 } };
+      state = DC.state.reduce(state, { type: 'SET_LEAGUE', league: league });
+
+      DC.state.save(state);
+      var loaded = DC.state.load();
+      assertEq(loaded.league, league);
+      ids.forEach(function (id) {
+        var p = loaded.players.filter(function (x) { return x.id === id; })[0];
+        var orig = state.players.filter(function (x) { return x.id === id; })[0];
+        assertEq(p.tier, orig.tier, 'tier for ' + id + ' survives the round trip');
+      });
+      localStorage.removeItem(DC.state.STORAGE_KEY);
     });
   })();
   </script>

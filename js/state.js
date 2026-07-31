@@ -3,26 +3,33 @@
   window.DC = window.DC || {};
 
   /** @typedef {"QB"|"RB"|"WR"|"TE"} Position */
-  /** @typedef {{id:string, rank:number, name:string, team:string, position:Position, byeWeek:number}} Player */
+  /** @typedef {{id:string, rank:number, name:string, team:string, position:Position, byeWeek:number, tier:(number|null)}} Player */
   /** @typedef {{drafted:boolean, target:boolean, avoid:boolean, mine:boolean}} Marks */
   /** @typedef {{playerId:string, timestamp:number}} UndoEntry */
   /** @typedef {{position:("ALL"|Position), status:("AVAILABLE"|"TARGETS"|"AVOID"|"DRAFTED"|"MINE")}} Filters */
+  /** @typedef {{QB:number, RB:number, WR:number, TE:number, FLEX:number, BENCH:number}} RosterReq */
+  /** @typedef {{size:number, slot:number, snake:boolean, roster:RosterReq}} League */
   /**
    * @typedef {{
-   *   schemaVersion: 3,
+   *   schemaVersion: 4,
    *   players: Player[],
    *   marks: Object<string, Marks>,
    *   undoStack: UndoEntry[],
    *   filters: Filters,
    *   searchText: string,
-   *   manuallyEdited: boolean
+   *   manuallyEdited: boolean,
+   *   league: (League|null)
    * }} State
    */
 
-  var CURRENT_SCHEMA_VERSION = 3;
+  var CURRENT_SCHEMA_VERSION = 4;
   var STORAGE_KEY = 'draft-cockpit/state';
   var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true };
   var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true };
+  var ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'BENCH'];
+  var FLEX_ELIGIBLE = { RB: true, WR: true, TE: true };
+  var VALUE_DRIFT_MIN = 10;
+  var VALUE_RANK_CEILING = 100;
 
   /** @type {Object<number, function(*): State>} old-version-number -> upgrader to next version */
   var migrations = {};
@@ -32,15 +39,23 @@
              filters: v1.filters, searchText: v1.searchText, manuallyEdited: false };
   };
 
-  // pure pass-through: stamps schemaVersion itself, iterates nothing (mine healing is normalizeMarks' job)
+  // pure pass-through: stamps schemaVersion itself, iterates nothing (mine healing is normalize's job)
   migrations[2] = function (v2) {
     return { schemaVersion: 3, players: v2.players, marks: v2.marks, undoStack: v2.undoStack,
              filters: v2.filters, searchText: v2.searchText, manuallyEdited: v2.manuallyEdited };
   };
 
+  // pure pass-through: stamps schemaVersion itself, iterates nothing (tier/league healing is normalize's job)
+  migrations[3] = function (v3) {
+    return { schemaVersion: 4, players: v3.players, marks: v3.marks, undoStack: v3.undoStack,
+             filters: v3.filters, searchText: v3.searchText, manuallyEdited: v3.manuallyEdited, league: null };
+  };
+
   /** @returns {State} */
   function createSeedState() {
-    var players = DC.data.SEED_PLAYERS;
+    var players = DC.data.SEED_PLAYERS.map(function (p) {
+      return { id: p.id, rank: p.rank, name: p.name, team: p.team, position: p.position, byeWeek: p.byeWeek, tier: null };
+    });
     var marks = {};
     players.forEach(function (p) {
       marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
@@ -52,7 +67,8 @@
       undoStack: [],
       filters: { position: 'ALL', status: 'AVAILABLE' },
       searchText: '',
-      manuallyEdited: false
+      manuallyEdited: false,
+      league: null
     };
   }
 
@@ -60,6 +76,176 @@
     var nextMarks = Object.assign({}, state.marks);
     nextMarks[playerId] = Object.assign({}, nextMarks[playerId], patch);
     return Object.assign({}, state, { marks: nextMarks });
+  }
+
+  // ---- tier invariant helpers (pure; among tiered players, tier is monotone non-decreasing
+  // in board order; nulls are transparent/skipped when scanning for neighbors) ------------
+
+  function nearestTieredAbove(players, index) {
+    for (var i = index - 1; i >= 0; i--) {
+      var t = players[i].tier;
+      if (t !== null && t !== undefined) {
+        return t;
+      }
+    }
+    return null;
+  }
+
+  function nearestTieredBelow(players, index) {
+    for (var i = index + 1; i < players.length; i++) {
+      var t = players[i].tier;
+      if (t !== null && t !== undefined) {
+        return t;
+      }
+    }
+    return null;
+  }
+
+  /** @param {Player[]} players @param {number} index @param {number|null} desiredTier @returns {number|null} */
+  function clampTierAt(players, index, desiredTier) {
+    if (desiredTier === null) {
+      return null;
+    }
+    var above = nearestTieredAbove(players, index);
+    var below = nearestTieredBelow(players, index);
+    var min = above !== null ? above : -Infinity;
+    var max = below !== null ? below : Infinity;
+    return Math.min(Math.max(desiredTier, min), max);
+  }
+
+  /** @param {Player[]} players @returns {Player[]} new array (or same ref if nothing changed) */
+  function normalizeTiers(players) {
+    var runningMax = null;
+    var changed = false;
+    var result = players.map(function (p) {
+      var t = p.tier;
+      if (t === null || t === undefined) {
+        return p;
+      }
+      var newTier = runningMax === null ? t : Math.max(t, runningMax);
+      runningMax = newTier;
+      if (newTier === t) {
+        return p;
+      }
+      changed = true;
+      return Object.assign({}, p, { tier: newTier });
+    });
+    return changed ? result : players;
+  }
+
+  /** @param {Player[]} players @param {number} index @returns {{min:number, max:(number|null), start:number|undefined}} */
+  function stepperBounds(players, index) {
+    var above = nearestTieredAbove(players, index);
+    var below = nearestTieredBelow(players, index);
+    var result = { min: above !== null ? above : 1, max: below !== null ? below : null };
+    var ownTier = players[index].tier;
+    if (ownTier === null || ownTier === undefined) {
+      result.start = above !== null ? above : (below !== null ? below : 1);
+    }
+    return result;
+  }
+
+  function healTier(t) {
+    if (t === null) {
+      return null;
+    }
+    if (typeof t !== 'number' || !isFinite(t) || Math.floor(t) !== t || t < 1) {
+      return null;
+    }
+    return t;
+  }
+
+  /** @param {Player[]} players @returns {Player[]} rebuilt in canonical key order, tier healed */
+  function healPlayers(players) {
+    return players.map(function (p) {
+      return {
+        id: p.id, rank: p.rank, name: p.name, team: p.team,
+        position: p.position, byeWeek: p.byeWeek, tier: healTier(p.tier)
+      };
+    });
+  }
+
+  // ---- league helpers (pure) --------------------------------------------------------------
+
+  /** loose coercion for load-time healing: accepts an exact int, an integral float, or a digit string */
+  function coerceIntLoose(v) {
+    if (typeof v === 'number') {
+      return (isFinite(v) && Math.floor(v) === v) ? v : null;
+    }
+    if (typeof v === 'string') {
+      var s = v.trim();
+      return /^-?\d+$/.test(s) ? parseInt(s, 10) : null;
+    }
+    return null;
+  }
+
+  /** strict validation for the SET_LEAGUE reducer: exact ints only, no coercion */
+  function isValidLeagueStrict(league) {
+    if (!league || typeof league !== 'object' || Array.isArray(league)) {
+      return false;
+    }
+    if (!Number.isInteger(league.size) || league.size < 4 || league.size > 20) {
+      return false;
+    }
+    if (!Number.isInteger(league.slot) || league.slot < 1 || league.slot > league.size) {
+      return false;
+    }
+    if (typeof league.snake !== 'boolean') {
+      return false;
+    }
+    if (!league.roster || typeof league.roster !== 'object') {
+      return false;
+    }
+    for (var i = 0; i < ROSTER_KEYS.length; i++) {
+      var v = league.roster[ROSTER_KEYS[i]];
+      if (!Number.isInteger(v) || v < 0) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** @param {League} league @returns {League} rebuilt in canonical key order */
+  function buildCanonicalLeague(league) {
+    var roster = {};
+    for (var i = 0; i < ROSTER_KEYS.length; i++) {
+      roster[ROSTER_KEYS[i]] = league.roster[ROSTER_KEYS[i]];
+    }
+    return { size: league.size, slot: league.slot, snake: league.snake, roster: roster };
+  }
+
+  /** load-time heal: non-conforming -> null; conforming-but-dirty (float/string ints) -> coerced; out-of-bounds -> null */
+  function healLeague(league) {
+    if (!league || typeof league !== 'object' || Array.isArray(league)) {
+      return null;
+    }
+    var size = coerceIntLoose(league.size);
+    var slot = coerceIntLoose(league.slot);
+    if (size === null || slot === null) {
+      return null;
+    }
+    if (typeof league.snake !== 'boolean') {
+      return null;
+    }
+    if (!league.roster || typeof league.roster !== 'object') {
+      return null;
+    }
+    var roster = {};
+    for (var i = 0; i < ROSTER_KEYS.length; i++) {
+      var key = ROSTER_KEYS[i];
+      var v = coerceIntLoose(league.roster[key]);
+      if (v === null || v < 0) {
+        return null;
+      }
+      roster[key] = v;
+    }
+    if (size < 4 || size > 20) {
+      return null;
+    }
+    if (slot < 1 || slot > size) {
+      return null;
+    }
+    return { size: size, slot: slot, snake: league.snake, roster: roster };
   }
 
   /**
@@ -159,7 +345,7 @@
         return createSeedState();
 
       case 'IMPORT_PLAYERS': {
-        var newPlayers = action.players;
+        var newPlayers = normalizeTiers(action.players);
         var newMarks = {};
         newPlayers.forEach(function (p) {
           newMarks[p.id] = state.marks[p.id] || { drafted: false, target: false, avoid: false, mine: false };
@@ -178,7 +364,8 @@
           undoStack: newUndoStack,
           filters: { position: 'ALL', status: 'AVAILABLE' },
           searchText: '',
-          manuallyEdited: false
+          manuallyEdited: false,
+          league: state.league
         };
       }
 
@@ -193,7 +380,28 @@
           seen[id] = true;
         }
         var reordered = order.map(function (id, idx) { return Object.assign({}, byId[id], { rank: idx + 1 }); });
+        if (action.tiers && typeof action.tiers === 'object') {
+          reordered = reordered.map(function (p) {
+            if (!Object.prototype.hasOwnProperty.call(action.tiers, p.id)) {
+              return p;
+            }
+            var v = action.tiers[p.id];
+            var t = (v === null) ? null : (Number.isInteger(v) && v >= 1 ? v : null);
+            return Object.assign({}, p, { tier: t });
+          });
+          reordered = normalizeTiers(reordered);
+        }
         return Object.assign({}, state, { players: reordered, manuallyEdited: true });
+      }
+
+      case 'SET_LEAGUE': {
+        if (action.league === null) {
+          return Object.assign({}, state, { league: null });
+        }
+        if (!isValidLeagueStrict(action.league)) {
+          return state;
+        }
+        return Object.assign({}, state, { league: buildCanonicalLeague(action.league) });
       }
 
       default:
@@ -301,6 +509,190 @@
     return null;
   }
 
+  // ---- board-signal selectors (pure; scan-only, no .sort()) ------------------------------
+
+  /**
+   * @param {State} state
+   * @returns {null|{picksMade:number, currentPick:number, round:number, pickInRound:number, myNextPick:number, picksUntilMine:number, isMyPick:boolean}}
+   */
+  function pickMath(state) {
+    if (!state.league) {
+      return null;
+    }
+    var N = state.league.size;
+    var s = state.league.slot;
+    var snake = state.league.snake;
+
+    var picksMade = 0;
+    state.players.forEach(function (p) {
+      var m = state.marks[p.id];
+      if (m && m.drafted) {
+        picksMade++;
+      }
+    });
+    var currentPick = picksMade + 1;
+    var round = Math.floor(picksMade / N) + 1;
+    var pickInRound = (picksMade % N) + 1;
+
+    function slotInRound(r) {
+      return (snake && r % 2 === 0) ? (N - s + 1) : s;
+    }
+    function overallFor(r) {
+      return (r - 1) * N + slotInRound(r);
+    }
+
+    var r = round;
+    var myNextPick = overallFor(r);
+    var guard = 0;
+    while (myNextPick < currentPick && guard < 1000) {
+      r++;
+      myNextPick = overallFor(r);
+      guard++;
+    }
+    var picksUntilMine = myNextPick - currentPick;
+
+    return {
+      picksMade: picksMade,
+      currentPick: currentPick,
+      round: round,
+      pickInRound: pickInRound,
+      myNextPick: myNextPick,
+      picksUntilMine: picksUntilMine,
+      isMyPick: picksUntilMine === 0
+    };
+  }
+
+  /**
+   * @param {State} state
+   * @returns {Object<string, boolean>} ids of AVAILABLE players who are the sole available member of their (position, tier) group
+   */
+  function lastInTierIds(state) {
+    var counts = {};
+    state.players.forEach(function (p) {
+      if (p.tier === null || p.tier === undefined) {
+        return;
+      }
+      var m = state.marks[p.id];
+      if (m && m.drafted) {
+        return;
+      }
+      var key = p.position + '|' + p.tier;
+      counts[key] = (counts[key] || 0) + 1;
+    });
+
+    var result = {};
+    state.players.forEach(function (p) {
+      if (p.tier === null || p.tier === undefined) {
+        return;
+      }
+      var m = state.marks[p.id];
+      if (m && m.drafted) {
+        return;
+      }
+      var key = p.position + '|' + p.tier;
+      if (counts[key] === 1) {
+        result[p.id] = true;
+      }
+    });
+    return result;
+  }
+
+  /**
+   * @param {State} state
+   * @returns {Object<string, boolean>} ids of the first picksUntilMine available players in board order
+   */
+  function likelyGoneIds(state) {
+    var result = {};
+    if (!state.league) {
+      return result;
+    }
+    var math = pickMath(state);
+    if (!math || math.isMyPick) {
+      return result;
+    }
+    var k = math.picksUntilMine;
+    var count = 0;
+    for (var i = 0; i < state.players.length && count < k; i++) {
+      var p = state.players[i];
+      var m = state.marks[p.id];
+      if (m && m.drafted) {
+        continue;
+      }
+      result[p.id] = true;
+      count++;
+    }
+    return result;
+  }
+
+  /**
+   * @param {State} state
+   * @returns {Object<string, boolean>} league-free: available ids drifting >= VALUE_DRIFT_MIN past current pick, ranked <= VALUE_RANK_CEILING
+   */
+  function valueFlagIds(state) {
+    var picksMade = 0;
+    state.players.forEach(function (p) {
+      var m = state.marks[p.id];
+      if (m && m.drafted) {
+        picksMade++;
+      }
+    });
+    var currentPick = picksMade + 1;
+
+    var result = {};
+    state.players.forEach(function (p) {
+      var m = state.marks[p.id];
+      if (m && m.drafted) {
+        return;
+      }
+      if ((currentPick - p.rank) >= VALUE_DRIFT_MIN && p.rank <= VALUE_RANK_CEILING) {
+        result[p.id] = true;
+      }
+    });
+    return result;
+  }
+
+  /**
+   * @param {State} state
+   * @returns {null|{QB:{filled:number,req:number}, RB:{filled:number,req:number}, WR:{filled:number,req:number}, TE:{filled:number,req:number}, FLEX:{filled:number,req:number}, BENCH:{filled:number}}}
+   */
+  function rosterNeeds(state) {
+    if (!state.league || !state.league.roster) {
+      return null;
+    }
+    var req = state.league.roster;
+    var filled = { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, BENCH: 0 };
+    var byId = {};
+    state.players.forEach(function (p) { byId[p.id] = p; });
+
+    state.undoStack.forEach(function (entry) {
+      var mark = state.marks[entry.playerId];
+      if (!mark || !mark.mine) {
+        return;
+      }
+      var player = byId[entry.playerId];
+      if (!player) {
+        return;
+      }
+      var pos = player.position;
+      if (filled[pos] < req[pos]) {
+        filled[pos]++;
+      } else if (FLEX_ELIGIBLE[pos] && filled.FLEX < req.FLEX) {
+        filled.FLEX++;
+      } else {
+        filled.BENCH++;
+      }
+    });
+
+    return {
+      QB: { filled: filled.QB, req: req.QB },
+      RB: { filled: filled.RB, req: req.RB },
+      WR: { filled: filled.WR, req: req.WR },
+      TE: { filled: filled.TE, req: req.TE },
+      FLEX: { filled: filled.FLEX, req: req.FLEX },
+      BENCH: { filled: filled.BENCH }
+    };
+  }
+
   function isValidState(obj) {
     if (!obj || typeof obj !== 'object') {
       return false;
@@ -357,12 +749,14 @@
    * Repairs (rather than discards) a structurally-valid-but-inconsistent state:
    * missing/invalid marks entries default to false, orphan marks/undoStack
    * entries for ids not in players are dropped, target/avoid exclusivity
-   * is re-enforced. localStorage is the only copy of a live draft, so a
-   * bad-shaped single mark shouldn't cost the whole draft.
+   * is re-enforced, players are rebuilt in canonical key order with tier
+   * healed, and a non-conforming league is healed to null. localStorage is
+   * the only copy of a live draft, so a bad-shaped single field shouldn't
+   * cost the whole draft.
    * @param {State} state
    * @returns {State}
    */
-  function normalizeMarks(state) {
+  function normalize(state) {
     var validIds = {};
     state.players.forEach(function (p) {
       validIds[p.id] = true;
@@ -387,12 +781,13 @@
 
     return {
       schemaVersion: state.schemaVersion,
-      players: state.players,
+      players: normalizeTiers(healPlayers(state.players)),
       marks: marks,
       undoStack: undoStack,
       filters: state.filters,
       searchText: state.searchText,
-      manuallyEdited: (typeof state.manuallyEdited === 'boolean' ? state.manuallyEdited : false)
+      manuallyEdited: (typeof state.manuallyEdited === 'boolean' ? state.manuallyEdited : false),
+      league: healLeague(state.league)
     };
   }
 
@@ -415,7 +810,7 @@
       return createSeedState();
     }
 
-    // belt-and-suspenders: isValidState/migrate/normalizeMarks are defensive but a poisoned
+    // belt-and-suspenders: isValidState/migrate/normalize are defensive but a poisoned
     // payload should never crash-loop the boot even if one of them has a gap - fall back to seed.
     try {
       if (!parsed || typeof parsed.schemaVersion !== 'number') {
@@ -441,7 +836,7 @@
         return createSeedState();
       }
 
-      var result = normalizeMarks(parsed);
+      var result = normalize(parsed);
       if (version !== initialVersion) {
         // migration ran: persist the upgraded shape now instead of waiting for the next dispatch
         save(result);
@@ -491,6 +886,8 @@
   DC.state = {
     CURRENT_SCHEMA_VERSION: CURRENT_SCHEMA_VERSION,
     STORAGE_KEY: STORAGE_KEY,
+    VALUE_DRIFT_MIN: VALUE_DRIFT_MIN,
+    VALUE_RANK_CEILING: VALUE_RANK_CEILING,
     createSeedState: createSeedState,
     reduce: reduce,
     createStore: createStore,
@@ -500,6 +897,14 @@
     availableCountsByPosition: availableCountsByPosition,
     myRosterCounts: myRosterCounts,
     pickNumber: pickNumber,
-    matchesSearch: matchesSearch
+    matchesSearch: matchesSearch,
+    clampTierAt: clampTierAt,
+    normalizeTiers: normalizeTiers,
+    stepperBounds: stepperBounds,
+    pickMath: pickMath,
+    lastInTierIds: lastInTierIds,
+    likelyGoneIds: likelyGoneIds,
+    valueFlagIds: valueFlagIds,
+    rosterNeeds: rosterNeeds
   };
 })();
