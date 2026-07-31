@@ -42,7 +42,7 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
-**Reminder for this release:** this release bumps the service-worker cache to v2. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+**Reminder for this release:** this release bumps the service-worker cache to v3. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
 
 ## Install on iPhone
 
@@ -95,6 +95,17 @@ Once you've manually reordered your rankings (see Edit your rankings in-app, bel
 Open Settings -> Edit Rankings to reorder the board by hand, without re-importing a file. Drag a row's handle to move a player, or tap a player's rank number to type an exact rank and jump straight there. Tap Done to commit your changes to the board, or Cancel to discard them; Cancel asks for confirmation first if you've moved anyone. Drafted players show their DRAFTED badge in the editor and can still be dragged or rank-jumped like anyone else. Searching inside edit mode is for finding a player: dragging is disabled while a search filter is active, but tapping a player's rank number to jump still works.
 
 Manual edits persist until your next Import Rankings.
+
+## Track your own roster
+
+While drafting, mark which picks are yours as you go.
+
+- **Tap DRAFT** normally to record someone else's pick -- unchanged from before.
+- **Long-press DRAFT** (about half a second -- the button fills blue while you hold) to mark that pick as yours instead.
+- Tap the **Mine** chip to filter the board down to your picks. In place of the usual filter summary line, it shows a roster summary: your QB/RB/WR/TE counts and total picks.
+- Made a mistake? In the Drafted or Mine view, tap the person icon on any pick to toggle whether it's yours, no need to undo and redraft.
+
+This is counts only for now -- it doesn't know your league's roster slots or needs. That comes with the draft-position tracker in a later release.
 
 ## Backup / restore
 
