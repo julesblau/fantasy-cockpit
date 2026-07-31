@@ -590,6 +590,12 @@
     // ---- event wiring ----
 
     editRootEl.addEventListener('click', function (ev) {
+      if (editRootEl.classList.contains('leaving')) {
+        // Closes the whole leaving-window-crash class: CSS `pointer-events:none` already
+        // blocks real pointers during this 150ms window; this covers everything else
+        // (programmatic .click(), synthetic events) that bypasses hit-testing.
+        return;
+      }
       var target = ev.target.closest('[data-action]');
       if (!target) {
         return;
@@ -653,6 +659,9 @@
     });
 
     listEl.addEventListener('pointerdown', function (ev) {
+      if (activeDrag) {
+        return; // a drag is already active — a second finger must never overwrite it and orphan its listeners
+      }
       if (ev.button !== 0) {
         return;
       }

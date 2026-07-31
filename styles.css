@@ -601,6 +601,10 @@ button.player-rank {
   transform: translateY(8px);
 }
 
+#edit-root.leaving {
+  pointer-events: none;
+}
+
 .edit-topbar {
   display: flex;
   align-items: center;

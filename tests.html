@@ -2307,6 +2307,102 @@
   })();
   </script>
 
+  <!-- Task 4 review round 2: close the whole leaving-window-crash class (JS closing-guard in
+       the click handler, backing the #edit-root.leaving CSS pointer-events:none which a
+       synthetic dispatchEvent can't exercise since it bypasses hit-testing) + guard against
+       overlapping drag starts orphaning listeners. -->
+  <script>
+  (function () {
+    'use strict';
+    section('reorder');
+
+    function buildEditFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML = '<div id="edit-root" hidden></div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function captureWindowErrors(fn) {
+      var errors = [];
+      function onError(ev) {
+        errors.push((ev && ev.error && ev.error.message) || (ev && ev.message) || String(ev));
+        if (ev && ev.preventDefault) {
+          ev.preventDefault();
+        }
+      }
+      window.addEventListener('error', onError);
+      try {
+        fn();
+      } finally {
+        window.removeEventListener('error', onError);
+      }
+      return errors;
+    }
+
+    t('closing guard: a click during the real 150ms leaving window (e.g. a rank badge) does nothing — no throw, no card. CSS pointer-events:none blocks real pointers; this JS guard covers everything else (programmatic/synthetic clicks), which is what this fixture test exercises', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var doneBtn = editRoot.querySelector('[data-action="done-edit"]');
+        doneBtn.click(); // real close: staged -> null and .leaving added synchronously, before the setTimeout fires
+
+        assert(editRoot.classList.contains('leaving'), 'sanity: .leaving should already be present, unflushed setTimeout notwithstanding');
+
+        var firstPlayer = DC.data.SEED_PLAYERS[0];
+        var rankBtn = editRoot.querySelector('[data-action="rank-jump"][data-id="' + firstPlayer.id + '"]');
+        var errors = captureWindowErrors(function () {
+          rankBtn.click();
+        });
+
+        assertEq(errors.length, 0, 'a click during .leaving must not throw: ' + (errors[0] || ''));
+        assert(!editRoot.querySelector('.rank-input'), 'rank-jump card must not open while closing');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('drag: a second pointerdown on a different handle while a drag is already active is ignored, so the first drag is never orphaned', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var rows = editRoot.querySelectorAll('#edit-list .player-row');
+        var firstHandle = rows[0].querySelector('.drag-handle');
+        var secondHandle = rows[1].querySelector('.drag-handle');
+
+        firstHandle.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, pointerId: 1, button: 0, clientY: 100
+        }));
+        assert(rows[0].classList.contains('dragging'), 'first drag should start');
+
+        // a second finger starting a drag on a DIFFERENT handle mid-drag must be ignored entirely
+        secondHandle.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, pointerId: 2, button: 0, clientY: 200
+        }));
+        assert(!rows[1].classList.contains('dragging'), 'second pointerdown must not start a second drag');
+        assert(rows[0].classList.contains('dragging'), 'the first drag must remain untouched by the ignored second pointerdown');
+
+        // the original drag (pointerId 1) must still end normally — proof its listeners were never orphaned
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+        assert(!rows[0].classList.contains('dragging'), 'the original drag should still end normally via its own pointerId');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+  })();
+  </script>
+
   <!-- render results (runs last, after all test-section scripts) -->
   <script>
     (function () {
