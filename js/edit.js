@@ -219,25 +219,9 @@
     return { fromIndex: fromIndex, toIndex: toIndex };
   }
 
-  /**
-   * @param {{tier:(number|null)}|null} prevView the row rendered immediately before view, or null at list start
-   * @param {{tier:(number|null)}} view
-   * @returns {string|null} "Tier {n}" when view starts a new tiered block; null otherwise.
-   *   An untiered view never breaks. A tiered view breaks when prev is the list start, prev is
-   *   untiered, or prev's tier differs — but a tiered-then-untiered transition does NOT break
-   *   (untiered rows carry no label of their own).
-   */
-  function tierBreakBefore(prevView, view) {
-    var tier = view ? view.tier : null;
-    if (tier === null || tier === undefined) {
-      return null;
-    }
-    var prevTier = prevView ? prevView.tier : null;
-    if (prevTier === null || prevTier === undefined || prevTier !== tier) {
-      return 'Tier ' + tier;
-    }
-    return null;
-  }
+  // tierBreakBefore moved to DC.state (shared truth table with ui.js; see state.js's doc comment) —
+  // aliased below under DC.edit.staging so every existing internal/external call site is unchanged.
+  var tierBreakBefore = DC.state.tierBreakBefore;
 
   // ---- geometry (pure math for drag/tap-to-jump) ----
 

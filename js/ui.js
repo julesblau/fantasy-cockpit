@@ -12,6 +12,20 @@
   var STATUS_LABELS = { AVAILABLE: 'Available', TARGETS: 'Targets', AVOID: 'Avoid', DRAFTED: 'Drafted' };
   var POSITIONS = ['QB', 'RB', 'WR', 'TE'];
 
+  // signal tag priority order: VALUE > CLIFF > GONE SOON, max 2 rendered
+  var SIGNAL_DEFS = [
+    ['value', 'sig-value', 'VALUE'],
+    ['cliff', 'sig-cliff', 'CLIFF'],
+    ['gone', 'sig-gone', 'GONE SOON']
+  ];
+
+  var LEAGUE_SIZE_MIN = 4;
+  var LEAGUE_SIZE_MAX = 20;
+  var LEAGUE_ROSTER_MIN = 0;
+  var LEAGUE_ROSTER_MAX = 12;
+  var LEAGUE_ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'BENCH'];
+  var DEFAULT_LEAGUE = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } };
+
   function esc(s) {
     return String(s === null || s === undefined ? '' : s)
       .replace(/&/g, '&amp;')
@@ -55,7 +69,37 @@
     return esc(view.team) + ' ' + MIDDOT + ' ' + esc(view.position) + ' ' + MIDDOT + ' Bye ' + bye;
   }
 
-  function availableRowHTML(view) {
+  // shared by all three row templates so a tier change between adjacent VISIBLE rows renders
+  // identically to edit.js's divider (ctx.tierBreak is the "Tier N" label from the shared
+  // DC.state.tierBreakBefore truth table, computed once per render — see mount()'s render())
+  function tierBreakAttr(ctx) {
+    return ctx && ctx.tierBreak ? ' data-tier-label="' + esc(ctx.tierBreak) + '"' : '';
+  }
+
+  /**
+   * @param {string} playerId
+   * @param {{value:Object, cliff:Object, gone:Object}} [signals] id->true maps (DC.state.valueFlagIds/
+   *   lastInTierIds/likelyGoneIds), computed ONCE per render — never call the selectors per row
+   * @returns {string} up to 2 .sig-tag spans, priority VALUE > CLIFF > GONE SOON; '' when none/absent
+   */
+  function signalTagsHTML(playerId, signals) {
+    if (!signals) {
+      return '';
+    }
+    var tags = [];
+    for (var i = 0; i < SIGNAL_DEFS.length && tags.length < 2; i++) {
+      var def = SIGNAL_DEFS[i];
+      var set = signals[def[0]];
+      if (set && set[playerId]) {
+        tags.push('<span class="sig-tag ' + def[1] + '">' + def[2] + '</span>');
+      }
+    }
+    return tags.length ? '<div class="signal-tags">' + tags.join('') + '</div>' : '';
+  }
+
+  /** @param {{tierBreak:(string|null), signals:*}} [ctx] */
+  function availableRowHTML(view, ctx) {
+    ctx = ctx || {};
     var rowClasses = ['player-row'];
     if (view.target) {
       rowClasses.push('is-target');
@@ -63,15 +107,19 @@
     if (view.avoid) {
       rowClasses.push('is-avoid');
     }
+    if (ctx.tierBreak) {
+      rowClasses.push('tier-break');
+    }
     var starClass = 'btn-toggle' + (view.target ? ' on-target' : '');
     var starIcon = view.target ? icon('star-filled') : icon('star');
     var xClass = 'btn-toggle' + (view.avoid ? ' on-avoid' : '');
     return (
-      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
+      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '"' + tierBreakAttr(ctx) + '>' +
         '<div class="player-rank">' + view.rank + '</div>' +
         '<div class="player-info">' +
           '<div class="player-name">' + esc(view.name) + '</div>' +
           '<div class="player-meta">' + metaLine(view) + '</div>' +
+          signalTagsHTML(view.id, ctx.signals) +
         '</div>' +
         '<button class="' + starClass + '" data-action="toggle-target" data-id="' + esc(view.id) + '">' + starIcon + '</button>' +
         '<button class="' + xClass + '" data-action="toggle-avoid" data-id="' + esc(view.id) + '">' + icon('x') + '</button>' +
@@ -80,9 +128,15 @@
     );
   }
 
-  function draftedSearchRowHTML(view) {
+  /** @param {{tierBreak:(string|null)}} [ctx] */
+  function draftedSearchRowHTML(view, ctx) {
+    ctx = ctx || {};
+    var rowClasses = ['player-row', 'is-drafted-search'];
+    if (ctx.tierBreak) {
+      rowClasses.push('tier-break');
+    }
     return (
-      '<div class="player-row is-drafted-search" data-id="' + esc(view.id) + '">' +
+      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '"' + tierBreakAttr(ctx) + '>' +
         '<div class="player-rank">' + view.rank + '</div>' +
         '<div class="player-info">' +
           '<div class="player-name">' + esc(view.name) + '</div>' +
@@ -93,15 +147,20 @@
     );
   }
 
-  function draftedRowHTML(view, pickNumber) {
-    var pickText = typeof pickNumber === 'number' ? pickNumber : EMDASH;
+  /** @param {{pickNumber:(number|null), tierBreak:(string|null)}} [ctx] */
+  function draftedRowHTML(view, ctx) {
+    ctx = ctx || {};
+    var pickText = typeof ctx.pickNumber === 'number' ? ctx.pickNumber : EMDASH;
     var rowClasses = ['player-row'];
     if (view.mine) {
       rowClasses.push('is-mine');
     }
+    if (ctx.tierBreak) {
+      rowClasses.push('tier-break');
+    }
     var mineToggleClass = 'btn-toggle' + (view.mine ? ' on-mine' : '');
     return (
-      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
+      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '"' + tierBreakAttr(ctx) + '>' +
         '<div class="player-rank">' + view.rank + '</div>' +
         '<div class="player-info">' +
           '<div class="player-name">' +
@@ -119,17 +178,17 @@
 
   /**
    * @param {Object} view player + marks (id, rank, name, team, position, byeWeek, drafted, target, avoid)
-   * @param {{searching:boolean, statusFilter:string, pickNumber:(number|null)}} ctx
+   * @param {{searching:boolean, statusFilter:string, pickNumber:(number|null), tierBreak:(string|null), signals:*}} ctx
    */
   function playerRowHTML(view, ctx) {
     ctx = ctx || {};
     if (view.drafted) {
       if (ctx.searching) {
-        return draftedSearchRowHTML(view);
+        return draftedSearchRowHTML(view, ctx);
       }
-      return draftedRowHTML(view, ctx.pickNumber);
+      return draftedRowHTML(view, ctx);
     }
-    return availableRowHTML(view);
+    return availableRowHTML(view, ctx);
   }
 
   /**
@@ -147,6 +206,14 @@
       );
     });
     return '<div class="stats-strip">' + items.join('') + '</div>';
+  }
+
+  /** @param {{round:number, currentPick:number, picksUntilMine:number, isMyPick:boolean}} pm non-null DC.state.pickMath(state) result */
+  function trackerStripHTML(pm) {
+    if (pm.isMyPick) {
+      return '<div class="tracker-strip">' + "You're up " + EMDASH + ' R' + pm.round + ', Pick ' + pm.currentPick + '</div>';
+    }
+    return '<div class="tracker-strip">R' + pm.round + ' ' + MIDDOT + ' Pick ' + pm.currentPick + ' ' + MIDDOT + ' ' + pm.picksUntilMine + ' until you</div>';
   }
 
   var POSITION_CHIPS = [['ALL', 'All'], ['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE']];
@@ -186,14 +253,25 @@
   }
 
   /**
-   * @param {{QB:number, RB:number, WR:number, TE:number}} counts
-   * @param {number} total
+   * @param {?{QB:{filled:number,req:number}, RB:*, WR:*, TE:*, FLEX:*, BENCH:{filled:number}}} needs
+   *   DC.state.rosterNeeds(state), or null when league is unset — drives the needs-line format
+   * @param {{QB:number, RB:number, WR:number, TE:number}} counts DC.state.myRosterCounts(state) —
+   *   used only in the fallback (needs===null) branch; total is summed HERE, never passed in, so a
+   *   position-filtered caller can never under-count the real total (the R3 minor this replaces)
    */
-  function rosterSummaryHTML(counts, total) {
+  function rosterSummaryHTML(needs, counts) {
+    if (needs) {
+      var needParts = ['QB', 'RB', 'WR', 'TE', 'FLEX'].map(function (k) {
+        return k + ' ' + needs[k].filled + '/' + needs[k].req;
+      });
+      return '<div class="summary">My roster ' + EMDASH + ' ' + needParts.join(' ' + MIDDOT + ' ') + ' ' + MIDDOT + ' Bench ' + needs.BENCH.filled + '</div>';
+    }
+    var total = POSITIONS.reduce(function (sum, pos) { return sum + (counts[pos] || 0); }, 0);
     var parts = POSITIONS.map(function (pos) {
       return pos + ' ' + (counts[pos] || 0);
     });
-    return '<div class="summary">My roster ' + EMDASH + ' ' + parts.join(' ' + MIDDOT + ' ') + ' (' + total + ' picks)</div>';
+    var pickWord = total === 1 ? 'pick' : 'picks';
+    return '<div class="summary">My roster ' + EMDASH + ' ' + parts.join(' ' + MIDDOT + ' ') + ' (' + total + ' ' + pickWord + ')</div>';
   }
 
   function emptyBody(iconName, title, sub, actionLabel, actionName) {
@@ -281,6 +359,8 @@
 
   var templates = {
     playerRowHTML: playerRowHTML,
+    signalTagsHTML: signalTagsHTML,
+    trackerStripHTML: trackerStripHTML,
     statsStripHTML: statsStripHTML,
     chipsHTML: chipsHTML,
     summaryHTML: summaryHTML,
@@ -290,6 +370,43 @@
     backupApplyCheck: backupApplyCheck,
     shouldAutoBackupBeforeImport: shouldAutoBackupBeforeImport
   };
+
+  // ---- league settings editors (imperative DOM in mount()'s sheet block; pure HTML builders) ----
+
+  function cloneLeague(league) {
+    return { size: league.size, slot: league.slot, snake: league.snake, roster: Object.assign({}, league.roster) };
+  }
+
+  function leagueStepperRowHTML(label, value, min, max, action, key) {
+    var keyAttr = key ? ' data-key="' + esc(key) + '"' : '';
+    return (
+      '<div class="tier-stepper-row">' +
+        '<span class="tier-stepper-label">' + esc(label) + '</span>' +
+        '<button type="button" class="tier-step-btn" data-action="' + action + '" data-dir="-1"' + keyAttr + (value <= min ? ' disabled' : '') + '>−</button>' +
+        '<span class="tier-stepper-value">' + value + '</span>' +
+        '<button type="button" class="tier-step-btn" data-action="' + action + '" data-dir="1"' + keyAttr + (value >= max ? ' disabled' : '') + '>+</button>' +
+      '</div>'
+    );
+  }
+
+  /** @param {boolean} pendingApply true while editing a not-yet-applied setup draft (renders Apply, not Clear) */
+  function leagueEditorsHTML(league, pendingApply) {
+    var html = '';
+    html += leagueStepperRowHTML('League size', league.size, LEAGUE_SIZE_MIN, LEAGUE_SIZE_MAX, 'league-size-step');
+    html += leagueStepperRowHTML('Draft slot', league.slot, 1, league.size, 'league-slot-step');
+    html +=
+      '<div class="tier-stepper-row">' +
+        '<span class="tier-stepper-label">Snake</span>' +
+        '<button type="button" class="snake-toggle-btn" data-action="league-snake-toggle" aria-pressed="' + (league.snake ? 'true' : 'false') + '">' + (league.snake ? icon('check', 16) : '') + '</button>' +
+      '</div>';
+    LEAGUE_ROSTER_KEYS.forEach(function (key) {
+      html += leagueStepperRowHTML(key, league.roster[key], LEAGUE_ROSTER_MIN, LEAGUE_ROSTER_MAX, 'league-roster-step', key);
+    });
+    html += pendingApply
+      ? '<button type="button" class="sheet-row" data-action="league-apply">Apply</button>'
+      : '<button type="button" class="sheet-row destructive" data-action="league-clear">Clear league setup</button>';
+    return html;
+  }
 
   // ---- mount / render (impure — DOM + store wiring) --------------------------
 
@@ -301,6 +418,7 @@
     var appEl = document.getElementById('app');
     var searchContainer = document.getElementById('search-container');
     var statsEl = document.getElementById('stats-strip');
+    var trackerEl = document.getElementById('tracker-strip');
     var chipsEl = document.getElementById('filter-chips');
     var summaryEl = document.getElementById('summary-line');
     var listEl = document.getElementById('player-list');
@@ -335,6 +453,8 @@
         '</div>' +
         '<button class="sheet-row" data-action="export">Export Backup</button>' +
         '<div class="sheet-note">Save this file somewhere safe ' + EMDASH + ' it restores via Import.</div>' +
+        '<h3 class="sheet-section-title">League</h3>' +
+        '<div class="league-section"></div>' +
         '<button class="sheet-row" data-action="close-settings">Done</button>' +
       '</div>';
     var sheetScrim = sheetRoot.querySelector('.scrim');
@@ -343,8 +463,11 @@
     var importTextarea = sheetRoot.querySelector('.import-textarea');
     var importFile = sheetRoot.querySelector('.import-file');
     var importPreviewEl = sheetRoot.querySelector('.import-preview');
+    var leagueSectionEl = sheetRoot.querySelector('.league-section');
 
     var importPreviewState = null; // {kind:'rankings'|'backup', result} — lives here, not in the store
+    var leagueSetupOpen = false; // UI-only: true while "Set up draft tracker" editors are expanded pre-Apply
+    var leagueDraft = null; // League|null — uncommitted defaults being edited before Apply; never touches the store
     var undoBannerTimer = null;
     var lastFiltersKey = null;
     var lastSearchText = null;
@@ -369,10 +492,40 @@
       sheetEl.hidden = true;
       disarmAllConfirmButtons(); // a pending two-tap confirm must not survive a sheet close
       resetImportArea();
+      leagueSetupOpen = false; // closing discards an un-applied setup draft, same as the import area reset above
+      leagueDraft = null;
+      renderLeagueSection(store.getState());
     }
 
     function toggleImportArea() {
       importArea.hidden = !importArea.hidden;
+    }
+
+    // ---- league settings section (imperative; league-section is fully rebuilt every render()) ----
+
+    function renderLeagueSection(state) {
+      var league = state.league;
+      if (!league && !leagueSetupOpen) {
+        leagueSectionEl.innerHTML = '<button type="button" class="sheet-row" data-action="league-setup-open">Set up draft tracker</button>';
+      } else {
+        leagueSectionEl.innerHTML = leagueEditorsHTML(league || leagueDraft, !league);
+      }
+    }
+
+    // patchFn mutates a clone in place and returns it; slot is re-clamped into [1,size] unconditionally
+    // afterward regardless of which field changed — the strict SET_LEAGUE reducer requires a complete,
+    // always-valid integer object, so every dispatch here is exactly one full League, never a partial patch.
+    function updateLeagueDraftOrDispatch(patchFn) {
+      var current = store.getState().league;
+      if (current) {
+        var next = patchFn(cloneLeague(current));
+        next.slot = Math.max(1, Math.min(next.size, next.slot));
+        store.dispatch({ type: 'SET_LEAGUE', league: next });
+      } else if (leagueDraft) {
+        leagueDraft = patchFn(cloneLeague(leagueDraft));
+        leagueDraft.slot = Math.max(1, Math.min(leagueDraft.size, leagueDraft.slot));
+        renderLeagueSection(store.getState());
+      }
     }
 
     // ---- two-tap confirm (Reset Draft / Reset Targets-Avoid / Clear All Data / import Apply buttons) ----
@@ -766,6 +919,54 @@
         case 'export':
           handleExport();
           break;
+        case 'league-setup-open':
+          leagueSetupOpen = true;
+          leagueDraft = cloneLeague(DEFAULT_LEAGUE);
+          renderLeagueSection(store.getState());
+          break;
+        case 'league-apply':
+          if (leagueDraft) {
+            store.dispatch({ type: 'SET_LEAGUE', league: leagueDraft });
+          }
+          leagueSetupOpen = false;
+          leagueDraft = null;
+          break;
+        case 'league-clear':
+          confirmAction(target, function () {
+            store.dispatch({ type: 'SET_LEAGUE', league: null });
+          });
+          break;
+        case 'league-size-step': {
+          var sizeDir = target.getAttribute('data-dir') === '1' ? 1 : -1;
+          updateLeagueDraftOrDispatch(function (lg) {
+            lg.size = Math.max(LEAGUE_SIZE_MIN, Math.min(LEAGUE_SIZE_MAX, lg.size + sizeDir));
+            return lg;
+          });
+          break;
+        }
+        case 'league-slot-step': {
+          var slotDir = target.getAttribute('data-dir') === '1' ? 1 : -1;
+          updateLeagueDraftOrDispatch(function (lg) {
+            lg.slot = lg.slot + slotDir;
+            return lg;
+          });
+          break;
+        }
+        case 'league-snake-toggle':
+          updateLeagueDraftOrDispatch(function (lg) {
+            lg.snake = !lg.snake;
+            return lg;
+          });
+          break;
+        case 'league-roster-step': {
+          var rosterKey = target.getAttribute('data-key');
+          var rosterDir = target.getAttribute('data-dir') === '1' ? 1 : -1;
+          updateLeagueDraftOrDispatch(function (lg) {
+            lg.roster[rosterKey] = Math.max(LEAGUE_ROSTER_MIN, Math.min(LEAGUE_ROSTER_MAX, lg.roster[rosterKey] + rosterDir));
+            return lg;
+          });
+          break;
+        }
         default:
           break;
       }
@@ -821,9 +1022,13 @@
 
       var counts = DC.state.availableCountsByPosition(state);
       statsEl.innerHTML = templates.statsStripHTML(counts, state.filters.position);
+
+      var pm = DC.state.pickMath(state);
+      trackerEl.innerHTML = pm ? templates.trackerStripHTML(pm) : ''; // hidden entirely when league unset
+
       chipsEl.innerHTML = templates.chipsHTML(state.filters);
       if (state.filters.status === 'MINE' && !searching) {
-        summaryEl.innerHTML = templates.rosterSummaryHTML(DC.state.myRosterCounts(state), visible.length);
+        summaryEl.innerHTML = templates.rosterSummaryHTML(DC.state.rosterNeeds(state), DC.state.myRosterCounts(state));
       } else {
         summaryEl.innerHTML = templates.summaryHTML(state, visible.length);
       }
@@ -832,17 +1037,30 @@
         var empty = pickEmptyKind(state);
         listEl.innerHTML = templates.emptyStateHTML(empty.kind, empty.detail);
       } else {
+        // signal id-sets computed ONCE per render, shared by every row's ctx — never per row
+        var signals = {
+          value: DC.state.valueFlagIds(state),
+          cliff: DC.state.lastInTierIds(state),
+          gone: DC.state.likelyGoneIds(state)
+        };
+        var prevTierView = null;
         listEl.innerHTML = visible.map(function (v) {
+          var tierView = { tier: v.tier };
+          var breakLabel = DC.state.tierBreakBefore(prevTierView, tierView); // shared truth table with edit.js (DC.state so a test stubbing DC.edit can't take render() down)
+          prevTierView = tierView;
           var ctx = {
             searching: searching,
             statusFilter: state.filters.status,
-            pickNumber: v.drafted ? DC.state.pickNumber(state, v.id) : null
+            pickNumber: v.drafted ? DC.state.pickNumber(state, v.id) : null,
+            tierBreak: breakLabel,
+            signals: signals
           };
           return templates.playerRowHTML(v, ctx);
         }).join('');
       }
 
       bottomBarEl.innerHTML = templates.bottomBarHTML(state);
+      renderLeagueSection(state);
 
       var filtersKey = state.filters.position + '|' + state.filters.status;
       if (filtersKey !== lastFiltersKey || state.searchText !== lastSearchText) {

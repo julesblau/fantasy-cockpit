@@ -145,6 +145,29 @@
     return result;
   }
 
+  /**
+   * Shared with edit.js AND ui.js (single source of truth for the divider truth table — do not
+   * duplicate). Lives here rather than only on DC.edit so a test that stubs out DC.edit wholesale
+   * can never take ui.js's render() down with it.
+   * @param {{tier:(number|null)}|null} prevView the row rendered immediately before view, or null at list start
+   * @param {{tier:(number|null)}} view
+   * @returns {string|null} "Tier {n}" when view starts a new tiered block; null otherwise.
+   *   An untiered view never breaks. A tiered view breaks when prev is the list start, prev is
+   *   untiered, or prev's tier differs — but a tiered-then-untiered transition does NOT break
+   *   (untiered rows carry no label of their own).
+   */
+  function tierBreakBefore(prevView, view) {
+    var tier = view ? view.tier : null;
+    if (tier === null || tier === undefined) {
+      return null;
+    }
+    var prevTier = prevView ? prevView.tier : null;
+    if (prevTier === null || prevTier === undefined || prevTier !== tier) {
+      return 'Tier ' + tier;
+    }
+    return null;
+  }
+
   function healTier(t) {
     if (t === null) {
       return null;
@@ -905,6 +928,7 @@
     clampTierAt: clampTierAt,
     normalizeTiers: normalizeTiers,
     stepperBounds: stepperBounds,
+    tierBreakBefore: tierBreakBefore,
     pickMath: pickMath,
     lastInTierIds: lastInTierIds,
     likelyGoneIds: likelyGoneIds,

@@ -2136,6 +2136,7 @@
           '<header id="header">' +
             '<div id="search-container"></div>' +
             '<div id="stats-strip"></div>' +
+            '<div id="tracker-strip"></div>' +
             '<div id="filter-chips"></div>' +
             '<div id="summary-line"></div>' +
           '</header>' +
@@ -3953,9 +3954,102 @@
       assert(notMineHtml.indexOf('is-mine') === -1, 'is-mine row class absent when !view.mine: ' + notMineHtml);
     });
 
-    t('rosterSummaryHTML: exact "My roster — QB 1 · RB 3 · WR 2 · TE 1 (7 picks)" format', function () {
-      var html = DC.ui.templates.rosterSummaryHTML({ QB: 1, RB: 3, WR: 2, TE: 1 }, 7);
+    t('rosterSummaryHTML: fallback (needs null) exact "My roster — QB 1 · RB 3 · WR 2 · TE 1 (7 picks)" format, total summed from counts', function () {
+      var html = DC.ui.templates.rosterSummaryHTML(null, { QB: 1, RB: 3, WR: 2, TE: 1 });
       assert(html.indexOf('My roster — QB 1 · RB 3 · WR 2 · TE 1 (7 picks)') !== -1, html);
+    });
+
+    t('rosterSummaryHTML: fallback singular "(1 pick)" vs plural "(2 picks)" — the ledgered R3 minor', function () {
+      var singular = DC.ui.templates.rosterSummaryHTML(null, { QB: 1, RB: 0, WR: 0, TE: 0 });
+      assert(singular.indexOf('(1 pick)') !== -1, singular);
+      assert(singular.indexOf('(1 picks)') === -1, singular);
+      var plural = DC.ui.templates.rosterSummaryHTML(null, { QB: 2, RB: 0, WR: 0, TE: 0 });
+      assert(plural.indexOf('(2 picks)') !== -1, plural);
+    });
+
+    t('rosterSummaryHTML: fallback total is the SUM of counts, not a separately-passed value (the other ledgered R3 minor)', function () {
+      var html = DC.ui.templates.rosterSummaryHTML(null, { QB: 1, RB: 1, WR: 1, TE: 0 });
+      assert(html.indexOf('(3 picks)') !== -1, 'total should be QB+RB+WR+TE=3 even though no total was passed in: ' + html);
+    });
+
+    t('rosterSummaryHTML: needs (non-null) format exact "My roster — QB 1/1 · RB 2/2 · WR 2/3 · TE 0/1 · FLEX 1/1 · Bench 2"', function () {
+      var needs = {
+        QB: { filled: 1, req: 1 },
+        RB: { filled: 2, req: 2 },
+        WR: { filled: 2, req: 3 },
+        TE: { filled: 0, req: 1 },
+        FLEX: { filled: 1, req: 1 },
+        BENCH: { filled: 2 }
+      };
+      var html = DC.ui.templates.rosterSummaryHTML(needs, { QB: 1, RB: 2, WR: 2, TE: 0 });
+      assert(html.indexOf('My roster — QB 1/1 · RB 2/2 · WR 2/3 · TE 0/1 · FLEX 1/1 · Bench 2') !== -1, html);
+    });
+
+    t('trackerStripHTML: normal (not my pick) format "R{round} · Pick {currentPick} · {n} until you"', function () {
+      var html = DC.ui.templates.trackerStripHTML({ round: 3, currentPick: 29, picksUntilMine: 4, isMyPick: false });
+      assert(html.indexOf('R3 · Pick 29 · 4 until you') !== -1, html);
+    });
+
+    t('trackerStripHTML: n=1 renders "1 until you" (no plural noun to worry about)', function () {
+      var html = DC.ui.templates.trackerStripHTML({ round: 1, currentPick: 5, picksUntilMine: 1, isMyPick: false });
+      assert(html.indexOf('1 until you') !== -1, html);
+    });
+
+    t('trackerStripHTML: isMyPick format "You\'re up — R{round}, Pick {currentPick}"', function () {
+      var html = DC.ui.templates.trackerStripHTML({ round: 2, currentPick: 13, picksUntilMine: 0, isMyPick: true });
+      assert(html.indexOf("You're up — R2, Pick 13") !== -1, html);
+    });
+
+    t('signalTagsHTML: priority order VALUE > CLIFF > GONE SOON, max 2 rendered', function () {
+      var allThree = { value: { p1: true }, cliff: { p1: true }, gone: { p1: true } };
+      var html = DC.ui.templates.signalTagsHTML('p1', allThree);
+      assert(html.indexOf('sig-value') !== -1, 'VALUE should render: ' + html);
+      assert(html.indexOf('sig-cliff') !== -1, 'CLIFF should render: ' + html);
+      assert(html.indexOf('sig-gone') === -1, 'GONE SOON should be dropped once 2 tags are already present: ' + html);
+    });
+
+    t('signalTagsHTML: each individual signal renders its own class + label in isolation', function () {
+      var valueOnly = DC.ui.templates.signalTagsHTML('p1', { value: { p1: true }, cliff: {}, gone: {} });
+      assert(valueOnly.indexOf('sig-value') !== -1 && valueOnly.indexOf('VALUE') !== -1, valueOnly);
+      var cliffOnly = DC.ui.templates.signalTagsHTML('p1', { value: {}, cliff: { p1: true }, gone: {} });
+      assert(cliffOnly.indexOf('sig-cliff') !== -1 && cliffOnly.indexOf('CLIFF') !== -1, cliffOnly);
+      var goneOnly = DC.ui.templates.signalTagsHTML('p1', { value: {}, cliff: {}, gone: { p1: true } });
+      assert(goneOnly.indexOf('sig-gone') !== -1 && goneOnly.indexOf('GONE SOON') !== -1, goneOnly);
+    });
+
+    t('signalTagsHTML: no signals for this id, or signals absent entirely, renders empty string', function () {
+      assertEq(DC.ui.templates.signalTagsHTML('p1', { value: {}, cliff: {}, gone: {} }), '');
+      assertEq(DC.ui.templates.signalTagsHTML('p1', null), '');
+      assertEq(DC.ui.templates.signalTagsHTML('p1', undefined), '');
+    });
+
+    t('playerRowHTML: ctx.tierBreak renders a .tier-break row with data-tier-label, absent when ctx.tierBreak is null — pinned across available, drafted, and drafted-search rows', function () {
+      var availableView = { id: 'a1', rank: 5, name: 'Avail One', team: 'KC', position: 'QB', byeWeek: 9, drafted: false, target: false, avoid: false };
+      var withBreak = DC.ui.templates.playerRowHTML(availableView, { tierBreak: 'Tier 2' });
+      assert(withBreak.indexOf('tier-break') !== -1, withBreak);
+      assert(withBreak.indexOf('data-tier-label="Tier 2"') !== -1, withBreak);
+      var withoutBreak = DC.ui.templates.playerRowHTML(availableView, { tierBreak: null });
+      assert(withoutBreak.indexOf('tier-break') === -1, withoutBreak);
+
+      var draftedView = Object.assign({}, availableView, { drafted: true, mine: false });
+      var draftedWithBreak = DC.ui.templates.playerRowHTML(draftedView, { statusFilter: 'DRAFTED', pickNumber: 3, tierBreak: 'Tier 1' });
+      assert(draftedWithBreak.indexOf('tier-break') !== -1, draftedWithBreak);
+      assert(draftedWithBreak.indexOf('data-tier-label="Tier 1"') !== -1, draftedWithBreak);
+
+      var draftedSearchWithBreak = DC.ui.templates.playerRowHTML(draftedView, { searching: true, tierBreak: 'Tier 1' });
+      assert(draftedSearchWithBreak.indexOf('tier-break') !== -1, draftedSearchWithBreak);
+      assert(draftedSearchWithBreak.indexOf('is-drafted-search') !== -1, draftedSearchWithBreak);
+    });
+
+    t('availableRowHTML (via playerRowHTML): ctx.signals renders tags after the meta line; drafted rows never render tags regardless of ctx.signals', function () {
+      var signals = { value: { a1: true }, cliff: {}, gone: {} };
+      var availableView = { id: 'a1', rank: 5, name: 'Avail One', team: 'KC', position: 'QB', byeWeek: 9, drafted: false, target: false, avoid: false };
+      var html = DC.ui.templates.playerRowHTML(availableView, { signals: signals });
+      assert(html.indexOf('sig-value') !== -1, html);
+
+      var draftedView = Object.assign({}, availableView, { drafted: true, mine: false });
+      var draftedHtml = DC.ui.templates.playerRowHTML(draftedView, { statusFilter: 'DRAFTED', pickNumber: 1, signals: signals });
+      assert(draftedHtml.indexOf('sig-value') === -1, 'drafted rows must never render signal tags: ' + draftedHtml);
     });
 
     t('emptyStateHTML: kind "mine" renders a distinct title/sub', function () {
@@ -3991,6 +4085,7 @@
           '<header id="header">' +
             '<div id="search-container"></div>' +
             '<div id="stats-strip"></div>' +
+            '<div id="tracker-strip"></div>' +
             '<div id="filter-chips"></div>' +
             '<div id="summary-line"></div>' +
           '</header>' +
@@ -4805,6 +4900,321 @@
         assertEq(p.tier, orig.tier, 'tier for ' + id + ' survives the round trip');
       });
       localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+  })();
+  </script>
+
+  <!-- Round 4 Task 4: main-board UI DOM fixtures — league settings, tracker strip, quiet signals -->
+  <script>
+  (function () {
+    'use strict';
+    section('board-ui');
+
+    function buildMountFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="stats-strip"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function spyDispatch(store) {
+      var calls = [];
+      var original = store.dispatch;
+      store.dispatch = function (action) {
+        calls.push(action);
+        return original(action);
+      };
+      return { calls: calls, restore: function () { store.dispatch = original; } };
+    }
+
+    var DEFAULT_LEAGUE_EXPECTED = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } };
+
+    // ---- E: league settings section ----
+
+    t('league setup flow: "Set up draft tracker" expands editors at defaults; Apply dispatches SET_LEAGUE exactly once with the full default league', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        fixture.querySelector('[data-action="open-settings"]').click();
+
+        var setupBtn = fixture.querySelector('[data-action="league-setup-open"]');
+        assert(setupBtn, 'expected a "Set up draft tracker" row when league is unset');
+        setupBtn.click();
+
+        var sizeRow = fixture.querySelector('[data-action="league-size-step"]').closest('.tier-stepper-row');
+        assertEq(sizeRow.querySelector('.tier-stepper-value').textContent, '12', 'default league size should be 12');
+        var snakeBtn = fixture.querySelector('[data-action="league-snake-toggle"]');
+        assertEq(snakeBtn.getAttribute('aria-pressed'), 'true', 'snake defaults on');
+
+        var applyBtn = fixture.querySelector('[data-action="league-apply"]');
+        assert(applyBtn, 'expected an Apply button while pending');
+        applyBtn.click();
+
+        var leagueDispatches = spy.calls.filter(function (a) { return a.type === 'SET_LEAGUE'; });
+        assertEq(leagueDispatches.length, 1, 'Apply should dispatch SET_LEAGUE exactly once');
+        assertEq(leagueDispatches[0].league, DEFAULT_LEAGUE_EXPECTED);
+        assertEq(store.getState().league, DEFAULT_LEAGUE_EXPECTED);
+
+        assert(!fixture.querySelector('[data-action="league-apply"]'), 'Apply row should be gone after applying');
+        assert(fixture.querySelector('[data-action="league-clear"]'), 'Clear row should appear once a league exists');
+      } finally {
+        spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('league setup flow: closing the sheet before Apply discards the draft — reopening shows "Set up draft tracker" again', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="league-setup-open"]').click();
+        assert(fixture.querySelector('[data-action="league-apply"]'), 'editors should be open pre-apply');
+
+        fixture.querySelector('[data-action="close-settings"]').click();
+        fixture.querySelector('[data-action="open-settings"]').click();
+        assert(fixture.querySelector('[data-action="league-setup-open"]'), 'a fresh open should show the setup row again, not a resumed draft');
+        assertEq(store.getState().league, null, 'closing without Apply must never touch the store');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('league stepper click (existing league): dispatches exactly one complete, valid League object', function () {
+      var fixture = buildMountFixture();
+      var league = { size: 10, slot: 5, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } };
+      var store = DC.state.createStore(Object.assign({}, DC.state.createSeedState(), { league: league }));
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        fixture.querySelector('[data-action="open-settings"]').click();
+
+        var incBtn = fixture.querySelector('[data-action="league-size-step"][data-dir="1"]');
+        assert(incBtn, 'expected a size-increment stepper button');
+        incBtn.click();
+
+        var leagueDispatches = spy.calls.filter(function (a) { return a.type === 'SET_LEAGUE'; });
+        assertEq(leagueDispatches.length, 1, 'a single stepper click should dispatch exactly once');
+        assertEq(leagueDispatches[0].league, { size: 11, slot: 5, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } });
+      } finally {
+        spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('league size shrink clamps slot into the new bounds within the SAME dispatch', function () {
+      var fixture = buildMountFixture();
+      var league = { size: 5, slot: 5, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } };
+      var store = DC.state.createStore(Object.assign({}, DC.state.createSeedState(), { league: league }));
+      try {
+        DC.ui.mount(store);
+        fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="league-size-step"][data-dir="-1"]').click();
+        assertEq(store.getState().league, { size: 4, slot: 4, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } }, 'slot should clamp from 5 to 4 when size shrinks to 4');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('league roster stepper: increments the named key only, one full dispatch', function () {
+      var fixture = buildMountFixture();
+      var league = { size: 10, slot: 5, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } };
+      var store = DC.state.createStore(Object.assign({}, DC.state.createSeedState(), { league: league }));
+      try {
+        DC.ui.mount(store);
+        fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="league-roster-step"][data-key="TE"][data-dir="1"]').click();
+        assertEq(store.getState().league.roster, { QB: 1, RB: 2, WR: 3, TE: 2, FLEX: 1, BENCH: 6 });
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('league-clear: two-tap confirm before dispatching SET_LEAGUE null', function () {
+      var fixture = buildMountFixture();
+      var league = { size: 10, slot: 5, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } };
+      var store = DC.state.createStore(Object.assign({}, DC.state.createSeedState(), { league: league }));
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        fixture.querySelector('[data-action="open-settings"]').click();
+        var clearBtn = fixture.querySelector('[data-action="league-clear"]');
+        assert(clearBtn, 'expected a Clear league setup row');
+
+        clearBtn.click(); // first tap: arm only
+        assertEq(spy.calls.filter(function (a) { return a.type === 'SET_LEAGUE'; }).length, 0, 'first tap should only arm, not dispatch');
+        assertEq(store.getState().league, league, 'league unchanged after first tap');
+
+        clearBtn.click(); // second tap: confirm
+        var leagueDispatches = spy.calls.filter(function (a) { return a.type === 'SET_LEAGUE'; });
+        assertEq(leagueDispatches.length, 1);
+        assertEq(leagueDispatches[0].league, null);
+        assertEq(store.getState().league, null);
+      } finally {
+        spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    // ---- B: tracker strip ----
+
+    t('tracker strip: hidden when league unset, appears after SET_LEAGUE, updates after a draft dispatch', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        var trackerEl = fixture.querySelector('#tracker-strip');
+        assertEq(trackerEl.textContent, '', 'tracker strip should be empty when league is unset');
+
+        var league = { size: 10, slot: 5, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } };
+        store.dispatch({ type: 'SET_LEAGUE', league: league });
+        assert(trackerEl.textContent.indexOf('R1') !== -1, 'tracker strip should show R1 right after league is set: ' + trackerEl.textContent);
+        assert(trackerEl.textContent.indexOf('Pick 1') !== -1, trackerEl.textContent);
+
+        var firstId = store.getState().players[0].id;
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: firstId, mine: false });
+        assert(trackerEl.textContent.indexOf('Pick 2') !== -1, 'tracker strip should update after a draft dispatch: ' + trackerEl.textContent);
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    // ---- C: quiet signal tags (real dispatches -> DOM) ----
+
+    function buildSignalBoard() {
+      var players = [];
+      function addPlayer(id, position, tier) {
+        players.push({ id: id, rank: players.length + 1, name: id, team: 'KC', position: position, byeWeek: 9, tier: tier === undefined ? null : tier });
+      }
+      addPlayer('goneSoon1', 'RB'); // rank1 — stays available: first-in-board-order -> GONE SOON, and drift-eligible -> VALUE too
+      addPlayer('val1', 'RB'); // rank2 — stays available, drift-eligible -> VALUE only
+      addPlayer('wrA', 'WR', 1); // rank3 — gets drafted, leaving wrB as the sole tier-1 WR
+      addPlayer('wrB', 'WR', 1); // rank4 — stays available -> CLIFF only (not drift-eligible)
+      for (var i = 1; i <= 12; i++) {
+        addPlayer('filler' + i, i % 2 === 0 ? 'TE' : 'QB'); // rank5..16; filler1-10 get drafted as drift filler, 11-12 stay available with no signals
+      }
+      var marks = {};
+      players.forEach(function (p) { marks[p.id] = { drafted: false, target: false, avoid: false, mine: false }; });
+      return {
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+        players: players,
+        marks: marks,
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false,
+        league: null
+      };
+    }
+
+    function draftSignalBoardFillers(store, mineForFiller1) {
+      store.dispatch({ type: 'DRAFT_PLAYER', playerId: 'wrA', mine: false });
+      for (var i = 1; i <= 10; i++) {
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: 'filler' + i, mine: i === 1 && mineForFiller1 });
+      }
+      // picksMade=11, currentPick=12 now; size=10/slot=3/snake=false -> picksUntilMine=1 (see report for the arithmetic)
+      store.dispatch({ type: 'SET_LEAGUE', league: { size: 10, slot: 3, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } } });
+    }
+
+    t('signal tags: real dispatches produce the right VALUE/CLIFF/GONE SOON badges on the right rows, none on ordinary rows', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(buildSignalBoard());
+      try {
+        DC.ui.mount(store);
+        draftSignalBoardFillers(store, false);
+
+        function tagsFor(id) {
+          var row = fixture.querySelector('.player-row[data-id="' + id + '"]');
+          assert(row, 'expected a row for ' + id);
+          return Array.prototype.map.call(row.querySelectorAll('.sig-tag'), function (el) {
+            return el.className.replace('sig-tag ', '');
+          }).sort();
+        }
+
+        assertEq(tagsFor('goneSoon1'), ['sig-gone', 'sig-value'], 'goneSoon1 should carry both VALUE and GONE SOON');
+        assertEq(tagsFor('val1'), ['sig-value'], 'val1 should carry only VALUE');
+        assertEq(tagsFor('wrB'), ['sig-cliff'], 'wrB should carry only CLIFF (sole surviving WR tier 1)');
+        assertEq(tagsFor('filler11'), [], 'an ordinary available row should carry no tags');
+        assertEq(tagsFor('filler12'), [], 'an ordinary available row should carry no tags');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('signal tags never render in MINE or DRAFTED views, even though a qualifying player is present', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(buildSignalBoard());
+      try {
+        DC.ui.mount(store);
+        draftSignalBoardFillers(store, true); // filler1 mine:true -> non-empty MINE view
+
+        store.dispatch({ type: 'SET_STATUS_FILTER', status: 'DRAFTED' });
+        assertEq(fixture.querySelectorAll('#player-list .sig-tag').length, 0, 'DRAFTED view should never show signal tags');
+        assert(fixture.querySelectorAll('#player-list .player-row').length > 0, 'DRAFTED view should be non-empty for this assertion to be meaningful');
+
+        store.dispatch({ type: 'SET_STATUS_FILTER', status: 'MINE' });
+        assertEq(fixture.querySelectorAll('#player-list .sig-tag').length, 0, 'MINE view should never show signal tags');
+        assert(fixture.querySelectorAll('#player-list .player-row').length > 0, 'MINE view should be non-empty for this assertion to be meaningful');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    // ---- A: tier dividers, main list (real dispatch -> DOM, incl. search view) ----
+
+    t('tier dividers: a real REORDER_PLAYERS tiers dispatch renders a .tier-break row with the right label in both the main list and search results', function () {
+      var fixture = buildMountFixture();
+      var seed = DC.state.createSeedState();
+      var order = seed.players.map(function (p) { return p.id; });
+      var tiers = {};
+      tiers[order[0]] = 1;
+      tiers[order[1]] = 1;
+      tiers[order[2]] = 2;
+      var state = DC.state.reduce(seed, { type: 'REORDER_PLAYERS', order: order, tiers: tiers });
+      var store = DC.state.createStore(state);
+      try {
+        DC.ui.mount(store);
+        var rows = fixture.querySelectorAll('#player-list .player-row');
+        assert(rows[0].classList.contains('tier-break'), 'first row (tier 1, list start) should break');
+        assertEq(rows[0].getAttribute('data-tier-label'), 'Tier 1');
+        assert(!rows[1].classList.contains('tier-break'), 'second row shares tier 1 with the first — no break');
+        assert(rows[2].classList.contains('tier-break'), 'third row is tier 2 — breaks');
+        assertEq(rows[2].getAttribute('data-tier-label'), 'Tier 2');
+
+        store.dispatch({ type: 'SET_SEARCH', text: seed.players[2].name });
+        var searchRows = fixture.querySelectorAll('#player-list .player-row');
+        assertEq(searchRows.length, 1, 'search should isolate the tier-2 player');
+        assert(searchRows[0].classList.contains('tier-break'), 'a lone tiered result still renders its own break in search (all views incl. search)');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
     });
   })();
   </script>

@@ -171,6 +171,14 @@ body.searching #bottom-bar {
   color: var(--accent-position);
 }
 
+/* draft tracker strip: hidden entirely when league is unset (mount() leaves it empty) */
+.tracker-strip {
+  font-size: 13px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  padding: 16px;
+}
+
 /* chips */
 .chip-row {
   display: flex;
@@ -306,6 +314,40 @@ button.player-rank {
   font-size: 13px;
   color: var(--text-2);
   line-height: 16px;
+}
+
+/* quiet signal tags: available rows only, up to 2, priority VALUE > CLIFF > GONE SOON */
+.signal-tags {
+  display: flex;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.sig-tag {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+  border: 1px solid;
+  border-radius: 4px;
+  padding: 2px 5px;
+  letter-spacing: 0.5px;
+  background: transparent;
+}
+
+.sig-value {
+  border-color: var(--accent-draft);
+  color: var(--accent-draft);
+}
+
+.sig-cliff {
+  border-color: var(--accent-target);
+  color: var(--accent-target);
+}
+
+.sig-gone {
+  border-color: var(--text-3);
+  color: var(--text-3);
 }
 
 .btn-toggle {
@@ -623,6 +665,30 @@ button.player-rank {
 .sheet-note {
   font-size: 13px;
   color: var(--text-3);
+}
+
+.sheet-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-2);
+  margin: 16px 0 4px;
+}
+
+.snake-toggle-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-button);
+  background: var(--surface-2);
+  color: var(--text-1);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.snake-toggle-btn[aria-pressed="true"] {
+  background: var(--accent-position);
+  color: #fff;
 }
 
 .import-textarea {
