@@ -129,7 +129,7 @@ Set up your league in Settings -> League: league size, your draft slot, and snak
 
 The tracker has no separate "record a pick" step: it derives round/pick/picks-until-you entirely from a count of how many players are marked Drafted on the board. Forgetting to mark a pick drifts the tracker out of sync with the real draft, so keep every pick logged as it happens.
 
-Tap "Clear league setup" in Settings -> League to remove your league config. The tracker strip, the roster-needs summary above, and the GONE SOON signal below all disappear until you set league config up again.
+Tap "Clear league setup" in Settings -> League to remove your league config. The tracker strip and the GONE SOON signal below disappear, and the roster-needs summary above reverts to the plain position-counts line, until you set league config up again.
 
 ## Quiet signals
 
