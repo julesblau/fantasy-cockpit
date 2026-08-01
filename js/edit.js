@@ -284,6 +284,44 @@
   }
 
   /**
+   * Per-displaced-row translateY (px) for the drag gap-shift preview, replacing a uniform
+   * ±rowStep constant. A tier-break row's extra margin-top makes row PITCH non-uniform, but
+   * (because .player-row's marginBottom is a constant 8px everywhere and only margin-top ever
+   * varies, via .tier-break) removing/reinserting the dragged row still shifts EVERY displaced
+   * row by the exact same amount, regardless of where a divider falls inside the displaced range
+   * — that amount is driven entirely by the dragged row's own height plus the real measured gap
+   * immediately ABOVE its ORIGINAL position (fixed for the whole drag; verified against real DOM
+   * removal/insertion, not just algebra). Only exception: fromIdx===0 has no row above to measure
+   * against, so it falls back to `fallbackGap` (the dragged row's own marginBottom) — correct
+   * whenever the dragged first row isn't itself a divider; an accepted approximation when it is
+   * (dragging the very first row while it's also a tier-break needs the list's own padding to
+   * get exactly right, which this geometry-only function doesn't have).
+   * @param {number[]} rowTops @param {number[]} rowHeights @param {number} fromIdx @param {number} targetIdx
+   *   drop slot in [0,count] — same range convention as applyGapShifts (downward displaces
+   *   (fromIdx,targetIdx) exclusive; upward displaces [targetIdx,fromIdx))
+   * @param {number} fallbackGap used only when fromIdx===0
+   * @returns {Object<number,number>} displaced row index -> translateY px (fromIdx itself never a key)
+   */
+  function gapShiftAmounts(rowTops, rowHeights, fromIdx, targetIdx, fallbackGap) {
+    var gapBefore = fromIdx > 0
+      ? (rowTops[fromIdx] - rowTops[fromIdx - 1] - rowHeights[fromIdx - 1])
+      : fallbackGap;
+    var pitch = rowHeights[fromIdx] + gapBefore;
+    var shifts = {};
+    var i;
+    if (targetIdx > fromIdx) {
+      for (i = fromIdx + 1; i < targetIdx; i++) {
+        shifts[i] = -pitch;
+      }
+    } else if (targetIdx < fromIdx) {
+      for (i = targetIdx; i < fromIdx; i++) {
+        shifts[i] = pitch;
+      }
+    }
+    return shifts;
+  }
+
+  /**
    * Parse a base-10 integer from a string or number. The null-vs-clamp split:
    * unparseable input (empty, non-numeric, a leading "-", decimals like "3.5") -> null;
    * a parseable but out-of-range integer is clamped into [1, count], not nulled.
@@ -736,8 +774,7 @@
       }
 
       var startClientY = ev.clientY;
-      var marginBottom = parseFloat(getComputedStyle(row).marginBottom) || 0;
-      var rowStep = row.offsetHeight + marginBottom; // dragged row's own pitch; used only for the gap-shift preview's pixel amount
+      var marginBottom = parseFloat(getComputedStyle(row).marginBottom) || 0; // gapShiftAmounts' fromIdx===0 fallback
       var lastPointerY = ev.clientY;
       var currentTargetIndex = fromIndex;
       var rafId = null;
@@ -761,18 +798,16 @@
 
       // preview must mirror finishDrag's commit: downward shifts (fromIndex, target) exclusive of
       // target itself (finishDrag's toIndex = target - 1 leaves the target row's own slot as the
-      // destination, not part of the displaced set); upward shifts [target, fromIndex).
+      // destination, not part of the displaced set); upward shifts [target, fromIndex). Per-row
+      // pixel amounts come from gapShiftAmounts, not a uniform rowStep, so a displaced range that
+      // crosses a tier-break row's extra margin-top still closes/opens cleanly (no gap/overlap).
       function applyGapShifts(newTargetIndex) {
+        var shifts = gapShiftAmounts(rowTops, rowHeights, fromIndex, newTargetIndex, marginBottom);
         rows.forEach(function (r, idx) {
           if (idx === fromIndex) {
             return;
           }
-          var shift = 0;
-          if (newTargetIndex > fromIndex && idx > fromIndex && idx < newTargetIndex) {
-            shift = -rowStep;
-          } else if (newTargetIndex < fromIndex && idx < fromIndex && idx >= newTargetIndex) {
-            shift = rowStep;
-          }
+          var shift = shifts[idx] || 0;
           if (shift !== 0) {
             r.classList.add('gap-shift');
             r.style.transform = 'translateY(' + shift + 'px)';
@@ -1075,6 +1110,7 @@
     geom: {
       dropIndexFromPointer: dropIndexFromPointer,
       slotFromPointerOffsets: slotFromPointerOffsets,
+      gapShiftAmounts: gapShiftAmounts,
       clampRank: clampRank,
       rankJumpTargetIndex: rankJumpTargetIndex
     },

@@ -3400,6 +3400,89 @@
       assertEq(DC.edit.geom.slotFromPointerOffsets(50, [], [], -3), 0);
     });
 
+    // ---- gapShiftAmounts ----
+    // spec: array of {height, marginTop} per row; marginBottom is always 8 (matches .player-row;
+    // only .tier-break ever sets marginTop, to 24). Numbers verified against real DOM
+    // removal/insertion (getBoundingClientRect, real styles.css) before writing this table.
+
+    function buildRowGeometry(spec) {
+      var heights = spec.map(function (s) { return s.height; });
+      var tops = [];
+      var cursor = 20; // arbitrary baseline — a bug that assumes rows start at 0 would still show
+      for (var i = 0; i < spec.length; i++) {
+        if (i > 0) {
+          cursor += heights[i - 1] + Math.max(8, spec[i].marginTop);
+        }
+        tops.push(cursor);
+      }
+      return { rowTops: tops, rowHeights: heights };
+    }
+
+    function normalRows(n) {
+      var spec = [];
+      for (var i = 0; i < n; i++) {
+        spec.push({ height: 64, marginTop: 0 });
+      }
+      return spec;
+    }
+
+    t('gapShiftAmounts: uniform pitches — regression parity with the old ±rowStep behavior, both directions', function () {
+      var g = buildRowGeometry(normalRows(6));
+      assertEq(DC.edit.geom.gapShiftAmounts(g.rowTops, g.rowHeights, 1, 4, 8), { 2: -72, 3: -72 }, 'downward: pitch = height(64)+gap(8) = 72');
+      assertEq(DC.edit.geom.gapShiftAmounts(g.rowTops, g.rowHeights, 4, 1, 8), { 1: 72, 2: 72, 3: 72 }, 'upward: same uniform pitch');
+    });
+
+    t('gapShiftAmounts: no-op (targetIdx === fromIdx) -> no shifts', function () {
+      var g = buildRowGeometry(normalRows(6));
+      assertEq(DC.edit.geom.gapShiftAmounts(g.rowTops, g.rowHeights, 2, 2, 8), {});
+    });
+
+    t('gapShiftAmounts: a tier-break row INSIDE the displaced range does not change any shift amount, either direction', function () {
+      var spec = normalRows(6);
+      spec[3] = { height: 64, marginTop: 24 }; // row3 is the divider, well inside both ranges below
+      var g = buildRowGeometry(spec);
+      assertEq(DC.edit.geom.gapShiftAmounts(g.rowTops, g.rowHeights, 1, 5, 8), { 2: -72, 3: -72, 4: -72 }, 'downward: uniform -72 despite row3 being a divider');
+      assertEq(DC.edit.geom.gapShiftAmounts(g.rowTops, g.rowHeights, 5, 1, 8), { 1: 72, 2: 72, 3: 72, 4: 72 }, 'upward: uniform 72 despite row3 being a divider');
+    });
+
+    t('gapShiftAmounts: a divider at the FIRST displaced index does not change the shift', function () {
+      var specDown = normalRows(6);
+      specDown[1] = { height: 64, marginTop: 24 }; // row1 = fromIdx(0)+1, first displaced row downward
+      var gDown = buildRowGeometry(specDown);
+      assertEq(DC.edit.geom.gapShiftAmounts(gDown.rowTops, gDown.rowHeights, 0, 4, 8), { 1: -72, 2: -72, 3: -72 });
+
+      var specUp = normalRows(6);
+      specUp[1] = { height: 64, marginTop: 24 }; // row1 = targetIdx, first displaced row upward
+      var gUp = buildRowGeometry(specUp);
+      assertEq(DC.edit.geom.gapShiftAmounts(gUp.rowTops, gUp.rowHeights, 5, 1, 8), { 1: 72, 2: 72, 3: 72, 4: 72 });
+    });
+
+    t('gapShiftAmounts: a divider at the LAST displaced index (adjacent to the dragged row) does not change the shift', function () {
+      var specDown = normalRows(6);
+      specDown[2] = { height: 64, marginTop: 24 }; // row2 = targetIdx(3)-1, last displaced row downward
+      var gDown = buildRowGeometry(specDown);
+      assertEq(DC.edit.geom.gapShiftAmounts(gDown.rowTops, gDown.rowHeights, 0, 3, 8), { 1: -72, 2: -72 });
+
+      var specUp = normalRows(6);
+      specUp[4] = { height: 64, marginTop: 24 }; // row4 = fromIdx(5)-1, last displaced row upward
+      var gUp = buildRowGeometry(specUp);
+      assertEq(DC.edit.geom.gapShiftAmounts(gUp.rowTops, gUp.rowHeights, 5, 1, 8), { 1: 72, 2: 72, 3: 72, 4: 72 });
+    });
+
+    t('gapShiftAmounts: the DRAGGED row itself being a divider is the one case that changes the pitch (24 replaces 8), both directions', function () {
+      var spec = normalRows(6);
+      spec[2] = { height: 64, marginTop: 24 }; // fromIdx itself is the divider
+      var g = buildRowGeometry(spec);
+      assertEq(DC.edit.geom.gapShiftAmounts(g.rowTops, g.rowHeights, 2, 5, 8), { 3: -88, 4: -88 }, 'downward: pitch = 64+24 = 88');
+      assertEq(DC.edit.geom.gapShiftAmounts(g.rowTops, g.rowHeights, 2, 0, 8), { 0: 88, 1: 88 }, 'upward: same 88 pitch');
+    });
+
+    t('gapShiftAmounts: fromIdx === 0 has no row above to measure, so it uses fallbackGap', function () {
+      var g = buildRowGeometry(normalRows(4));
+      assertEq(DC.edit.geom.gapShiftAmounts(g.rowTops, g.rowHeights, 0, 3, 8), { 1: -72, 2: -72 });
+      assertEq(DC.edit.geom.gapShiftAmounts(g.rowTops, g.rowHeights, 0, 3, 20), { 1: -84, 2: -84 }, 'fallbackGap is actually consulted, not hardcoded');
+    });
+
     // ---- tierBreakBefore ----
 
     t('tierBreakBefore: table of prev/view tier combinations', function () {
