@@ -90,7 +90,7 @@ Re-importing preserves your Drafted/Target/Avoid marks for any player whose name
 
 Once you've manually reordered your rankings (see Edit your rankings in-app, below), Import Rankings automatically downloads a backup file before replacing the board with the imported one. See the iOS standalone note under Backup/restore if the download prompt doesn't appear.
 
-The board itself is the single source of truth for every feature above and below this section -- ranks, tiers, marks, league config, all of it. A planned future import mode will let you blend multiple ranking and tier sources (say, two different analysts' rankings files) into one board at import time. Because tier dividers, quiet signals, and roster needs all read straight off the board, a blended import will need no other changes to reach every one of them at once.
+The board itself is the single source of truth for every feature above and below this section -- ranks, tiers, marks, all of it. A planned future import mode will let you blend multiple ranking and tier sources (say, two different analysts' rankings files) into one board at import time. Because tier dividers, quiet signals, and roster needs all read straight off the board, a blended import will need no other changes to reach every one of them at once.
 
 ## Edit your rankings in-app
 
@@ -106,7 +106,7 @@ Tiers group the board into named bands (Tier 1, Tier 2, ...). Import a header-ba
 
 A divider line marks every tier break, everywhere a tiered player can appear -- the Available list, the Drafted list, and the Edit Rankings editor all use the same rule.
 
-Inside Edit Rankings, tap a player's rank to open the rank-jump card; it always includes a Tier -/+ stepper. The stepper is bounded by the tiers of the players immediately above and below in board order, so a tier can never be stepped out of order relative to its neighbors; stepping below the floor clears the tier to none when nothing above it is tiered at all.
+Inside Edit Rankings, tap a player's rank to open the rank-jump card; it always includes a Tier -/+ stepper. The stepper is bounded by the nearest tiered players above and below in board order -- untiered rows in between don't constrain it -- so a tier can never be stepped out of order relative to its neighbors; stepping below the floor clears the tier to none when nothing above it is tiered at all.
 
 Dragging a player across a tier boundary re-tiers him automatically to stay consistent with his new neighbors -- you don't need to touch the stepper for a plain reorder.
 
@@ -119,15 +119,15 @@ While drafting, mark which picks are yours as you go.
 - Tap the **Mine** chip to filter the board down to your picks. In place of the usual filter summary line, it shows a roster summary: your QB/RB/WR/TE counts and total picks.
 - Made a mistake? In the Drafted or Mine view, tap the person icon on any pick to toggle whether it's yours, no need to undo and redraft.
 
-Without a league set up (see Draft position tracker, below), the Mine summary is just position counts: `QB 1, RB 2, WR 2, TE 1 (6 picks)`.
+Without a league set up (see Draft position tracker, below), the Mine summary is just position counts: a QB/RB/WR/TE total for each position plus your total pick count.
 
-Set a roster template in Settings -> League -- steppers for QB, RB, WR, TE, FLEX, and Bench slot counts, alongside the league size/slot/snake settings. Once a template is set, the Mine summary switches to filled/required, e.g. `QB 1/1, RB 2/2, WR 2/3, TE 1/1, FLEX 0/1, Bench 3`. Each of your picks fills its own position's slots first; once those are full, an RB/WR/TE pick rolls into FLEX if there's room, otherwise it counts as Bench. Picks are counted in the order you drafted them, so backfilling marks out of draft order can shuffle which slot a given pick lands in.
+Set a roster template in Settings -> League -- steppers for QB, RB, WR, TE, FLEX, and Bench slot counts, alongside the league size/slot/snake settings. Once a template is set, the Mine summary switches to filled-vs-required for each of QB, RB, WR, TE, and FLEX, plus a plain filled count for Bench. Each of your picks fills its own position's slots first; once those are full, an RB/WR/TE pick rolls into FLEX if there's room, otherwise it counts as Bench. Picks are counted in the order you drafted them, so backfilling marks out of draft order can shuffle which slot a given pick lands in.
 
 ## Draft position tracker
 
 Set up your league in Settings -> League: league size, your draft slot, and snake vs. linear draft order (a "Set up draft tracker" button appears there if you haven't configured one yet). Once set, a tracker strip appears under the position-counts row at the top of the screen, showing the current round, the current overall pick, and how many picks remain until you're on the clock -- or "You're up" when it's your pick right now.
 
-The tracker has no separate "record a pick" step: it derives round/pick/picks-until-you entirely from how many players are marked Drafted on the board, in board order. Forgetting to mark a pick drifts the tracker out of sync with the real draft, so keep every pick logged as it happens.
+The tracker has no separate "record a pick" step: it derives round/pick/picks-until-you entirely from a count of how many players are marked Drafted on the board. Forgetting to mark a pick drifts the tracker out of sync with the real draft, so keep every pick logged as it happens.
 
 Tap "Clear league setup" in Settings -> League to remove your league config. The tracker strip, the roster-needs summary above, and the GONE SOON signal below all disappear until you set league config up again.
 
