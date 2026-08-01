@@ -75,6 +75,76 @@
   }
 
   /**
+   * @param {Array} staged @param {string} playerId
+   * @returns {number|null} 1-based rank among same-position players in staged order; null if id not found.
+   */
+  function positionRankOf(staged, playerId) {
+    var position = null;
+    for (var i = 0; i < staged.length; i++) {
+      if (staged[i].id === playerId) {
+        position = staged[i].position;
+        break;
+      }
+    }
+    if (position === null) {
+      return null;
+    }
+    var rank = 0;
+    for (var i = 0; i < staged.length; i++) {
+      if (staged[i].position === position) {
+        rank++;
+        if (staged[i].id === playerId) {
+          return rank;
+        }
+      }
+    }
+    return null; // unreachable: playerId was found above with this position
+  }
+
+  /**
+   * Moves playerId so it becomes the posRank-th player of its OWN position, without disturbing
+   * the relative order of any other player (same-position or not). Delegates the actual splice to
+   * moveByIndex, so it inherits that function's non-mutating / same-ref-on-true-no-op contract.
+   * @param {Array} staged @param {string} playerId @param {number} posRank 1-based
+   * @returns {Array} new array, or the SAME reference if playerId is not found or is the sole
+   *   player at its position (nothing to rank against).
+   */
+  function moveToPositionRank(staged, playerId, posRank) {
+    var fromIndex = -1;
+    for (var i = 0; i < staged.length; i++) {
+      if (staged[i].id === playerId) {
+        fromIndex = i;
+        break;
+      }
+    }
+    if (fromIndex === -1) {
+      return staged;
+    }
+    var position = staged[fromIndex].position;
+    var groupOverallIdx = []; // overall indices of same-position players, EXCLUDING the mover
+    for (var i = 0; i < staged.length; i++) {
+      if (i !== fromIndex && staged[i].position === position) {
+        groupOverallIdx.push(i);
+      }
+    }
+    if (groupOverallIdx.length === 0) {
+      return staged; // sole player at this position: no neighbor to rank against
+    }
+    var clampedRank = Math.max(1, Math.min(groupOverallIdx.length + 1, posRank));
+    var toIndex;
+    if (clampedRank > groupOverallIdx.length) {
+      // beyond group end: land immediately AFTER the last group member
+      var lastIdx = groupOverallIdx[groupOverallIdx.length - 1];
+      toIndex = lastIdx + (lastIdx < fromIndex ? 1 : 0);
+    } else {
+      // land immediately BEFORE the (clampedRank)-th group member
+      var anchorIdx = groupOverallIdx[clampedRank - 1];
+      toIndex = anchorIdx - (fromIndex < anchorIdx ? 1 : 0);
+    }
+    return moveByIndex(staged, fromIndex, toIndex);
+  }
+
+  /**
    * Positional id comparison; a length mismatch always counts as changed.
    * @param {Array} staged @param {Array} committedPlayers @returns {boolean}
    */
@@ -106,6 +176,69 @@
     return moved;
   }
 
+  /**
+   * Converts a drop slot within a FILTERED (visible) row list into overall staged indices, so a
+   * drag inside a filtered/searched view can still call moveByIndex on the full staged order.
+   *
+   * Convention table (mirrors the single-list landedIndex -> toIndex seam in finishDrag, applied
+   * per-anchor instead of uniformly):
+   *   toVisibleSlot === fromVisibleIdx or fromVisibleIdx+1  -> no-op (toIndex = fromIndex)
+   *   toVisibleSlot === 0                                   -> toIndex = overallIndexOf(visibleIds[0])
+   *   otherwise: anchor = visibleIds[toVisibleSlot - 1] (the visible row immediately above the
+   *     slot); anchorIdx = overallIndexOf(anchor);
+   *       toIndex = anchorIdx + 1  if anchorIdx < fromIndex   (mover was above anchor: land after it)
+   *       toIndex = anchorIdx      if anchorIdx > fromIndex   (mover was below anchor: land after it,
+   *                                                             but removal hasn't shifted anchor yet)
+   * In both non-degenerate branches the mover ends up immediately after `anchor` in overall order;
+   * any staged ids NOT in visibleIds (filtered out) keep their relative order to everything else.
+   *
+   * @param {string[]} stagedIds overall order @param {string[]} visibleIds filtered subsequence of stagedIds
+   * @param {number} fromVisibleIdx index of the mover within visibleIds
+   * @param {number} toVisibleSlot drop slot within visibleIds, in [0, visibleIds.length]
+   * @returns {{fromIndex:number, toIndex:number}} overall indices for moveByIndex; {-1,-1} if invalid
+   */
+  function visibleSlotToOverallMove(stagedIds, visibleIds, fromVisibleIdx, toVisibleSlot) {
+    if (fromVisibleIdx < 0 || fromVisibleIdx >= visibleIds.length) {
+      return { fromIndex: -1, toIndex: -1 };
+    }
+    var moverId = visibleIds[fromVisibleIdx];
+    var fromIndex = stagedIds.indexOf(moverId);
+    if (fromIndex === -1) {
+      return { fromIndex: -1, toIndex: -1 };
+    }
+    if (toVisibleSlot === fromVisibleIdx || toVisibleSlot === fromVisibleIdx + 1) {
+      return { fromIndex: fromIndex, toIndex: fromIndex };
+    }
+    var toIndex;
+    if (toVisibleSlot === 0) {
+      toIndex = stagedIds.indexOf(visibleIds[0]);
+    } else {
+      var anchorIdx = stagedIds.indexOf(visibleIds[toVisibleSlot - 1]);
+      toIndex = anchorIdx + (anchorIdx < fromIndex ? 1 : 0);
+    }
+    return { fromIndex: fromIndex, toIndex: toIndex };
+  }
+
+  /**
+   * @param {{tier:(number|null)}|null} prevView the row rendered immediately before view, or null at list start
+   * @param {{tier:(number|null)}} view
+   * @returns {string|null} "Tier {n}" when view starts a new tiered block; null otherwise.
+   *   An untiered view never breaks. A tiered view breaks when prev is the list start, prev is
+   *   untiered, or prev's tier differs — but a tiered-then-untiered transition does NOT break
+   *   (untiered rows carry no label of their own).
+   */
+  function tierBreakBefore(prevView, view) {
+    var tier = view ? view.tier : null;
+    if (tier === null || tier === undefined) {
+      return null;
+    }
+    var prevTier = prevView ? prevView.tier : null;
+    if (prevTier === null || prevTier === undefined || prevTier !== tier) {
+      return 'Tier ' + tier;
+    }
+    return null;
+  }
+
   // ---- geometry (pure math for drag/tap-to-jump) ----
 
   /**
@@ -118,6 +251,36 @@
     }
     var idx = Math.round((pointerY + scrollTop) / rowStep);
     return Math.max(0, Math.min(count, idx));
+  }
+
+  /**
+   * dropIndexFromPointer assumes every row occupies the same rowStep, which breaks once tier
+   * dividers give some rows extra margin-top. This finds the drop slot from real per-row
+   * offsets instead: slot k is returned when y sits at/after row k-1's midpoint but before row
+   * k's midpoint (binary search over the monotonically increasing midpoints).
+   * @param {number} y pointer position in content-space (same convention as dropIndexFromPointer:
+   *   pointer-relative-to-list + scrollTop)
+   * @param {number[]} rowTops offsetTop of each row, index-aligned with rowHeights
+   * @param {number[]} rowHeights offsetHeight of each row
+   * @param {number} count number of rows (rowTops/rowHeights length)
+   * @returns {number} slot in [0, count]; count <= 0 -> 0
+   */
+  function slotFromPointerOffsets(y, rowTops, rowHeights, count) {
+    if (!(count > 0)) {
+      return 0;
+    }
+    var lo = 0;
+    var hi = count;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      var midpoint = rowTops[mid] + rowHeights[mid] / 2;
+      if (midpoint <= y) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
   }
 
   /**
@@ -160,7 +323,7 @@
 
   /**
    * @param {Object} view player + marks (same shape ui.js templates receive)
-   * @param {{moved:boolean}} ctx
+   * @param {{moved:boolean, tierBreak:(string|null), positionRank:(number|null)}} ctx
    */
   function editRowHTML(view, ctx) {
     ctx = ctx || {};
@@ -171,10 +334,23 @@
     if (ctx.moved) {
       rowClasses.push('row-moved');
     }
+    var tierAttr = '';
+    if (ctx.tierBreak) {
+      rowClasses.push('tier-break');
+      tierAttr = ' data-tier-label="' + esc(ctx.tierBreak) + '"';
+    }
     var draftedPill = view.drafted ? '<span class="drafted-pill">DRAFTED</span>' : '';
+    var rankBtnClass = 'player-rank';
+    var rankHTML = String(view.rank);
+    if (ctx.positionRank) {
+      rankBtnClass += ' pos-rank';
+      rankHTML =
+        '<span class="rank-position">' + esc(view.position) + ctx.positionRank + '</span>' +
+        '<span class="rank-overall">#' + view.rank + '</span>';
+    }
     return (
-      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
-        '<button type="button" class="player-rank" data-action="rank-jump" data-id="' + esc(view.id) + '">' + view.rank + '</button>' +
+      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '"' + tierAttr + '>' +
+        '<button type="button" class="' + rankBtnClass + '" data-action="rank-jump" data-id="' + esc(view.id) + '">' + rankHTML + '</button>' +
         '<div class="player-info">' +
           '<div class="player-name">' + esc(view.name) + '</div>' +
           '<div class="player-meta">' + metaLine(view) + '</div>' +
@@ -210,6 +386,7 @@
         '<input type="text" class="search-input edit-search-input" placeholder="Search players by name, team, or position" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">' +
         '<button type="button" class="search-clear edit-search-clear" data-action="edit-search-clear" aria-label="Clear search">' + (DC.ui && DC.ui.icon ? DC.ui.icon('x') : '×') + '</button>' +
       '</div>' +
+      '<div class="chip-row" id="edit-position-chips"></div>' +
       '<div id="edit-list"></div>' +
       '<div class="scrim edit-scrim" hidden></div>' +
       '<div class="edit-card" hidden></div>';
@@ -217,6 +394,7 @@
     var countPillEl = editRootEl.querySelector('.edit-count-pill');
     var searchInputEl = editRootEl.querySelector('.edit-search-input');
     var searchClearBtn = editRootEl.querySelector('.edit-search-clear');
+    var positionChipsEl = editRootEl.querySelector('#edit-position-chips');
     var listEl = editRootEl.querySelector('#edit-list');
     var scrimEl = editRootEl.querySelector('.edit-scrim');
     var cardEl = editRootEl.querySelector('.edit-card');
@@ -226,8 +404,88 @@
     var staged = null; // Array|null — working copy of players while the editor is open
     var marksAtOpen = null; // Object<string, Marks> — snapshot taken at open(), never mutated
     var originalOrderIds = null; // string[] — id order snapshot taken at open()
+    var stagedTiers = null; // Object<string, number|null>|null — live tier edits, keyed by id
+    var tiersAtOpen = null; // Object<string, number|null>|null — snapshot taken at open(), never mutated
     var editSearchText = '';
+    var editPosition = 'ALL'; // UI-only chip filter; never touches the store
     var activeDrag = null; // per-drag token object; identity-checked by every drag callback
+
+    var EDIT_POSITION_CHIPS = [['ALL', 'All'], ['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE']];
+
+    function renderPositionChips() {
+      positionChipsEl.innerHTML = EDIT_POSITION_CHIPS.map(function (pair) {
+        var val = pair[0];
+        var label = pair[1];
+        var active = editPosition === val ? ' active-position' : '';
+        return '<button type="button" class="chip' + active + '" data-action="edit-set-position" data-position="' + val + '">' + label + '</button>';
+      }).join('');
+    }
+
+    // ---- tier staging helpers (stagedTiers is the live source of truth; staged[i].tier is stale
+    // from open() and never read again — always overlay via mergedStagedView before calling the
+    // DC.state tier helpers, which expect a Player[] with a live .tier field) ----
+
+    function mergedStagedView() {
+      return staged.map(function (p) {
+        var t = stagedTiers[p.id];
+        return Object.assign({}, p, { tier: t === undefined ? null : t });
+      });
+    }
+
+    function countAtPosition(position) {
+      var n = 0;
+      for (var i = 0; i < staged.length; i++) {
+        if (staged[i].position === position) {
+          n++;
+        }
+      }
+      return n;
+    }
+
+    // true iff no player strictly before `index` in `merged` carries a tier — the "min===1 is a
+    // default, not a real neighbor constraint" case the tier stepper's clear-to-null relies on.
+    function noTieredAbove(merged, index) {
+      for (var i = 0; i < index; i++) {
+        if (merged[i].tier !== null && merged[i].tier !== undefined) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    // Drag-retier clamp: called after EVERY staged move (drag drop, overall jump, position jump)
+    // so a mover can never end up tiered out of monotone order relative to its new neighbors.
+    function applyRetierClamp(playerId) {
+      var newIndex = idsOf(staged).indexOf(playerId);
+      if (newIndex === -1) {
+        return;
+      }
+      var merged = mergedStagedView();
+      var currentTier = stagedTiers[playerId];
+      stagedTiers[playerId] = DC.state.clampTierAt(merged, newIndex, currentTier === undefined ? null : currentTier);
+    }
+
+    function tierStepperHTML(playerId) {
+      var idx = idsOf(staged).indexOf(playerId);
+      var merged = mergedStagedView();
+      var bounds = DC.state.stepperBounds(merged, idx);
+      var tier = stagedTiers[playerId];
+      if (tier === undefined) {
+        tier = null;
+      }
+      var display = tier === null ? '—' : String(tier);
+      var noAbove = noTieredAbove(merged, idx);
+      var minusDisabled = (tier !== null && tier <= bounds.min && !noAbove) ? ' disabled' : '';
+      var plusDisabled = (tier !== null && bounds.max !== null && tier >= bounds.max) ? ' disabled' : '';
+      return (
+        '<div class="tier-stepper-row">' +
+          '<span class="tier-stepper-label">Tier</span>' +
+          '<button type="button" class="tier-step-btn" data-action="tier-step" data-dir="-1" data-id="' + esc(playerId) + '"' + minusDisabled + '>−</button>' +
+          '<span class="tier-stepper-value">' + display + '</span>' +
+          '<button type="button" class="tier-step-btn" data-action="tier-step" data-dir="1" data-id="' + esc(playerId) + '"' + plusDisabled + '>+</button>' +
+        '</div>'
+      );
+    }
 
     // ---- edit-card primitive (rank-jump + discard-confirm share this) ----
 
@@ -252,9 +510,16 @@
         return;
       }
       var player = staged[idx];
+      var posMode = editPosition !== 'ALL';
+      var currentRank = posMode ? positionRankOf(staged, playerId) : (idx + 1);
+      var rankCount = posMode ? countAtPosition(player.position) : staged.length;
+      var title = posMode
+        ? 'Move ' + esc(player.name) + ' to ' + esc(player.position) + ' rank'
+        : 'Move ' + esc(player.name) + ' to rank';
       var html =
-        '<div class="edit-card-title">Move ' + esc(player.name) + ' to rank</div>' +
-        '<input type="text" class="rank-input" inputmode="numeric" pattern="[0-9]*" value="' + (idx + 1) + '">' +
+        '<div class="edit-card-title">' + title + '</div>' +
+        '<input type="text" class="rank-input" inputmode="numeric" pattern="[0-9]*" value="' + currentRank + '">' +
+        tierStepperHTML(playerId) +
         '<button type="button" class="edit-card-primary" data-action="rank-jump-move" data-id="' + esc(playerId) + '">Move</button>';
       showEditCard(html, 'rank-jump-cancel');
 
@@ -262,7 +527,7 @@
       var moveBtn = cardEl.querySelector('.edit-card-primary');
 
       function refreshDisabled() {
-        moveBtn.disabled = clampRank(input.value, staged.length) === null;
+        moveBtn.disabled = clampRank(input.value, rankCount) === null;
       }
       input.addEventListener('input', refreshDisabled);
       input.addEventListener('keydown', function (kev) {
@@ -275,11 +540,21 @@
     }
 
     function commitRankJump(playerId, rawValue) {
-      var n = clampRank(rawValue, staged.length);
+      var idx = idsOf(staged).indexOf(playerId);
+      if (idx === -1) {
+        return;
+      }
+      var posMode = editPosition !== 'ALL';
+      var rankCount = posMode ? countAtPosition(staged[idx].position) : staged.length;
+      var n = clampRank(rawValue, rankCount);
       if (n === null) {
         return;
       }
-      staged = moveToRank(staged, playerId, n);
+      var prevStaged = staged;
+      staged = posMode ? moveToPositionRank(staged, playerId, n) : moveToRank(staged, playerId, n);
+      if (staged !== prevStaged) {
+        applyRetierClamp(playerId);
+      }
       hideEditCard();
       renderEditList();
 
@@ -321,11 +596,17 @@
     }
 
     function renderEditList() {
-      var movedIds = diffMovedIds(originalOrderIds, staged);
-      var movedSet = {};
-      movedIds.forEach(function (id) {
-        movedSet[id] = true;
+      var changedSet = {};
+      diffMovedIds(originalOrderIds, staged).forEach(function (id) {
+        changedSet[id] = true;
       });
+      staged.forEach(function (p) {
+        var t = stagedTiers[p.id];
+        if ((t === undefined ? null : t) !== tiersAtOpen[p.id]) {
+          changedSet[p.id] = true;
+        }
+      });
+      var changedCount = Object.keys(changedSet).length;
 
       var indexOfId = {};
       staged.forEach(function (p, i) {
@@ -335,16 +616,41 @@
       var searching = editSearchText.trim() !== '';
       editRootEl.classList.toggle('edit-searching', searching);
 
-      var rows = searching
-        ? staged.filter(function (p) { return DC.state.matchesSearch(p, editSearchText); })
-        : staged;
+      renderPositionChips();
 
+      var positionFiltered = editPosition === 'ALL'
+        ? staged
+        : staged.filter(function (p) { return p.position === editPosition; });
+
+      var rows = searching
+        ? positionFiltered.filter(function (p) { return DC.state.matchesSearch(p, editSearchText); })
+        : positionFiltered;
+
+      var posRankOfId = {};
+      if (editPosition !== 'ALL') {
+        var counter = 0;
+        staged.forEach(function (p) {
+          if (p.position === editPosition) {
+            counter++;
+            posRankOfId[p.id] = counter;
+          }
+        });
+      }
+
+      var prevTierView = null;
       listEl.innerHTML = rows.map(function (p) {
-        var view = Object.assign({}, p, marksAtOpen[p.id], { rank: indexOfId[p.id] + 1 });
-        return editRowHTML(view, { moved: !!movedSet[p.id] });
+        var t = stagedTiers[p.id];
+        t = t === undefined ? null : t;
+        var tierView = { tier: t };
+        var breakLabel = tierBreakBefore(prevTierView, tierView);
+        prevTierView = tierView;
+
+        var view = Object.assign({}, p, marksAtOpen[p.id], { rank: indexOfId[p.id] + 1, tier: t });
+        var ctx = { moved: !!changedSet[p.id], tierBreak: breakLabel, positionRank: posRankOfId[p.id] || null };
+        return editRowHTML(view, ctx);
       }).join('');
 
-      updateCountPill(movedIds.length);
+      updateCountPill(changedCount);
       searchClearBtn.style.display = editSearchText !== '' ? '' : 'none';
     }
 
@@ -355,7 +661,15 @@
       staged = fromPlayers(state.players);
       marksAtOpen = state.marks;
       originalOrderIds = idsOf(state.players);
+      stagedTiers = {};
+      tiersAtOpen = {};
+      state.players.forEach(function (p) {
+        var t = p.tier === undefined ? null : p.tier;
+        stagedTiers[p.id] = t;
+        tiersAtOpen[p.id] = t;
+      });
       editSearchText = '';
+      editPosition = 'ALL';
       searchInputEl.value = '';
       hideEditCard();
       renderEditList();
@@ -377,6 +691,9 @@
       staged = null;
       marksAtOpen = null;
       originalOrderIds = null;
+      stagedTiers = null;
+      tiersAtOpen = null;
+      editPosition = 'ALL';
       setTimeout(function () {
         editRootEl.hidden = true;
         editRootEl.classList.remove('leaving');
@@ -392,10 +709,21 @@
         return;
       }
       var rows = Array.prototype.slice.call(listEl.querySelectorAll('.player-row'));
-      var fromIndex = rows.indexOf(row);
+      var fromIndex = rows.indexOf(row); // index within the VISIBLE (filtered) row list
       if (fromIndex === -1) {
         return;
       }
+      var visibleIds = rows.map(function (r) { return r.getAttribute('data-id'); });
+
+      // captured once at drag start: staged/filters don't change while a drag is active, and
+      // dividers make row pitch non-uniform, so slot lookup needs real per-row offsets (D's
+      // FINAL DECISION), not a uniform rowStep. getBoundingClientRect (not offsetTop) keeps this
+      // in the SAME content-space frame as pointerYRelativeToList below regardless of whether
+      // #edit-list happens to be a positioned offsetParent for its rows.
+      var startScrollTop = listEl.scrollTop;
+      var listTopAtDragStart = listEl.getBoundingClientRect().top;
+      var rowTops = rows.map(function (r) { return (r.getBoundingClientRect().top - listTopAtDragStart) + startScrollTop; });
+      var rowHeights = rows.map(function (r) { return r.getBoundingClientRect().height; });
 
       var token = {};
       activeDrag = token;
@@ -408,9 +736,8 @@
       }
 
       var startClientY = ev.clientY;
-      var startScrollTop = listEl.scrollTop;
       var marginBottom = parseFloat(getComputedStyle(row).marginBottom) || 0;
-      var rowStep = row.offsetHeight + marginBottom;
+      var rowStep = row.offsetHeight + marginBottom; // dragged row's own pitch; used only for the gap-shift preview's pixel amount
       var lastPointerY = ev.clientY;
       var currentTargetIndex = fromIndex;
       var rafId = null;
@@ -428,7 +755,8 @@
       function computeTargetIndex(clientY) {
         var listRect = listEl.getBoundingClientRect();
         var pointerYRelativeToList = clientY - listRect.top;
-        return dropIndexFromPointer(pointerYRelativeToList, listEl.scrollTop, rowStep, staged.length);
+        var contentY = pointerYRelativeToList + listEl.scrollTop;
+        return slotFromPointerOffsets(contentY, rowTops, rowHeights, rows.length);
       }
 
       // preview must mirror finishDrag's commit: downward shifts (fromIndex, target) exclusive of
@@ -536,15 +864,17 @@
         if (activeDrag !== token) {
           return;
         }
-        var landedIndex = currentTargetIndex;
+        var landedSlot = currentTargetIndex; // visible slot in [0, rows.length]
         teardownDrag();
-        if (landedIndex !== fromIndex) {
-          // dropIndexFromPointer returns a slot in [0..count]; a slot AFTER fromIndex already
-          // accounts for the dragged row's own vacated position, so shift the destination back
-          // by 1 to get a valid moveByIndex toIndex (moveByIndex itself clamps).
-          var toIndex = landedIndex > fromIndex ? landedIndex - 1 : landedIndex;
-          var movedId = staged[fromIndex].id;
-          staged = moveByIndex(staged, fromIndex, toIndex);
+        if (landedSlot !== fromIndex) {
+          var movedId = visibleIds[fromIndex];
+          // translate the visible-space drop into overall staged indices (identity when
+          // unfiltered: visibleIds === idsOf(staged)) — see visibleSlotToOverallMove's doc comment.
+          var move = visibleSlotToOverallMove(idsOf(staged), visibleIds, fromIndex, landedSlot);
+          if (move.toIndex !== move.fromIndex) {
+            staged = moveByIndex(staged, move.fromIndex, move.toIndex);
+            applyRetierClamp(movedId);
+          }
           renderEditList();
           var newRow = listEl.querySelector('[data-id="' + attrSelector(movedId) + '"]');
           if (newRow) {
@@ -606,12 +936,23 @@
       var action = target.getAttribute('data-action');
       var id = target.getAttribute('data-id');
 
+      function hasTierChanges() {
+        for (var i = 0; i < staged.length; i++) {
+          var pid = staged[i].id;
+          var t = stagedTiers[pid];
+          if ((t === undefined ? null : t) !== tiersAtOpen[pid]) {
+            return true;
+          }
+        }
+        return false;
+      }
+
       switch (action) {
         case 'cancel-edit':
           if (staged === null) {
             break; // already closing (e.g. a double-tap during the 150ms leaving window)
           }
-          if (diffMovedIds(originalOrderIds, staged).length === 0) {
+          if (diffMovedIds(originalOrderIds, staged).length === 0 && !hasTierChanges()) {
             closeEdit();
           } else {
             openDiscardCard();
@@ -622,8 +963,8 @@
             break; // already closing (e.g. a double-tap during the 150ms leaving window)
           }
           var committedPlayers = store.getState().players;
-          if (stagedOrderChanged(staged, committedPlayers)) {
-            store.dispatch({ type: 'REORDER_PLAYERS', order: idsOf(staged) });
+          if (stagedOrderChanged(staged, committedPlayers) || hasTierChanges()) {
+            store.dispatch({ type: 'REORDER_PLAYERS', order: idsOf(staged), tiers: stagedTiers });
           }
           closeEdit();
           break;
@@ -651,6 +992,42 @@
           searchInputEl.value = '';
           renderEditList();
           break;
+        case 'edit-set-position': {
+          var pos = target.getAttribute('data-position');
+          editPosition = pos === editPosition ? 'ALL' : pos;
+          renderEditList();
+          break;
+        }
+        case 'tier-step': {
+          var dir = target.getAttribute('data-dir') === '1' ? 1 : -1;
+          var idxNow = idsOf(staged).indexOf(id);
+          if (idxNow === -1) {
+            break;
+          }
+          var merged = mergedStagedView();
+          var bounds = DC.state.stepperBounds(merged, idxNow);
+          var current = stagedTiers[id];
+          if (current === undefined) {
+            current = null;
+          }
+          var next;
+          if (current === null) {
+            next = bounds.start; // first press always initializes, direction is ignored
+          } else if (dir === -1 && current <= bounds.min && noTieredAbove(merged, idxNow)) {
+            next = null; // clear-to-null: no real neighbor above enforcing the floor
+          } else {
+            var lo = bounds.min;
+            var hi = bounds.max === null ? Infinity : bounds.max;
+            next = Math.max(lo, Math.min(hi, current + dir));
+          }
+          stagedTiers[id] = next;
+          renderEditList();
+          var stepperRow = cardEl.querySelector('.tier-stepper-row');
+          if (stepperRow) {
+            stepperRow.outerHTML = tierStepperHTML(id);
+          }
+          break;
+        }
         default:
           break;
       }
@@ -688,11 +1065,16 @@
       idsOf: idsOf,
       moveByIndex: moveByIndex,
       moveToRank: moveToRank,
+      positionRankOf: positionRankOf,
+      moveToPositionRank: moveToPositionRank,
+      visibleSlotToOverallMove: visibleSlotToOverallMove,
+      tierBreakBefore: tierBreakBefore,
       stagedOrderChanged: stagedOrderChanged,
       diffMovedIds: diffMovedIds
     },
     geom: {
       dropIndexFromPointer: dropIndexFromPointer,
+      slotFromPointerOffsets: slotFromPointerOffsets,
       clampRank: clampRank,
       rankJumpTargetIndex: rankJumpTargetIndex
     },

@@ -271,6 +271,23 @@ button.player-rank {
   align-items: center;
 }
 
+#edit-list button.player-rank.pos-rank {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.rank-position {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.rank-overall {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
 .player-info {
   flex: 1;
   min-width: 0;
@@ -366,6 +383,26 @@ button.player-rank {
 
 .player-row.row-moved {
   box-shadow: inset 3px 0 0 var(--accent-position);
+}
+
+/* tier divider: expanded margin-top holds an inline ::before label + hairline (row height/pitch
+   for this row alone changes — drag math handles this via measured per-row offsets, not rowStep) */
+.player-row.tier-break {
+  margin-top: 24px;
+  overflow: visible;
+}
+
+.player-row.tier-break::before {
+  content: attr(data-tier-label);
+  position: absolute;
+  top: -20px;
+  left: 0;
+  right: 0;
+  padding-top: 4px;
+  border-top: 1px solid var(--hairline);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
 }
 
 .player-row.dragging {
@@ -732,6 +769,43 @@ button.player-rank {
   font-size: 13px;
   color: var(--text-2);
   margin-bottom: 8px;
+}
+
+.tier-stepper-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.tier-stepper-label {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.tier-step-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-button);
+  background: var(--surface-2);
+  color: var(--text-1);
+  border: none;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.tier-step-btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.tier-stepper-value {
+  min-width: 32px;
+  text-align: center;
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .rank-input {

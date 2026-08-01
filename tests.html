@@ -3228,6 +3228,626 @@
   })();
   </script>
 
+  <!-- Round 4 Task 3: position-scoped re-ranking + tier editing — pure fn tests -->
+  <script>
+  (function () {
+    'use strict';
+    section('reorder');
+
+    function makeMixedPositionStaged() {
+      return [
+        { id: 'q1', rank: 1, name: 'QB One', team: 'KC', position: 'QB', byeWeek: 9 },
+        { id: 'r1', rank: 2, name: 'RB One', team: 'DAL', position: 'RB', byeWeek: 7 },
+        { id: 'r2', rank: 3, name: 'RB Two', team: 'MIA', position: 'RB', byeWeek: 10 },
+        { id: 'w1', rank: 4, name: 'WR One', team: 'KC', position: 'WR', byeWeek: 9 },
+        { id: 'r3', rank: 5, name: 'RB Three', team: 'SEA', position: 'RB', byeWeek: 13 },
+        { id: 'w2', rank: 6, name: 'WR Two', team: 'NYG', position: 'WR', byeWeek: 12 }
+      ];
+    }
+
+    // ---- positionRankOf ----
+
+    t('positionRankOf: 1-based rank among same-position players, independent per position', function () {
+      var staged = makeMixedPositionStaged();
+      assertEq(DC.edit.staging.positionRankOf(staged, 'q1'), 1);
+      assertEq(DC.edit.staging.positionRankOf(staged, 'r1'), 1);
+      assertEq(DC.edit.staging.positionRankOf(staged, 'r2'), 2);
+      assertEq(DC.edit.staging.positionRankOf(staged, 'r3'), 3);
+      assertEq(DC.edit.staging.positionRankOf(staged, 'w1'), 1);
+      assertEq(DC.edit.staging.positionRankOf(staged, 'w2'), 2);
+    });
+
+    t('positionRankOf: unknown id -> null', function () {
+      assertEq(DC.edit.staging.positionRankOf(makeMixedPositionStaged(), 'zzz'), null);
+    });
+
+    // ---- moveToPositionRank ----
+
+    t('moveToPositionRank: up — RB3 to RB rank 1 lands immediately before the current RB1; cross-position players keep their relative order', function () {
+      var staged = makeMixedPositionStaged();
+      var next = DC.edit.staging.moveToPositionRank(staged, 'r3', 1);
+      assertEq(DC.edit.staging.idsOf(next), ['q1', 'r3', 'r1', 'r2', 'w1', 'w2']);
+      assertEq(DC.edit.staging.positionRankOf(next, 'r3'), 1);
+      // q1, w1, w2 (non-RB) keep their original relative order
+      var nonRb = DC.edit.staging.idsOf(next).filter(function (id) { return id === 'q1' || id === 'w1' || id === 'w2'; });
+      assertEq(nonRb, ['q1', 'w1', 'w2']);
+    });
+
+    t('moveToPositionRank: down/beyond-end — RB1 to a rank beyond the group lands immediately after the last RB', function () {
+      var staged = makeMixedPositionStaged();
+      var next = DC.edit.staging.moveToPositionRank(staged, 'r1', 3);
+      assertEq(DC.edit.staging.idsOf(next), ['q1', 'r2', 'w1', 'r3', 'r1', 'w2']);
+      assertEq(DC.edit.staging.positionRankOf(next, 'r1'), 3, 'r1 should now be the LAST RB');
+    });
+
+    t('moveToPositionRank: clamp-low — a negative/zero posRank clamps to rank 1', function () {
+      var staged = makeMixedPositionStaged();
+      var next = DC.edit.staging.moveToPositionRank(staged, 'r2', -5);
+      assertEq(DC.edit.staging.positionRankOf(next, 'r2'), 1);
+      var next2 = DC.edit.staging.moveToPositionRank(staged, 'r2', 0);
+      assertEq(DC.edit.staging.positionRankOf(next2, 'r2'), 1);
+    });
+
+    t('moveToPositionRank: clamp-high — an overshoot beyond the group clamps to last, same as beyond-end', function () {
+      var staged = makeMixedPositionStaged();
+      var next = DC.edit.staging.moveToPositionRank(staged, 'r1', 999);
+      assertEq(DC.edit.staging.positionRankOf(next, 'r1'), 3);
+    });
+
+    t('moveToPositionRank: unknown id -> same reference', function () {
+      var staged = makeMixedPositionStaged();
+      var next = DC.edit.staging.moveToPositionRank(staged, 'zzz', 2);
+      assert(next === staged, 'expected same reference for unknown id');
+    });
+
+    t('moveToPositionRank: sole player at a position -> same reference regardless of requested rank', function () {
+      var staged = makeMixedPositionStaged(); // q1 is the only QB
+      var next = DC.edit.staging.moveToPositionRank(staged, 'q1', 5);
+      assert(next === staged, 'expected same reference: no other QB to rank against');
+    });
+
+    t('moveToPositionRank: requesting the current rank in a tight (no interspersed) group is a true same-ref no-op', function () {
+      var tight = [
+        { id: 'r1', rank: 1, name: 'RB One', team: 'KC', position: 'RB', byeWeek: 9 },
+        { id: 'r2', rank: 2, name: 'RB Two', team: 'DAL', position: 'RB', byeWeek: 7 },
+        { id: 'r3', rank: 3, name: 'RB Three', team: 'MIA', position: 'RB', byeWeek: 10 }
+      ];
+      var next = DC.edit.staging.moveToPositionRank(tight, 'r2', 2);
+      assert(next === tight, 'r2 is already RB rank 2 with no interspersed players; requesting rank 2 again is a no-op');
+    });
+
+    // ---- visibleSlotToOverallMove ----
+    // Table below pins the preview==commit convention (the R2 gap-parity lesson) for a FILTERED
+    // view: stagedIds has hidden rows (x, y) interspersed that are NOT in visibleIds.
+
+    t('visibleSlotToOverallMove: no-op when toVisibleSlot equals fromVisibleIdx or fromVisibleIdx+1', function () {
+      var stagedIds = ['a', 'x', 'b', 'y', 'c'];
+      var visibleIds = ['a', 'b', 'c'];
+      assertEq(DC.edit.staging.visibleSlotToOverallMove(stagedIds, visibleIds, 1, 1), { fromIndex: 2, toIndex: 2 }, 'drop before itself');
+      assertEq(DC.edit.staging.visibleSlotToOverallMove(stagedIds, visibleIds, 1, 2), { fromIndex: 2, toIndex: 2 }, 'drop after itself, absorbing hidden row y — still a no-op');
+    });
+
+    t('visibleSlotToOverallMove: slot 0 lands immediately before the first visible row\'s overall position, absorbing any hidden row in between', function () {
+      var stagedIds = ['a', 'x', 'b', 'y', 'c'];
+      var visibleIds = ['a', 'b', 'c'];
+      // mover = b (fromVisibleIdx 1, overall idx 2); drop at slot 0 (above a)
+      var move = DC.edit.staging.visibleSlotToOverallMove(stagedIds, visibleIds, 1, 0);
+      assertEq(move, { fromIndex: 2, toIndex: 0 });
+      assertEq(DC.edit.staging.idsOf(DC.edit.staging.moveByIndex(stagedIds.map(function (id) { return { id: id }; }), move.fromIndex, move.toIndex)), ['b', 'a', 'x', 'y', 'c']);
+    });
+
+    t('visibleSlotToOverallMove: last slot lands after the last visible row', function () {
+      var stagedIds = ['a', 'x', 'b', 'y', 'c'];
+      var visibleIds = ['a', 'b', 'c'];
+      // mover = a (fromVisibleIdx 0, overall idx 0); drop at slot 3 (= visibleIds.length, after c)
+      var move = DC.edit.staging.visibleSlotToOverallMove(stagedIds, visibleIds, 0, 3);
+      assertEq(move, { fromIndex: 0, toIndex: 4 });
+      assertEq(DC.edit.staging.idsOf(DC.edit.staging.moveByIndex(stagedIds.map(function (id) { return { id: id }; }), move.fromIndex, move.toIndex)), ['x', 'b', 'y', 'c', 'a']);
+    });
+
+    t('visibleSlotToOverallMove: general anchor case — mover above the anchor absorbs a hidden row on the way down', function () {
+      var stagedIds = ['a', 'x', 'b', 'y', 'c'];
+      var visibleIds = ['a', 'b', 'c'];
+      // mover = a (fromVisibleIdx 0); drop at slot 2 (between b and c)
+      var move = DC.edit.staging.visibleSlotToOverallMove(stagedIds, visibleIds, 0, 2);
+      assertEq(move, { fromIndex: 0, toIndex: 2 });
+      assertEq(DC.edit.staging.idsOf(DC.edit.staging.moveByIndex(stagedIds.map(function (id) { return { id: id }; }), move.fromIndex, move.toIndex)), ['x', 'b', 'a', 'y', 'c'], 'a lands right after b, before hidden y');
+    });
+
+    t('visibleSlotToOverallMove: from/to adjustment edge — identity (unfiltered) case matches the pre-existing single-list convention exactly', function () {
+      var stagedIds = ['a', 'b', 'c', 'd', 'e'];
+      // downward: matches finishDrag's landedIndex>fromIndex -> toIndex = landedIndex-1
+      assertEq(DC.edit.staging.visibleSlotToOverallMove(stagedIds, stagedIds, 1, 4), { fromIndex: 1, toIndex: 3 });
+      // upward: matches finishDrag's landedIndex<fromIndex -> toIndex = landedIndex
+      assertEq(DC.edit.staging.visibleSlotToOverallMove(stagedIds, stagedIds, 3, 1), { fromIndex: 3, toIndex: 1 });
+      // true no-op: dropping at your own slot
+      assertEq(DC.edit.staging.visibleSlotToOverallMove(stagedIds, stagedIds, 2, 2), { fromIndex: 2, toIndex: 2 });
+    });
+
+    t('visibleSlotToOverallMove: invalid fromVisibleIdx or a mover id absent from stagedIds -> {-1,-1}', function () {
+      var stagedIds = ['a', 'b', 'c'];
+      var visibleIds = ['a', 'b', 'c'];
+      assertEq(DC.edit.staging.visibleSlotToOverallMove(stagedIds, visibleIds, -1, 1), { fromIndex: -1, toIndex: -1 });
+      assertEq(DC.edit.staging.visibleSlotToOverallMove(stagedIds, visibleIds, 3, 1), { fromIndex: -1, toIndex: -1 });
+      assertEq(DC.edit.staging.visibleSlotToOverallMove(stagedIds, ['ghost', 'b', 'c'], 0, 1), { fromIndex: -1, toIndex: -1 }, 'mover id not present in stagedIds');
+    });
+
+    // ---- slotFromPointerOffsets ----
+
+    t('slotFromPointerOffsets: uniform rows match dropIndexFromPointer exactly', function () {
+      var rowTops = [0, 40, 80, 120, 160];
+      var rowHeights = [40, 40, 40, 40, 40];
+      assertEq(DC.edit.geom.slotFromPointerOffsets(0, rowTops, rowHeights, 5), 0);
+      assertEq(DC.edit.geom.slotFromPointerOffsets(20, rowTops, rowHeights, 5), 1, 'matches dropIndexFromPointer(20,0,40,10)=1');
+      assertEq(DC.edit.geom.slotFromPointerOffsets(60, rowTops, rowHeights, 5), 2, 'matches dropIndexFromPointer(60,0,40,10)=2');
+      assertEq(DC.edit.geom.slotFromPointerOffsets(100000, rowTops, rowHeights, 5), 5, 'far past bottom clamps to count');
+      assertEq(DC.edit.geom.slotFromPointerOffsets(-100000, rowTops, rowHeights, 5), 0, 'far negative clamps to 0');
+    });
+
+    t('slotFromPointerOffsets: non-uniform rows (a tier-break row with extra margin-top) resolve by real midpoints, not a uniform step', function () {
+      var rowTops = [0, 40, 90, 130, 220]; // row2 has extra top margin (gap 50 instead of 40)
+      var rowHeights = [40, 50, 40, 90, 40];
+      // midpoints: 20, 65, 110, 175, 240
+      assertEq(DC.edit.geom.slotFromPointerOffsets(0, rowTops, rowHeights, 5), 0);
+      assertEq(DC.edit.geom.slotFromPointerOffsets(100, rowTops, rowHeights, 5), 2, 'past row0/row1 midpoints (20,65), before row2 midpoint (110)');
+      assertEq(DC.edit.geom.slotFromPointerOffsets(110, rowTops, rowHeights, 5), 3, 'exactly at row2 midpoint counts row2');
+      assertEq(DC.edit.geom.slotFromPointerOffsets(300, rowTops, rowHeights, 5), 5);
+      assertEq(DC.edit.geom.slotFromPointerOffsets(-5, rowTops, rowHeights, 5), 0);
+    });
+
+    t('slotFromPointerOffsets: count <= 0 -> 0', function () {
+      assertEq(DC.edit.geom.slotFromPointerOffsets(50, [], [], 0), 0);
+      assertEq(DC.edit.geom.slotFromPointerOffsets(50, [], [], -3), 0);
+    });
+
+    // ---- tierBreakBefore ----
+
+    t('tierBreakBefore: table of prev/view tier combinations', function () {
+      var g = DC.edit.staging.tierBreakBefore;
+      assertEq(g(null, { tier: null }), null, 'list start, untiered -> no break');
+      assertEq(g(null, { tier: 1 }), 'Tier 1', 'list start, tiered -> break');
+      assertEq(g({ tier: 1 }, { tier: 1 }), null, 'same tier -> no break');
+      assertEq(g({ tier: 1 }, { tier: 2 }), 'Tier 2', 'tier boundary -> break');
+      assertEq(g({ tier: null }, { tier: 2 }), 'Tier 2', 'prev untiered, this tiered -> break');
+      assertEq(g({ tier: 2 }, { tier: null }), null, 'prev tiered, this untiered -> NO break');
+      assertEq(g({ tier: null }, { tier: null }), null, 'both untiered -> no break');
+    });
+
+    // ---- clamp-on-move contract (drag-retier clamp) ----
+
+    t('clamp-on-move: a T3 player dragged above a T2 neighbor clamps to 2 via DC.state.clampTierAt', function () {
+      var players = [
+        { id: 'a', position: 'RB', tier: 1 },
+        { id: 'b', position: 'RB', tier: 2 },
+        { id: 'c', position: 'RB', tier: 2 },
+        { id: 'd', position: 'RB', tier: 3 }
+      ];
+      var moved = DC.edit.staging.moveByIndex(players, 3, 1);
+      assertEq(DC.edit.staging.idsOf(moved), ['a', 'd', 'b', 'c']);
+      var clamped = DC.state.clampTierAt(moved, 1, 3);
+      assertEq(clamped, 2, 'T3 dragged between a T1 neighbor above and a T2 neighbor below clamps down to 2');
+    });
+  })();
+  </script>
+
+  <!-- Round 4 Task 3: position-scoped re-ranking + tier editing — DOM-fixture tests -->
+  <script>
+  (function () {
+    'use strict';
+    section('reorder');
+
+    function buildEditFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML = '<div id="edit-root" hidden></div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function buildLaidOutEditFixture() {
+      var root = document.createElement('div');
+      root.style.position = 'fixed';
+      root.style.top = '0';
+      root.style.left = '0';
+      root.style.visibility = 'hidden';
+      root.innerHTML = '<div id="edit-root" hidden></div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function withSyncTimeouts(fn) {
+      var original = window.setTimeout;
+      window.setTimeout = function (cb) {
+        cb();
+        return 0;
+      };
+      try {
+        fn();
+      } finally {
+        window.setTimeout = original;
+      }
+    }
+
+    function makeTieredState() {
+      var players = [
+        { id: 'r1', rank: 1, name: 'RB One', team: 'KC', position: 'RB', byeWeek: 9, tier: 1 },
+        { id: 'r2', rank: 2, name: 'RB Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1 },
+        { id: 'r3', rank: 3, name: 'RB Three', team: 'MIA', position: 'RB', byeWeek: 10, tier: 2 },
+        { id: 'r4', rank: 4, name: 'RB Four', team: 'KC', position: 'RB', byeWeek: 9, tier: null },
+        { id: 'r5', rank: 5, name: 'RB Five', team: 'SEA', position: 'RB', byeWeek: 13, tier: 3 }
+      ];
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+      });
+      return {
+        schemaVersion: 4, players: players, marks: marks, undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null
+      };
+    }
+
+    t('edit position chips: filtering narrows the list, does NOT set edit-searching (drag stays enabled), and re-tapping the active chip resets to ALL', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+
+        // renderPositionChips() rebuilds the chip row's innerHTML on every render, so each click
+        // must re-query — a reused button reference goes stale (detached) after the first click.
+        function rbChip() {
+          return editRoot.querySelector('[data-action="edit-set-position"][data-position="RB"]');
+        }
+        assert(rbChip(), 'RB chip should exist');
+        rbChip().click();
+
+        var expectedRbCount = DC.data.SEED_PLAYERS.filter(function (p) { return p.position === 'RB'; }).length;
+        assertEq(editRoot.querySelectorAll('#edit-list .player-row').length, expectedRbCount, 'list narrowed to RB only');
+        assert(!editRoot.classList.contains('edit-searching'), 'position filter must NOT set edit-searching');
+        assert(rbChip().classList.contains('active-position'), 'RB chip should show active');
+
+        rbChip().click(); // re-tap active -> ALL
+        assertEq(editRoot.querySelectorAll('#edit-list .player-row').length, DC.data.SEED_PLAYERS.length, 're-tapping RB resets to ALL');
+        assert(editRoot.querySelector('[data-action="edit-set-position"][data-position="ALL"]').classList.contains('active-position'), 'All chip should be active again');
+
+        rbChip().click(); // back to RB
+        var searchInput = editRoot.querySelector('.edit-search-input');
+        searchInput.value = 'zzzzz-no-match';
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        assert(editRoot.classList.contains('edit-searching'), 'text search must still set edit-searching while position-filtered');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('drag actually starts (pointerdown adds .dragging) while position-filtered', function () {
+      var fixture = buildLaidOutEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+        editRoot.querySelector('[data-action="edit-set-position"][data-position="RB"]').click();
+
+        var row = editRoot.querySelector('#edit-list .player-row');
+        var handle = row.querySelector('.drag-handle');
+        handle.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, pointerId: 1, button: 0, clientY: row.getBoundingClientRect().top + 1
+        }));
+        assert(row.classList.contains('dragging'), 'drag should start normally while position-filtered');
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('position-rank labels: RB view shows RB{n} bold + small #overall on the rank badge', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+        editRoot.querySelector('[data-action="edit-set-position"][data-position="RB"]').click();
+
+        var firstRb = DC.data.SEED_PLAYERS.filter(function (p) { return p.position === 'RB'; })[0];
+        var row = editRoot.querySelector('[data-id="' + firstRb.id + '"]');
+        assert(row, 'first RB row should render');
+        var posSpan = row.querySelector('.rank-position');
+        var overallSpan = row.querySelector('.rank-overall');
+        assert(posSpan && overallSpan, 'rank badge should show both position-rank and overall spans');
+        assertEq(posSpan.textContent, 'RB1');
+        assertEq(overallSpan.textContent, '#' + firstRb.rank, 'overall rank stays visible');
+
+        editRoot.querySelector('[data-action="edit-set-position"][data-position="ALL"]').click();
+        var allRow = editRoot.querySelector('[data-id="' + firstRb.id + '"]');
+        assert(!allRow.querySelector('.rank-position'), 'ALL view should show plain overall rank, not the position badge');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('rank-jump in position view: title reads "to RB rank", input is the RB rank, and moving to RB1 lands immediately before the former RB1 in overall order', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+        editRoot.querySelector('[data-action="edit-set-position"][data-position="RB"]').click();
+
+        var rbPlayers = DC.data.SEED_PLAYERS.filter(function (p) { return p.position === 'RB'; });
+        var mover = rbPlayers[2];
+        var formerRb1 = rbPlayers[0];
+
+        editRoot.querySelector('[data-action="rank-jump"][data-id="' + mover.id + '"]').click();
+        var card = editRoot.querySelector('.edit-card');
+        assert(card.querySelector('.edit-card-title').textContent.indexOf('RB rank') !== -1, 'title should say "RB rank": ' + card.querySelector('.edit-card-title').textContent);
+        var input = card.querySelector('.rank-input');
+        assertEq(input.value, '3', 'input should prefill with the current RB rank');
+
+        input.value = '1';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        card.querySelector('[data-action="rank-jump-move"]').click();
+
+        var rbIds = Array.prototype.map.call(editRoot.querySelectorAll('#edit-list .player-row'), function (r) { return r.getAttribute('data-id'); });
+        assertEq(rbIds[0], mover.id, 'mover should now be RB1 in the still-RB-filtered list');
+
+        editRoot.querySelector('[data-action="edit-set-position"][data-position="ALL"]').click();
+        var allIds = Array.prototype.map.call(editRoot.querySelectorAll('#edit-list .player-row'), function (r) { return r.getAttribute('data-id'); });
+        assertEq(allIds.indexOf(mover.id), allIds.indexOf(formerRb1.id) - 1, 'mover lands immediately before the former RB1 in OVERALL order');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('tier stepper: bounds disable states, stepping, clear-to-null, and the divider moving live in the list', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(makeTieredState());
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+
+        // r4 is untiered, sandwiched between a T2 (r3) above and a T3 (r5) below.
+        editRoot.querySelector('[data-action="rank-jump"][data-id="r4"]').click();
+        var card = editRoot.querySelector('.edit-card');
+        var minusBtn = card.querySelector('[data-action="tier-step"][data-dir="-1"]');
+        var plusBtn = card.querySelector('[data-action="tier-step"][data-dir="1"]');
+        assertEq(card.querySelector('.tier-stepper-value').textContent, '—', 'untiered shows an em dash');
+        assert(!minusBtn.disabled && !plusBtn.disabled, 'untiered: neither stepper button is disabled');
+
+        plusBtn.click(); // first press initializes to bounds.start (nearestAbove = r3's tier, 2)
+        card = editRoot.querySelector('.edit-card'); // stepper row was replaced; re-query
+        assertEq(card.querySelector('.tier-stepper-value').textContent, '2');
+        assert(card.querySelector('[data-action="tier-step"][data-dir="-1"]').disabled, 'at min(2) with a real T2 neighbor above -> minus disabled');
+        assert(!card.querySelector('[data-action="tier-step"][data-dir="1"]').disabled, 'not yet at max(3)');
+
+        card.querySelector('[data-action="tier-step"][data-dir="1"]').click(); // 2 -> 3 (max)
+        card = editRoot.querySelector('.edit-card');
+        assertEq(card.querySelector('.tier-stepper-value').textContent, '3');
+        assert(card.querySelector('[data-action="tier-step"][data-dir="1"]').disabled, 'at max(3) -> plus disabled');
+
+        // divider check: r5 (tier 3) should no longer start a "Tier 3" break now that r4 is also tier 3
+        var r5Row = editRoot.querySelector('[data-id="r5"]');
+        assert(!r5Row.classList.contains('tier-break'), 'r5 no longer starts a new tier block once r4 (its new predecessor) shares tier 3');
+
+        // count pill should reflect this tier-only change (no order change at all)
+        assertEq(editRoot.querySelector('.edit-count-pill').textContent, '1', 'count pill reflects the tier-only change');
+
+        editRoot.querySelector('[data-action="rank-jump-cancel"]').click();
+
+        // now exercise clear-to-null on r1: tier 1, no real tiered neighbor above -> min defaults to 1
+        editRoot.querySelector('[data-action="rank-jump"][data-id="r1"]').click();
+        card = editRoot.querySelector('.edit-card');
+        assert(!card.querySelector('[data-action="tier-step"][data-dir="-1"]').disabled, 'r1 at tier 1 with no real neighbor above: minus stays enabled (clearable)');
+        card.querySelector('[data-action="tier-step"][data-dir="-1"]').click();
+        card = editRoot.querySelector('.edit-card');
+        assertEq(card.querySelector('.tier-stepper-value').textContent, '—', 'clear-to-null: stepping below an unconstrained floor of 1 clears the tier');
+
+        var r1Row = editRoot.querySelector('[data-id="r1"]');
+        assert(!r1Row.classList.contains('tier-break'), 'r1 no longer carries the Tier 1 divider once cleared');
+        var r2Row = editRoot.querySelector('[data-id="r2"]');
+        assert(r2Row.classList.contains('tier-break'), 'the Tier 1 divider moves live to r2, now the first tiered row');
+        assertEq(r2Row.getAttribute('data-tier-label'), 'Tier 1');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('Done commits ONE dispatch with {order, tiers} when only a tier changed (no order change)', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(makeTieredState());
+        var dispatchCount = 0;
+        var lastAction = null;
+        var originalDispatch = store.dispatch;
+        store.dispatch = function (action) {
+          dispatchCount++;
+          lastAction = action;
+          return originalDispatch(action);
+        };
+
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+
+        editRoot.querySelector('[data-action="rank-jump"][data-id="r4"]').click();
+        editRoot.querySelector('.edit-card [data-action="tier-step"][data-dir="1"]').click();
+        editRoot.querySelector('[data-action="rank-jump-cancel"]').click(); // dismiss card WITHOUT clicking Move — order untouched, tier edit already staged
+
+        var doneBtn = editRoot.querySelector('[data-action="done-edit"]');
+        withSyncTimeouts(function () {
+          doneBtn.click();
+        });
+
+        assertEq(dispatchCount, 1, 'exactly one dispatch expected');
+        assertEq(lastAction.type, 'REORDER_PLAYERS');
+        assertEq(lastAction.order, ['r1', 'r2', 'r3', 'r4', 'r5'], 'order unchanged');
+        assertEq(lastAction.tiers.r4, 2, 'r4 initialized to bounds.start (2) by the single plus press');
+
+        var state = store.getState();
+        assertEq(state.players.filter(function (p) { return p.id === 'r4'; })[0].tier, 2, 'store reflects the committed tier');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('Cancel with only tier edits (no order change) shows the discard card; discarding leaves the store untouched', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(makeTieredState());
+        var dispatchCount = 0;
+        var originalDispatch = store.dispatch;
+        store.dispatch = function (action) {
+          dispatchCount++;
+          return originalDispatch(action);
+        };
+        var originalPlayers = store.getState().players;
+
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+
+        editRoot.querySelector('[data-action="rank-jump"][data-id="r4"]').click();
+        editRoot.querySelector('.edit-card [data-action="tier-step"][data-dir="1"]').click();
+        editRoot.querySelector('[data-action="rank-jump-cancel"]').click();
+
+        var cancelBtn = editRoot.querySelector('[data-action="cancel-edit"]');
+        cancelBtn.click();
+        assert(editRoot.querySelector('[data-action="discard-confirm"]'), 'a tier-only change must still trigger the discard-confirm gate');
+
+        withSyncTimeouts(function () {
+          editRoot.querySelector('[data-action="discard-confirm"]').click();
+        });
+
+        assertEq(dispatchCount, 0, 'discarding must never dispatch');
+        assertEq(store.getState().players, originalPlayers, 'store must be byte-for-byte unchanged after discard');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('overall rank-jump clamp: moving a T3 player to overall rank 3 (between a T1 and a T2 neighbor) clamps its staged tier to 2', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(makeTieredState());
+        var lastAction = null;
+        var originalDispatch = store.dispatch;
+        store.dispatch = function (action) {
+          lastAction = action;
+          return originalDispatch(action);
+        };
+
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+
+        editRoot.querySelector('[data-action="rank-jump"][data-id="r5"]').click();
+        var input = editRoot.querySelector('.rank-input');
+        input.value = '3';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        editRoot.querySelector('[data-action="rank-jump-move"]').click();
+
+        var ids = Array.prototype.map.call(editRoot.querySelectorAll('#edit-list .player-row'), function (r) { return r.getAttribute('data-id'); });
+        assertEq(ids, ['r1', 'r2', 'r5', 'r3', 'r4']);
+
+        withSyncTimeouts(function () {
+          editRoot.querySelector('[data-action="done-edit"]').click();
+        });
+        assertEq(lastAction.tiers.r5, 2, 'overall rank-jump also applies the drag-retier clamp');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('drag-retier clamp: dragging a T3 player up between a T1 and a T2 neighbor clamps its staged tier to 2', function () {
+      var fixture = buildLaidOutEditFixture();
+      try {
+        var store = DC.state.createStore(makeTieredState());
+        var dispatchCount = 0;
+        var lastAction = null;
+        var originalDispatch = store.dispatch;
+        store.dispatch = function (action) {
+          dispatchCount++;
+          lastAction = action;
+          return originalDispatch(action);
+        };
+
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+        var listEl = editRoot.querySelector('#edit-list');
+        var rows = listEl.querySelectorAll('.player-row');
+        // order: r1(T1) r2(T1) r3(T2) r4(null) r5(T3) — drag r5 (idx4) up to between r2 and r3
+        var handle = rows[4].querySelector('.drag-handle');
+        var targetRect = rows[2].getBoundingClientRect();
+        handle.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, pointerId: 1, button: 0, clientY: rows[4].getBoundingClientRect().top + 1
+        }));
+        document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientY: targetRect.top }));
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+
+        var idsAfter = Array.prototype.map.call(listEl.querySelectorAll('.player-row'), function (r) { return r.getAttribute('data-id'); });
+        assertEq(idsAfter, ['r1', 'r2', 'r5', 'r3', 'r4'], 'r5 lands between r2 and r3');
+
+        var doneBtn = editRoot.querySelector('[data-action="done-edit"]');
+        withSyncTimeouts(function () {
+          doneBtn.click();
+        });
+        assertEq(dispatchCount, 1);
+        assertEq(lastAction.tiers.r5, 2, 'r5 (T3) clamped down to 2 by its new T1-above/T2-below neighbors');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('drag in a position-filtered view: commit matches what visibleSlotToOverallMove predicts (preview==commit under filtering)', function () {
+      var fixture = buildLaidOutEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+        editRoot.querySelector('[data-action="edit-set-position"][data-position="RB"]').click();
+
+        var listEl = editRoot.querySelector('#edit-list');
+        var rbRows = listEl.querySelectorAll('.player-row');
+        var fromIndex = 0;
+        var targetIndex = 3;
+        var idsBefore = Array.prototype.map.call(rbRows, function (r) { return r.getAttribute('data-id'); });
+
+        var handle = rbRows[fromIndex].querySelector('.drag-handle');
+        var targetRect = rbRows[targetIndex].getBoundingClientRect();
+        handle.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, pointerId: 1, button: 0, clientY: rbRows[fromIndex].getBoundingClientRect().top + 1
+        }));
+        document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientY: targetRect.top }));
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+
+        var idsAfter = Array.prototype.map.call(listEl.querySelectorAll('.player-row'), function (r) { return r.getAttribute('data-id'); });
+        var expected = idsBefore.slice();
+        var moved = expected.splice(fromIndex, 1)[0];
+        expected.splice(targetIndex - 1, 0, moved);
+        assertEq(idsAfter, expected, 'the RB-filtered commit must match the same slot-based preview convention used unfiltered');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+  })();
+  </script>
+
   <!-- Round 3 Task 2: ui.js pure-template tests — Mine chip/view, roster summary, mine toggle -->
   <script>
   (function () {
