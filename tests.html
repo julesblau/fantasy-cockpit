@@ -2139,12 +2139,16 @@
       assert(html.indexOf('Bye —') !== -1, 'byeWeek 0 -> Bye —: ' + html);
     });
 
-    t('chipsHTML: renders 9 chips total (5 position + 4 status incl. Mine); RB position + TARGETS status marked active', function () {
+    t('chipsHTML: renders 12 chips total (8 position + 4 status incl. Mine); RB position + TARGETS status marked active; FLEX sits between TE and DST', function () {
       var html = DC.ui.templates.chipsHTML({ position: 'RB', status: 'TARGETS' });
       var chipMatches = html.match(/<button class="chip/g) || [];
-      assertEq(chipMatches.length, 9, 'expected 9 chips');
+      assertEq(chipMatches.length, 12, 'expected 12 chips');
       assert(/class="chip active-position"[^>]*data-position="RB"/.test(html), 'RB chip active-position: ' + html);
       assert(/class="chip active-target"[^>]*data-status="TARGETS"/.test(html), 'Targets chip active-target: ' + html);
+      var teIdx = html.indexOf('data-position="TE"');
+      var flexIdx = html.indexOf('data-position="FLEX"');
+      var dstIdx = html.indexOf('data-position="DST"');
+      assert(teIdx !== -1 && flexIdx !== -1 && dstIdx !== -1 && teIdx < flexIdx && flexIdx < dstIdx, 'FLEX chip should sit between TE and DST: ' + html);
     });
 
     // --- Task 2: Mine chip + MINE active state ---
@@ -3688,6 +3692,27 @@
       };
     }
 
+    function makeFlexMixedState() {
+      var players = [
+        { id: 'qb1', rank: 1, name: 'QB One', team: 'KC', position: 'QB', byeWeek: 9, tier: null },
+        { id: 'rb1', rank: 2, name: 'RB One', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1 },
+        { id: 'wr1', rank: 3, name: 'WR One', team: 'MIA', position: 'WR', byeWeek: 10, tier: 1 },
+        { id: 'k1', rank: 4, name: 'K One', team: 'SF', position: 'K', byeWeek: 13, tier: null },
+        { id: 'te1', rank: 5, name: 'TE One', team: 'SEA', position: 'TE', byeWeek: 13, tier: 2 },
+        { id: 'dst1', rank: 6, name: 'DST One', team: 'BAL', position: 'DST', byeWeek: 5, tier: null },
+        { id: 'rb2', rank: 7, name: 'RB Two', team: 'CIN', position: 'RB', byeWeek: 6, tier: 2 },
+        { id: 'wr2', rank: 8, name: 'WR Two', team: 'LAR', position: 'WR', byeWeek: 11, tier: null }
+      ];
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+      });
+      return {
+        schemaVersion: 4, players: players, marks: marks, undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null
+      };
+    }
+
     t('edit position chips: filtering narrows the list, does NOT set edit-searching (drag stays enabled), and re-tapping the active chip resets to ALL', function () {
       var fixture = buildEditFixture();
       try {
@@ -4229,6 +4254,114 @@
         localStorage.removeItem(DC.state.STORAGE_KEY);
       }
     });
+
+    // ---- Round 6 Task 3: FLEX-in-edit-mode = filtered-ALL semantics ----
+
+    t('edit FLEX view: filters to exactly RB/WR/TE in rank order; badges show overall-primary + own-posrank-secondary; zero dividers even with tiers set', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(makeFlexMixedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+        editRoot.querySelector('[data-action="edit-set-position"][data-position="FLEX"]').click();
+
+        var ids = Array.prototype.map.call(editRoot.querySelectorAll('#edit-list .player-row'), function (r) { return r.getAttribute('data-id'); });
+        assertEq(ids, ['rb1', 'wr1', 'te1', 'rb2', 'wr2'], 'FLEX should show exactly RB/WR/TE, in rank order — QB/K/DST excluded');
+
+        var rb2Row = editRoot.querySelector('[data-id="rb2"]');
+        var primary = rb2Row.querySelector('.rank-position');
+        var secondary = rb2Row.querySelector('.rank-overall');
+        assert(primary && secondary, 'FLEX rows should show two-line rank badges');
+        assertEq(primary.textContent, '7', 'FLEX view primary should be the overall/board rank (ALL-view semantics)');
+        assertEq(secondary.textContent, 'RB2', 'FLEX view secondary should show the OWN position rank — no "FLEX ranks" exist');
+
+        assertEq(editRoot.querySelectorAll('#edit-list .tier-break').length, 0, 'FLEX view must show zero dividers even with tiers set (mixed positions)');
+        assert(editRoot.querySelector('[data-action="edit-set-position"][data-position="FLEX"]').classList.contains('active-position'), 'FLEX chip should show active');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('edit FLEX view: rank-jump card behaves like ALL — generic "to rank" title (no position name), input prefilled with the overall rank', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(makeFlexMixedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+        editRoot.querySelector('[data-action="edit-set-position"][data-position="FLEX"]').click();
+
+        editRoot.querySelector('[data-action="rank-jump"][data-id="rb2"]').click();
+        var card = editRoot.querySelector('.edit-card');
+        var title = card.querySelector('.edit-card-title').textContent;
+        assert(title.indexOf(' to rank') !== -1, 'FLEX rank-jump title should read like ALL\'s generic "to rank": ' + title);
+        assert(title.indexOf('RB rank') === -1 && title.indexOf('FLEX rank') === -1, 'no "FLEX ranks" exist: ' + title);
+        var input = card.querySelector('.rank-input');
+        assertEq(input.value, '7', 'FLEX rank-jump should prefill the overall rank, not a position rank');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('drag in a FLEX-filtered view: commit matches what visibleSlotToOverallMove predicts (mirrors the position-filtered drag test)', function () {
+      var fixture = buildLaidOutEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+        editRoot.querySelector('[data-action="edit-set-position"][data-position="FLEX"]').click();
+
+        var listEl = editRoot.querySelector('#edit-list');
+        var flexRows = listEl.querySelectorAll('.player-row');
+        var fromIndex = 0;
+        var targetIndex = 3;
+        var idsBefore = Array.prototype.map.call(flexRows, function (r) { return r.getAttribute('data-id'); });
+
+        var handle = flexRows[fromIndex].querySelector('.drag-handle');
+        var targetRect = flexRows[targetIndex].getBoundingClientRect();
+        handle.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true, cancelable: true, pointerId: 1, button: 0, clientY: flexRows[fromIndex].getBoundingClientRect().top + 1
+        }));
+        document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, clientY: targetRect.top }));
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+
+        var idsAfter = Array.prototype.map.call(listEl.querySelectorAll('.player-row'), function (r) { return r.getAttribute('data-id'); });
+        var expected = idsBefore.slice();
+        var moved = expected.splice(fromIndex, 1)[0];
+        expected.splice(targetIndex - 1, 0, moved);
+        assertEq(idsAfter, expected, 'the FLEX-filtered commit must match the same slot-based preview convention used for real position-filtered views — drag is filter-agnostic');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('edit ALL view: K1/DST1 position-rank labels render for the seed\'s first K and DST players', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+
+        var firstK = DC.data.SEED_PLAYERS.filter(function (p) { return p.position === 'K'; })[0];
+        var firstDst = DC.data.SEED_PLAYERS.filter(function (p) { return p.position === 'DST'; })[0];
+        assert(firstK && firstDst, 'seed should include K and DST players');
+
+        var kRow = editRoot.querySelector('[data-id="' + firstK.id + '"]');
+        var dstRow = editRoot.querySelector('[data-id="' + firstDst.id + '"]');
+        assert(kRow && dstRow, 'K and DST rows should render in ALL view');
+        assertEq(kRow.querySelector('.rank-overall').textContent, 'K1');
+        assertEq(dstRow.querySelector('.rank-overall').textContent, 'DST1');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
   })();
   </script>
 
@@ -4254,9 +4387,9 @@
       assert(notMineHtml.indexOf('is-mine') === -1, 'is-mine row class absent when !view.mine: ' + notMineHtml);
     });
 
-    t('rosterSummaryHTML: fallback (needs null) exact "My roster — QB 1 · RB 3 · WR 2 · TE 1 (7 picks)" format, total summed from counts', function () {
-      var html = DC.ui.templates.rosterSummaryHTML(null, { QB: 1, RB: 3, WR: 2, TE: 1 });
-      assert(html.indexOf('My roster — QB 1 · RB 3 · WR 2 · TE 1 (7 picks)') !== -1, html);
+    t('rosterSummaryHTML: fallback (needs null) exact "My roster — QB 1 · RB 3 · WR 2 · TE 1 · DST 1 · K 1 (9 picks)" format, total summed from counts (order B, incl. DST/K)', function () {
+      var html = DC.ui.templates.rosterSummaryHTML(null, { QB: 1, RB: 3, WR: 2, TE: 1, DST: 1, K: 1 });
+      assert(html.indexOf('My roster — QB 1 · RB 3 · WR 2 · TE 1 · DST 1 · K 1 (9 picks)') !== -1, html);
     });
 
     t('rosterSummaryHTML: fallback singular "(1 pick)" vs plural "(2 picks)" — the ledgered R3 minor', function () {
@@ -4272,17 +4405,19 @@
       assert(html.indexOf('(3 picks)') !== -1, 'total should be QB+RB+WR+TE=3 even though no total was passed in: ' + html);
     });
 
-    t('rosterSummaryHTML: needs (non-null) format exact "My roster — QB 1/1 · RB 2/2 · WR 2/3 · TE 0/1 · FLEX 1/1 · Bench 2"', function () {
+    t('rosterSummaryHTML: needs (non-null) format exact "My roster — QB 1/1 · RB 2/2 · WR 2/3 · TE 0/1 · FLEX 1/1 · DST 1/1 · K 0/1 · Bench 2"', function () {
       var needs = {
         QB: { filled: 1, req: 1 },
         RB: { filled: 2, req: 2 },
         WR: { filled: 2, req: 3 },
         TE: { filled: 0, req: 1 },
         FLEX: { filled: 1, req: 1 },
+        DST: { filled: 1, req: 1 },
+        K: { filled: 0, req: 1 },
         BENCH: { filled: 2 }
       };
       var html = DC.ui.templates.rosterSummaryHTML(needs, { QB: 1, RB: 2, WR: 2, TE: 0 });
-      assert(html.indexOf('My roster — QB 1/1 · RB 2/2 · WR 2/3 · TE 0/1 · FLEX 1/1 · Bench 2') !== -1, html);
+      assert(html.indexOf('My roster — QB 1/1 · RB 2/2 · WR 2/3 · TE 0/1 · FLEX 1/1 · DST 1/1 · K 0/1 · Bench 2') !== -1, html);
     });
 
     t('trackerStripHTML: normal (not my pick) renders a .tracker-card with three .tracker-stat blocks — R{round}/ROUND, #{currentPick}/PICK, {n}/UNTIL YOU', function () {
@@ -5769,6 +5904,97 @@
         assert(searchRows[0].querySelector('.tier-chip.tier-c2'), 'the isolated search result still carries its tier-c2 chip');
         assertEq(searchRows[0].querySelector('.tier-chip').textContent, 'T2');
       } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    // ---- Round 6 Task 3: main-board FLEX chip + 8-key league editor ----
+
+    function makeFlexBoardState() {
+      var players = [
+        { id: 'qb1', rank: 1, name: 'QB One', team: 'KC', position: 'QB', byeWeek: 9, tier: null },
+        { id: 'rb1', rank: 2, name: 'RB One', team: 'DAL', position: 'RB', byeWeek: 7, tier: null },
+        { id: 'wr1', rank: 3, name: 'WR One', team: 'MIA', position: 'WR', byeWeek: 10, tier: null },
+        { id: 'k1', rank: 4, name: 'K One', team: 'SF', position: 'K', byeWeek: 13, tier: null },
+        { id: 'te1', rank: 5, name: 'TE One', team: 'SEA', position: 'TE', byeWeek: 13, tier: null },
+        { id: 'dst1', rank: 6, name: 'DST One', team: 'BAL', position: 'DST', byeWeek: 5, tier: null },
+        { id: 'rb2', rank: 7, name: 'RB Two', team: 'CIN', position: 'RB', byeWeek: 6, tier: null }
+      ];
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+      });
+      return {
+        schemaVersion: 4, players: players, marks: marks, undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null
+      };
+    }
+
+    t('main-board FLEX chip: real dispatch filters to exactly RB/WR/TE in rank order; summary reads "FLEX · ..."; re-tapping FLEX resets to ALL', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(makeFlexBoardState());
+      try {
+        DC.ui.mount(store);
+        var flexChip = fixture.querySelector('[data-action="set-position"][data-position="FLEX"]');
+        assert(flexChip, 'FLEX chip should render on the main board');
+        flexChip.click();
+
+        var ids = Array.prototype.map.call(fixture.querySelectorAll('#player-list .player-row'), function (r) { return r.getAttribute('data-id'); });
+        assertEq(ids, ['rb1', 'wr1', 'te1', 'rb2'], 'FLEX should show exactly RB/WR/TE, in rank order — QB/K/DST excluded');
+
+        var summaryText = fixture.querySelector('#summary-line').textContent;
+        assertEq(summaryText.indexOf('FLEX · Available'), 0, 'summary should read "FLEX · Available — N players": ' + summaryText);
+
+        fixture.querySelector('[data-action="set-position"][data-position="FLEX"]').click(); // re-tap active -> ALL
+        var idsAfter = Array.prototype.map.call(fixture.querySelectorAll('#player-list .player-row'), function (r) { return r.getAttribute('data-id'); });
+        assertEq(idsAfter.length, 7, 're-tapping FLEX should reset to ALL (all 7 seeded players visible)');
+        assert(fixture.querySelector('[data-action="set-position"][data-position="ALL"]').classList.contains('active-position'), 'All chip should be active again');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('league editor: 8 stepper rows render (incl. DST/K)', function () {
+      var fixture = buildMountFixture();
+      var league = { size: 10, slot: 5, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 6 } };
+      var store = DC.state.createStore(Object.assign({}, DC.state.createSeedState(), { league: league }));
+      try {
+        DC.ui.mount(store);
+        fixture.querySelector('[data-action="open-settings"]').click();
+        var rosterPlusBtns = fixture.querySelectorAll('[data-action="league-roster-step"][data-dir="1"]');
+        assertEq(rosterPlusBtns.length, 8, 'expected 8 roster stepper rows (QB/RB/WR/TE/FLEX/DST/K/BENCH)');
+        assert(fixture.querySelector('[data-action="league-roster-step"][data-key="DST"]'), 'DST stepper row should render');
+        assert(fixture.querySelector('[data-action="league-roster-step"][data-key="K"]'), 'K stepper row should render');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('league roster stepper on DST/K: increments the named key only, one full valid-League dispatch each (mirrors the TE stepper test)', function () {
+      var fixture = buildMountFixture();
+      var league = { size: 10, slot: 5, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 6 } };
+      var store = DC.state.createStore(Object.assign({}, DC.state.createSeedState(), { league: league }));
+      var spy = spyDispatch(store);
+      var ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K', 'BENCH'];
+      try {
+        DC.ui.mount(store);
+        fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="league-roster-step"][data-key="DST"][data-dir="1"]').click();
+        fixture.querySelector('[data-action="league-roster-step"][data-key="K"][data-dir="1"]').click();
+
+        var leagueDispatches = spy.calls.filter(function (a) { return a.type === 'SET_LEAGUE'; });
+        assertEq(leagueDispatches.length, 2, 'two stepper clicks should dispatch exactly twice');
+        leagueDispatches.forEach(function (a) {
+          ROSTER_KEYS.forEach(function (k) {
+            assert(Number.isInteger(a.league.roster[k]), k + ' should be a complete integer field in the dispatched league: ' + JSON.stringify(a.league));
+          });
+        });
+        assertEq(store.getState().league.roster, { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, DST: 2, K: 2, BENCH: 6 }, 'both dispatches must have been accepted as valid by the reducer');
+      } finally {
+        spy.restore();
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
       }

@@ -418,7 +418,7 @@
         '<input type="text" class="search-input edit-search-input" placeholder="Search players by name, team, or position" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">' +
         '<button type="button" class="search-clear edit-search-clear" data-action="edit-search-clear" aria-label="Clear search">' + (DC.ui && DC.ui.icon ? DC.ui.icon('x') : '×') + '</button>' +
       '</div>' +
-      '<div class="chip-row" id="edit-position-chips"></div>' +
+      '<div class="chip-row chip-row-positions" id="edit-position-chips"></div>' +
       '<div id="edit-list"></div>' +
       '<div class="scrim edit-scrim" hidden></div>' +
       '<div class="edit-card" hidden></div>';
@@ -442,7 +442,9 @@
     var editPosition = 'ALL'; // UI-only chip filter; never touches the store
     var activeDrag = null; // per-drag token object; identity-checked by every drag callback
 
-    var EDIT_POSITION_CHIPS = [['ALL', 'All'], ['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE']];
+    var EDIT_POSITION_CHIPS = [['ALL', 'All'], ['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE'], ['FLEX', 'FLEX'], ['DST', 'DST'], ['K', 'K']];
+    // DC.state.FLEX_ELIGIBLE isn't exported — keep in lockstep with js/state.js's FLEX_ELIGIBLE
+    var EDIT_FLEX_SET = { RB: 1, WR: 1, TE: 1 };
 
     function renderPositionChips() {
       positionChipsEl.innerHTML = EDIT_POSITION_CHIPS.map(function (pair) {
@@ -547,7 +549,7 @@
         return;
       }
       var player = staged[idx];
-      var posMode = editPosition !== 'ALL';
+      var posMode = editPosition !== 'ALL' && editPosition !== 'FLEX'; // FLEX has no ranks of its own — behaves like ALL
       var currentRank = posMode ? positionRankOf(staged, playerId) : (idx + 1);
       var rankCount = posMode ? countAtPosition(player.position) : staged.length;
       var title = posMode
@@ -581,7 +583,7 @@
       if (idx === -1) {
         return;
       }
-      var posMode = editPosition !== 'ALL';
+      var posMode = editPosition !== 'ALL' && editPosition !== 'FLEX';
       var rankCount = posMode ? countAtPosition(staged[idx].position) : staged.length;
       var n = clampRank(rawValue, rankCount);
       if (n === null) {
@@ -655,16 +657,22 @@
 
       renderPositionChips();
 
-      var positionFiltered = editPosition === 'ALL'
-        ? staged
-        : staged.filter(function (p) { return p.position === editPosition; });
+      var positionFiltered;
+      if (editPosition === 'ALL') {
+        positionFiltered = staged;
+      } else if (editPosition === 'FLEX') {
+        // filtered-ALL semantics: FLEX is not a real position, it's the RB/WR/TE union
+        positionFiltered = staged.filter(function (p) { return !!EDIT_FLEX_SET[p.position]; });
+      } else {
+        positionFiltered = staged.filter(function (p) { return p.position === editPosition; });
+      }
 
       var rows = searching
         ? positionFiltered.filter(function (p) { return DC.state.matchesSearch(p, editSearchText); })
         : positionFiltered;
 
       var posRankOfId = {};
-      if (editPosition !== 'ALL') {
+      if (editPosition !== 'ALL' && editPosition !== 'FLEX') {
         var counter = 0;
         staged.forEach(function (p) {
           if (p.position === editPosition) {
@@ -673,6 +681,8 @@
           }
         });
       } else {
+        // ALL and FLEX both use this branch — FLEX has no ranks of its own, only real single
+        // positions do, so its rows show their OWN position rank (RB3, WR2, ...) same as ALL.
         // one order-preserving pass, independent counters per position (no .sort())
         var countersByPosition = {};
         staged.forEach(function (p) {
@@ -681,10 +691,11 @@
         });
       }
 
-      // dividers only make sense inside a single position's tier sequence — ALL view interleaves
-      // positions, and a search can too, so both suppress the break label; the tier chip itself
-      // still renders unconditionally below (resolved pre-filter, from stagedTiers).
-      var showDividers = editPosition !== 'ALL' && !searching;
+      // dividers only make sense inside a single position's tier sequence — ALL and FLEX both
+      // interleave positions (FLEX mixes RB/WR/TE), and a search can too, so all three suppress
+      // the break label; the tier chip itself still renders unconditionally below (resolved
+      // pre-filter, from stagedTiers).
+      var showDividers = editPosition !== 'ALL' && editPosition !== 'FLEX' && !searching;
       var prevTierView = null;
       listEl.innerHTML = rows.map(function (p) {
         var t = stagedTiers[p.id];
@@ -694,7 +705,7 @@
         prevTierView = tierView;
 
         var view = Object.assign({}, p, marksAtOpen[p.id], { rank: indexOfId[p.id] + 1, tier: t });
-        var ctx = { moved: !!changedSet[p.id], tierBreak: breakLabel, positionRank: posRankOfId[p.id] || null, allView: editPosition === 'ALL' };
+        var ctx = { moved: !!changedSet[p.id], tierBreak: breakLabel, positionRank: posRankOfId[p.id] || null, allView: editPosition === 'ALL' || editPosition === 'FLEX' };
         return editRowHTML(view, ctx);
       }).join('');
 

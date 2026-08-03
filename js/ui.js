@@ -10,7 +10,7 @@
   var LONG_PRESS_MS = 500;
 
   var STATUS_LABELS = { AVAILABLE: 'Available', TARGETS: 'Targets', AVOID: 'Avoid', DRAFTED: 'Drafted' };
-  var POSITIONS = ['QB', 'RB', 'WR', 'TE'];
+  var POSITIONS = ['QB', 'RB', 'WR', 'TE', 'DST', 'K']; // FLEX excluded — not a player position; drives the Mine fallback summary
 
   // signal tag priority order: VALUE > CLIFF, max 2 rendered (vacuous now but kept for future signals)
   var SIGNAL_DEFS = [
@@ -22,7 +22,7 @@
   var LEAGUE_SIZE_MAX = 20;
   var LEAGUE_ROSTER_MIN = 0;
   var LEAGUE_ROSTER_MAX = 12;
-  var LEAGUE_ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'BENCH']; // keep in lockstep with js/state.js ROSTER_KEYS
+  var LEAGUE_ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K', 'BENCH']; // matches js/state.js ROSTER_KEYS — keep in lockstep
   // roster reads the single source in js/state.js — never re-typed here
   var DEFAULT_LEAGUE = { size: 12, slot: 1, snake: true, roster: Object.assign({}, DC.state.DEFAULT_ROSTER) };
 
@@ -205,11 +205,11 @@
     );
   }
 
-  var POSITION_CHIPS = [['ALL', 'All'], ['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE']];
+  var POSITION_CHIPS = [['ALL', 'All'], ['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE'], ['FLEX', 'FLEX'], ['DST', 'DST'], ['K', 'K']];
 
   /** @param {{position:string, status:string}} filters */
   function chipsHTML(filters) {
-    var positionRow = '<div class="chip-row">' + POSITION_CHIPS.map(function (pair) {
+    var positionRow = '<div class="chip-row chip-row-positions">' + POSITION_CHIPS.map(function (pair) {
       var val = pair[0];
       var label = pair[1];
       var active = filters.position === val ? ' active-position' : '';
@@ -250,7 +250,7 @@
    */
   function rosterSummaryHTML(needs, counts) {
     if (needs) {
-      var needParts = ['QB', 'RB', 'WR', 'TE', 'FLEX'].map(function (k) {
+      var needParts = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K'].map(function (k) {
         return k + ' ' + needs[k].filled + '/' + needs[k].req;
       });
       return '<div class="summary">My roster ' + EMDASH + ' ' + needParts.join(' ' + MIDDOT + ' ') + ' ' + MIDDOT + ' Bench ' + needs.BENCH.filled + '</div>';
@@ -587,7 +587,7 @@
         if (store.getState().manuallyEdited) {
           msg += "You've manually reordered rankings — a backup will download automatically before this replaces them. ";
         }
-        msg += 'Parsed ' + r.players.length + ' players (skipped ' + r.skipped + ' K/DST)';
+        msg += 'Parsed ' + r.players.length + ' players (skipped ' + r.skipped + ' unrecognized row(s))';
         if (r.warnings && r.warnings.length) {
           msg += ' ' + EMDASH + ' ' + r.warnings.length + ' warning(s)';
         }

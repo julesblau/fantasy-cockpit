@@ -231,6 +231,12 @@ body.searching #bottom-bar {
   white-space: nowrap;
 }
 
+/* 8 chips/390px: default 15px/600 overruns FLEX/DST — position rows only, status row untouched */
+.chip-row-positions .chip {
+  font-size: 13px;
+  padding: 0 1px;
+}
+
 .chip.active-position {
   background: var(--accent-position);
   color: #fff;
