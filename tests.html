@@ -3628,7 +3628,7 @@
       }
     });
 
-    t('position-rank labels: RB view shows RB{n} bold + small #overall on the rank badge', function () {
+    t('position-rank labels: RB view shows RB{n} bold + small #overall; ALL view shows overall bold + small RB{n}', function () {
       var fixture = buildEditFixture();
       try {
         var store = DC.state.createStore(DC.state.createSeedState());
@@ -3637,7 +3637,9 @@
         var editRoot = fixture.querySelector('#edit-root');
         editRoot.querySelector('[data-action="edit-set-position"][data-position="RB"]').click();
 
-        var firstRb = DC.data.SEED_PLAYERS.filter(function (p) { return p.position === 'RB'; })[0];
+        var rbPlayers = DC.data.SEED_PLAYERS.filter(function (p) { return p.position === 'RB'; });
+        var firstRb = rbPlayers[0];
+        var thirdRb = rbPlayers[2];
         var row = editRoot.querySelector('[data-id="' + firstRb.id + '"]');
         assert(row, 'first RB row should render');
         var posSpan = row.querySelector('.rank-position');
@@ -3647,8 +3649,56 @@
         assertEq(overallSpan.textContent, '#' + firstRb.rank, 'overall rank stays visible');
 
         editRoot.querySelector('[data-action="edit-set-position"][data-position="ALL"]').click();
-        var allRow = editRoot.querySelector('[data-id="' + firstRb.id + '"]');
-        assert(!allRow.querySelector('.rank-position'), 'ALL view should show plain overall rank, not the position badge');
+        var allRow = editRoot.querySelector('[data-id="' + thirdRb.id + '"]');
+        assert(allRow, 'third RB row should still render in ALL view');
+        var allPrimary = allRow.querySelector('.rank-position');
+        var allSecondary = allRow.querySelector('.rank-overall');
+        assert(allPrimary && allSecondary, 'ALL view should also show two-line ranks (primary/secondary slots reused)');
+        assertEq(allPrimary.textContent, String(thirdRb.rank), 'ALL view primary stays the overall/board rank');
+        assertEq(allSecondary.textContent, 'RB3', 'ALL view secondary shows the position rank — 3rd RB overall');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('position-rank ALL view: per-position counters advance independently — interleaved QB/WR rows never bump the RB count', function () {
+      var players = [
+        { id: 'q1', rank: 1, name: 'QB One', team: 'KC', position: 'QB', byeWeek: 9, tier: null },
+        { id: 'r1', rank: 2, name: 'RB One', team: 'DAL', position: 'RB', byeWeek: 7, tier: null },
+        { id: 'r2', rank: 3, name: 'RB Two', team: 'MIA', position: 'RB', byeWeek: 10, tier: null },
+        { id: 'w1', rank: 4, name: 'WR One', team: 'KC', position: 'WR', byeWeek: 9, tier: null },
+        { id: 'r3', rank: 5, name: 'RB Three', team: 'SEA', position: 'RB', byeWeek: 13, tier: null },
+        { id: 'w2', rank: 6, name: 'WR Two', team: 'NYG', position: 'WR', byeWeek: 12, tier: null }
+      ];
+      var marks = {};
+      players.forEach(function (p) { marks[p.id] = { drafted: false, target: false, avoid: false, mine: false }; });
+      var state = {
+        schemaVersion: 4, players: players, marks: marks, undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null
+      };
+
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(state);
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+
+        function secondaryFor(id) {
+          var row = editRoot.querySelector('[data-id="' + id + '"]');
+          assert(row, id + ' row should render');
+          var span = row.querySelector('.rank-overall');
+          assert(span, id + ' should show a position-rank secondary span in ALL view');
+          return span.textContent;
+        }
+
+        assertEq(secondaryFor('q1'), 'QB1');
+        assertEq(secondaryFor('r1'), 'RB1');
+        assertEq(secondaryFor('r2'), 'RB2');
+        assertEq(secondaryFor('w1'), 'WR1');
+        assertEq(secondaryFor('r3'), 'RB3', 'r3 is the 3rd RB even though QB/WR rows sit between the RBs in overall order');
+        assertEq(secondaryFor('w2'), 'WR2');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);

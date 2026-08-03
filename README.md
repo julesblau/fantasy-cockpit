@@ -96,7 +96,7 @@ The board itself is the single source of truth for every feature above and below
 
 Open Settings -> Edit Rankings to reorder the board by hand, without re-importing a file. Drag a row's handle to move a player, or tap a player's rank number to type an exact rank and jump straight there. Tap Done to commit your changes to the board, or Cancel to discard them; Cancel asks for confirmation first if you've moved anyone. Drafted players show their DRAFTED badge in the editor and can still be dragged or rank-jumped like anyone else. Searching inside edit mode is for finding a player: dragging is disabled while a search filter is active, but tapping a player's rank number to jump still works.
 
-Tap a position chip (All/QB/RB/WR/TE) above the list to scope the editor to one position. Ranks then display position-scoped, with the overall rank alongside -- e.g. `RB1  #14` -- and the rank-jump card asks for a position rank instead of an overall one ("Move Bijan Robinson to RB rank"). Dragging still works while a position chip is active; only an active text search pauses dragging, a position filter never does.
+Tap a position chip (All/QB/RB/WR/TE) above the list to scope the editor to one position. Ranks then display position-scoped, with the overall rank alongside -- e.g. `RB1  #14` -- and the rank-jump card asks for a position rank instead of an overall one ("Move Bijan Robinson to RB rank"); back on All, each player's rank shows the overall/board rank with their position rank beneath it (e.g. `14` over `RB3`). Dragging still works while a position chip is active; only an active text search pauses dragging, a position filter never does.
 
 Manual edits persist until your next Import Rankings.
 

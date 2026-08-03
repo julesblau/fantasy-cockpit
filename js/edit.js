@@ -372,9 +372,13 @@
     var rankHTML = String(view.rank);
     if (ctx.positionRank) {
       rankBtnClass += ' pos-rank';
-      rankHTML =
-        '<span class="rank-position">' + esc(view.position) + ctx.positionRank + '</span>' +
-        '<span class="rank-overall">#' + view.rank + '</span>';
+      // .rank-position/.rank-overall are just primary/secondary layout slots here, not literal
+      // position-vs-overall semantics — ALL view puts the overall rank in the primary slot.
+      rankHTML = ctx.allView
+        ? '<span class="rank-position">' + view.rank + '</span>' +
+          '<span class="rank-overall">' + esc(view.position) + ctx.positionRank + '</span>'
+        : '<span class="rank-position">' + esc(view.position) + ctx.positionRank + '</span>' +
+          '<span class="rank-overall">#' + view.rank + '</span>';
     }
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '"' + tierAttr + '>' +
@@ -668,6 +672,13 @@
             posRankOfId[p.id] = counter;
           }
         });
+      } else {
+        // one order-preserving pass, independent counters per position (no .sort())
+        var countersByPosition = {};
+        staged.forEach(function (p) {
+          countersByPosition[p.position] = (countersByPosition[p.position] || 0) + 1;
+          posRankOfId[p.id] = countersByPosition[p.position];
+        });
       }
 
       // dividers only make sense inside a single position's tier sequence — ALL view interleaves
@@ -683,7 +694,7 @@
         prevTierView = tierView;
 
         var view = Object.assign({}, p, marksAtOpen[p.id], { rank: indexOfId[p.id] + 1, tier: t });
-        var ctx = { moved: !!changedSet[p.id], tierBreak: breakLabel, positionRank: posRankOfId[p.id] || null };
+        var ctx = { moved: !!changedSet[p.id], tierBreak: breakLabel, positionRank: posRankOfId[p.id] || null, allView: editPosition === 'ALL' };
         return editRowHTML(view, ctx);
       }).join('');
 
