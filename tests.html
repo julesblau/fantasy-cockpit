@@ -351,6 +351,13 @@
       assertEq(next.filters.status, 'AVAILABLE');
     });
 
+    t('SET_POSITION_FILTER: FLEX (a pseudo-position filter, not a player position) is accepted and stored', function () {
+      var state = makeBaseState();
+      var next = DC.state.reduce(state, { type: 'SET_POSITION_FILTER', position: 'FLEX' });
+      assertEq(next.filters.position, 'FLEX');
+      assertEq(next.filters.status, 'AVAILABLE');
+    });
+
     t('SET_STATUS_FILTER sets a new status, then re-selecting it toggles back to AVAILABLE', function () {
       var state = makeBaseState();
       var next = DC.state.reduce(state, { type: 'SET_STATUS_FILTER', status: 'TARGETS' });
@@ -599,6 +606,16 @@
       assertAscendingRanks(visible);
     });
 
+    t('visiblePlayers FLEX filter: returns exactly the RB/WR/TE union (never QB — FLEX is a filter, not a player position), in rank order, respecting status as usual', function () {
+      var state = makeState({
+        filters: { position: 'FLEX', status: 'AVAILABLE' },
+        marks: { p5: { drafted: true } } // RB p5 drafted -> excluded under AVAILABLE
+      });
+      var visible = DC.state.visiblePlayers(state);
+      assertEq(visible.map(function (p) { return p.id; }), ['p2', 'p3', 'p4', 'p6', 'p8'], 'RB/WR/TE union, QB excluded, drafted p5 excluded, rank order preserved');
+      assertAscendingRanks(visible);
+    });
+
     t('visiblePlayers DRAFTED status view returns drafted players regardless of position ALL', function () {
       var state = makeState({
         filters: { position: 'ALL', status: 'DRAFTED' },
@@ -637,7 +654,7 @@
         marks: { p3: { drafted: true } }
       });
       var counts = DC.state.availableCountsByPosition(state);
-      assertEq(counts, { QB: 2, RB: 3, WR: 1, TE: 1 });
+      assertEq(counts, { QB: 2, RB: 3, WR: 1, TE: 1, DST: 0, K: 0 });
 
       var stateDifferentFilters = makeState({
         filters: { position: 'ALL', status: 'AVAILABLE' },
@@ -757,6 +774,19 @@
       DC.state.save(state);
       var loaded = DC.state.load();
       assertEq(loaded, state);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('save()/load() round trip preserves the FLEX position filter exactly (FLEX survives isValidState and is never rejected/healed away)', function () {
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+      var state = DC.state.createSeedState();
+      state = DC.state.reduce(state, { type: 'SET_POSITION_FILTER', position: 'FLEX' });
+      assertEq(state.filters.position, 'FLEX');
+
+      DC.state.save(state);
+      var loaded = DC.state.load();
+      assertEq(loaded, state);
+      assertEq(loaded.filters.position, 'FLEX');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
@@ -1263,7 +1293,7 @@
         }
       });
       var counts = DC.state.myRosterCounts(state);
-      assertEq(counts, { QB: 0, RB: 2, WR: 0, TE: 0 });
+      assertEq(counts, { QB: 0, RB: 2, WR: 0, TE: 0, DST: 0, K: 0 });
 
       var filteredState = Object.assign({}, state, {
         filters: { position: 'WR', status: 'DRAFTED' },
@@ -4647,7 +4677,7 @@
 
     t('IMPORT_PLAYERS: normalizes incoming tiers before storing, position-scoped (non-monotone same-position tiers come out monotone; cross-position leak is dead); league carries over unchanged', function () {
       var state = makeBaseState();
-      var league = { size: 10, slot: 2, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var league = { size: 10, slot: 2, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 6 } };
       state = DC.state.reduce(state, { type: 'SET_LEAGUE', league: league });
       var newPlayers = [
         { id: 'b', rank: 1, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7, tier: 2 },
@@ -4662,36 +4692,43 @@
     t('SET_LEAGUE: valid/invalid/null table — reducer accepts only exact-int, in-bounds leagues; rejects (same ref) anything else, including values healing would coerce', function () {
       var state = makeBaseState();
 
-      var validLeague = { size: 12, slot: 4, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var validLeague = { size: 12, slot: 4, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
       var afterValid = DC.state.reduce(state, { type: 'SET_LEAGUE', league: validLeague });
       assertEq(afterValid.league, validLeague);
 
       var afterNull = DC.state.reduce(afterValid, { type: 'SET_LEAGUE', league: null });
       assertEq(afterNull.league, null, 'null clears the league');
 
-      var slotTooBig = { size: 8, slot: 9, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 5 } };
+      var slotTooBig = { size: 8, slot: 9, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 5 } };
       var r1 = DC.state.reduce(state, { type: 'SET_LEAGUE', league: slotTooBig });
       assert(r1 === state, 'slot > size must be rejected with the same reference');
 
-      var sizeTooSmall = { size: 3, slot: 1, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 5 } };
+      var sizeTooSmall = { size: 3, slot: 1, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 5 } };
       var r2 = DC.state.reduce(state, { type: 'SET_LEAGUE', league: sizeTooSmall });
       assert(r2 === state, 'size below 4 must be rejected with the same reference');
 
-      var floatSize = { size: 12.5, slot: 1, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 5 } };
+      var floatSize = { size: 12.5, slot: 1, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 5 } };
       var r3 = DC.state.reduce(state, { type: 'SET_LEAGUE', league: floatSize });
       assert(r3 === state, 'a genuinely fractional size must be rejected, not rounded');
 
-      var stringSize = { size: '12', slot: 1, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 5 } };
+      var stringSize = { size: '12', slot: 1, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 5 } };
       var r4 = DC.state.reduce(state, { type: 'SET_LEAGUE', league: stringSize });
       assert(r4 === state, 'a string-typed size must be rejected by the strict reducer validator (healing-only coercion)');
 
-      var missingRoster = { size: 10, slot: 1, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1 } };
+      var missingRoster = { size: 10, slot: 1, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1 } };
       var r5 = DC.state.reduce(state, { type: 'SET_LEAGUE', league: missingRoster });
       assert(r5 === state, 'a roster missing BENCH must be rejected');
 
-      var negRoster = { size: 10, slot: 1, snake: false, roster: { QB: -1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 5 } };
+      var negRoster = { size: 10, slot: 1, snake: false, roster: { QB: -1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 5 } };
       var r6 = DC.state.reduce(state, { type: 'SET_LEAGUE', league: negRoster });
       assert(r6 === state, 'a negative roster requirement must be rejected');
+    });
+
+    t('SET_LEAGUE: a 7-key roster (missing K) is rejected by the strict validator with the same state reference', function () {
+      var state = makeBaseState();
+      var sevenKeyLeague = { size: 10, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, BENCH: 7 } };
+      var next = DC.state.reduce(state, { type: 'SET_LEAGUE', league: sevenKeyLeague });
+      assert(next === state, 'a 7-key roster (missing K) must be rejected with the same reference');
     });
   })();
   </script>
@@ -5057,6 +5094,29 @@
       var noLeague = makeRosterState(['r1'], null);
       assertEq(DC.state.rosterNeeds(noLeague), null, 'null without a league');
     });
+
+    t('rosterNeeds: K-slot-full cascades straight to BENCH, never FLEX (FLEX stays RB/WR/TE-only); DST mirrors the same behavior', function () {
+      var players = [
+        { id: 'k1', rank: 1, name: 'K One', team: 'BAL', position: 'K', byeWeek: 9, tier: null },
+        { id: 'k2', rank: 2, name: 'K Two', team: 'SF', position: 'K', byeWeek: 7, tier: null },
+        { id: 'd1', rank: 3, name: 'D One', team: 'NYJ', position: 'DST', byeWeek: 10, tier: null },
+        { id: 'd2', rank: 4, name: 'D Two', team: 'PHI', position: 'DST', byeWeek: 9, tier: null }
+      ];
+      var marks = {};
+      players.forEach(function (p) { marks[p.id] = { drafted: false, target: false, avoid: false, mine: false }; });
+      var undoStack = [];
+      ['k1', 'k2', 'd1', 'd2'].forEach(function (id, idx) {
+        marks[id] = { drafted: true, target: false, avoid: false, mine: true };
+        undoStack.push({ playerId: id, timestamp: idx });
+      });
+      var league = { size: 10, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
+      var state = { schemaVersion: 4, players: players, marks: marks, undoStack: undoStack, filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: league };
+      var needs = DC.state.rosterNeeds(state);
+      assertEq(needs.K, { filled: 1, req: 1 }, 'first K pick fills the K slot');
+      assertEq(needs.DST, { filled: 1, req: 1 }, 'first DST pick fills the DST slot');
+      assertEq(needs.FLEX, { filled: 0, req: 1 }, 'K/DST never spill into FLEX');
+      assertEq(needs.BENCH, { filled: 2 }, 'the second K pick and second DST pick both fall through straight to BENCH');
+    });
   })();
   </script>
 
@@ -5176,8 +5236,8 @@
       });
     });
 
-    t('load(): a conforming-but-dirty league (float/string ints) coerces on load, rather than being rejected', function () {
-      var dirtyLeague = { size: '12', slot: 4.0, snake: true, roster: { QB: '1', RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+    t('load(): a conforming-but-dirty 8-key league (float/string ints, incl. DST) coerces in place on load — DST/K present means this is NOT the legacy 6-key reset path', function () {
+      var dirtyLeague = { size: '12', slot: 4.0, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: '1', K: 1, BENCH: 6 } };
       var payload = {
         schemaVersion: 4,
         players: [{ id: 'dg1', rank: 1, name: 'DG One', team: 'KC', position: 'QB', byeWeek: 9, tier: null }],
@@ -5187,7 +5247,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.league, { size: 12, slot: 4, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } });
+      assertEq(loaded.league, { size: 12, slot: 4, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 6 } }, 'DST coerces from string "1" to 1 in place; values are not the legacy-reset default (DEFAULT_ROSTER.DST is also 1, so this alone would be ambiguous — QB/RB/WR/TE/FLEX/K/BENCH matching the input rather than DEFAULT_ROSTER proves it was healed key-by-key, not reset)');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
@@ -5204,7 +5264,7 @@
         order: state.players.map(function (p) { return p.id; }),
         tiers: tiersMap
       });
-      var league = { size: 8, slot: 3, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 5 } };
+      var league = { size: 8, slot: 3, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 5 } };
       state = DC.state.reduce(state, { type: 'SET_LEAGUE', league: league });
 
       DC.state.save(state);
@@ -5215,6 +5275,84 @@
         var orig = state.players.filter(function (x) { return x.id === id; })[0];
         assertEq(p.tier, orig.tier, 'tier for ' + id + ' survives the round trip');
       });
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): healing-reset — a stored 6-key (legacy pre-K/DST) roster, even with customized/non-default values, resets wholesale to DEFAULT_ROSTER; size/slot/snake are preserved untouched', function () {
+      var payload = {
+        schemaVersion: 4,
+        players: [{ id: 'hr1', rank: 1, name: 'HR One', team: 'KC', position: 'QB', byeWeek: 9, tier: null }],
+        marks: { hr1: { drafted: false, target: false, avoid: false, mine: false } },
+        undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false,
+        league: { size: 10, slot: 7, snake: false, roster: { QB: 2, RB: 3, WR: 4, TE: 2, FLEX: 2, BENCH: 9 } }
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.league.roster, DC.state.DEFAULT_ROSTER, 'customized 6-key roster is discarded wholesale, not healed key-by-key');
+      assertEq(loaded.league.size, 10, 'size preserved through the reset');
+      assertEq(loaded.league.slot, 7, 'slot preserved through the reset');
+      assertEq(loaded.league.snake, false, 'snake preserved through the reset');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): double-load idempotence — calling load() twice with no dispatch between produces identical results (the reset heal is not force-persisted)', function () {
+      var payload = {
+        schemaVersion: 4,
+        players: [{ id: 'dl1', rank: 1, name: 'DL One', team: 'KC', position: 'QB', byeWeek: 9, tier: null }],
+        marks: { dl1: { drafted: false, target: false, avoid: false, mine: false } },
+        undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false,
+        league: { size: 10, slot: 7, snake: false, roster: { QB: 2, RB: 3, WR: 4, TE: 2, FLEX: 2, BENCH: 9 } }
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var first = DC.state.load();
+      var second = DC.state.load();
+      assertEq(first, second, 'two loads with no dispatch between must produce identical results');
+      assertEq(second.league.roster, DC.state.DEFAULT_ROSTER, 'the reset still fires the second time, from the same un-persisted stored payload');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): an 8-key roster missing only K (DST present) heals K to 1 and preserves every other customized value — no full reset', function () {
+      var payload = {
+        schemaVersion: 4,
+        players: [{ id: 'ok1', rank: 1, name: 'OK One', team: 'KC', position: 'QB', byeWeek: 9, tier: null }],
+        marks: { ok1: { drafted: false, target: false, avoid: false, mine: false } },
+        undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false,
+        league: { size: 10, slot: 1, snake: true, roster: { QB: 2, RB: 3, WR: 4, TE: 2, FLEX: 2, DST: 3, BENCH: 9 } }
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.league.roster, { QB: 2, RB: 3, WR: 4, TE: 2, FLEX: 2, DST: 3, K: 1, BENCH: 9 }, 'K absent -> defaults to 1; every other customized value preserved exactly');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): an 8-key roster missing only DST (K present) heals DST to 1 and preserves every other customized value — no full reset', function () {
+      var payload = {
+        schemaVersion: 4,
+        players: [{ id: 'ok2', rank: 1, name: 'OK Two', team: 'KC', position: 'QB', byeWeek: 9, tier: null }],
+        marks: { ok2: { drafted: false, target: false, avoid: false, mine: false } },
+        undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false,
+        league: { size: 10, slot: 1, snake: true, roster: { QB: 2, RB: 3, WR: 4, TE: 2, FLEX: 2, K: 4, BENCH: 9 } }
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.league.roster, { QB: 2, RB: 3, WR: 4, TE: 2, FLEX: 2, DST: 1, K: 4, BENCH: 9 }, 'DST absent -> defaults to 1; every other customized value preserved exactly');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): a realistic old-shape v4 backup (the actual pre-upgrade default roster) saved raw via localStorage.setItem still reaches healLeague untouched by any earlier validator, and the reset fires', function () {
+      var oldRealWorldPayload = {
+        schemaVersion: 4,
+        players: [{ id: 'ov1', rank: 1, name: 'OV One', team: 'KC', position: 'QB', byeWeek: 9, tier: null }],
+        marks: { ov1: { drafted: false, target: false, avoid: false, mine: false } },
+        undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false,
+        league: { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } }
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(oldRealWorldPayload));
+      var loaded = DC.state.load();
+      assertEq(loaded.league.roster, DC.state.DEFAULT_ROSTER, 'no earlier validator blocks this — the reset fires exactly as it would on the user\'s real phone data, even though the old default looks structurally fine on its own');
+      assertEq(loaded.league.size, 12);
+      assertEq(loaded.league.slot, 1);
+      assertEq(loaded.league.snake, true);
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
   })();

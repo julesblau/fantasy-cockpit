@@ -2,12 +2,12 @@
   'use strict';
   window.DC = window.DC || {};
 
-  /** @typedef {"QB"|"RB"|"WR"|"TE"} Position */
+  /** @typedef {"QB"|"RB"|"WR"|"TE"|"DST"|"K"} Position */
   /** @typedef {{id:string, rank:number, name:string, team:string, position:Position, byeWeek:number, tier:(number|null)}} Player */
   /** @typedef {{drafted:boolean, target:boolean, avoid:boolean, mine:boolean}} Marks */
   /** @typedef {{playerId:string, timestamp:number}} UndoEntry */
-  /** @typedef {{position:("ALL"|Position), status:("AVAILABLE"|"TARGETS"|"AVOID"|"DRAFTED"|"MINE")}} Filters */
-  /** @typedef {{QB:number, RB:number, WR:number, TE:number, FLEX:number, BENCH:number}} RosterReq */
+  /** @typedef {{position:("ALL"|"FLEX"|Position), status:("AVAILABLE"|"TARGETS"|"AVOID"|"DRAFTED"|"MINE")}} Filters */
+  /** @typedef {{QB:number, RB:number, WR:number, TE:number, FLEX:number, DST:number, K:number, BENCH:number}} RosterReq */
   /** @typedef {{size:number, slot:number, snake:boolean, roster:RosterReq}} League */
   /**
    * @typedef {{
@@ -24,9 +24,13 @@
 
   var CURRENT_SCHEMA_VERSION = 4;
   var STORAGE_KEY = 'draft-cockpit/state';
-  var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true };
+  var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true, DST: true, K: true };
   var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true };
-  var ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'BENCH'];
+  var ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K', 'BENCH'];
+  // upgrade detection only: a stored roster with exactly these 6 keys (no DST/K) predates K/DST support
+  var LEGACY_ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'BENCH'];
+  // single source of truth for the roster default — ui.js reads this, never re-types the numbers
+  var DEFAULT_ROSTER = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 };
   var FLEX_ELIGIBLE = { RB: true, WR: true, TE: true };
   var VALUE_DRIFT_MIN = 15;
   var VALUE_RANK_CEILING = 75;
@@ -225,6 +229,17 @@
     return null;
   }
 
+  /** true when roster is exactly the pre-K/DST 6-key shape (upgrade-detection only, not general validation) */
+  function isLegacySixKeyRoster(roster) {
+    for (var i = 0; i < LEGACY_ROSTER_KEYS.length; i++) {
+      var v = coerceIntLoose(roster[LEGACY_ROSTER_KEYS[i]]);
+      if (v === null || v < 0) {
+        return false;
+      }
+    }
+    return !Object.prototype.hasOwnProperty.call(roster, 'DST') && !Object.prototype.hasOwnProperty.call(roster, 'K');
+  }
+
   /** strict validation for the SET_LEAGUE reducer: exact ints only, no coercion */
   function isValidLeagueStrict(league) {
     if (!league || typeof league !== 'object' || Array.isArray(league)) {
@@ -276,14 +291,25 @@
     if (!league.roster || typeof league.roster !== 'object') {
       return null;
     }
-    var roster = {};
-    for (var i = 0; i < ROSTER_KEYS.length; i++) {
-      var key = ROSTER_KEYS[i];
-      var v = coerceIntLoose(league.roster[key]);
-      if (v === null || v < 0) {
-        return null;
+    var roster;
+    if (isLegacySixKeyRoster(league.roster)) {
+      // pre-K/DST upgrade: old roster values are discarded wholesale, never key-healed
+      roster = Object.assign({}, DEFAULT_ROSTER);
+    } else {
+      roster = {};
+      for (var i = 0; i < ROSTER_KEYS.length; i++) {
+        var key = ROSTER_KEYS[i];
+        var raw = league.roster[key];
+        if ((key === 'DST' || key === 'K') && raw === undefined) {
+          roster[key] = DEFAULT_ROSTER[key];
+          continue;
+        }
+        var v = coerceIntLoose(raw);
+        if (v === null || v < 0) {
+          return null;
+        }
+        roster[key] = v;
       }
-      roster[key] = v;
     }
     if (size < 4 || size > 20) {
       return null;
@@ -482,7 +508,8 @@
    */
   function visiblePlayers(state) {
     var positionFiltered = state.players.filter(function (p) {
-      return state.filters.position === 'ALL' || p.position === state.filters.position;
+      return state.filters.position === 'ALL' ||
+        (state.filters.position === 'FLEX' ? !!FLEX_ELIGIBLE[p.position] : p.position === state.filters.position);
     });
 
     var searchActive = state.searchText.trim() !== '';
@@ -518,10 +545,10 @@
 
   /**
    * @param {State} state
-   * @returns {{QB:number, RB:number, WR:number, TE:number}}
+   * @returns {{QB:number, RB:number, WR:number, TE:number, DST:number, K:number}}
    */
   function availableCountsByPosition(state) {
-    var counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    var counts = { QB: 0, RB: 0, WR: 0, TE: 0, DST: 0, K: 0 };
     state.players.forEach(function (p) {
       if (!state.marks[p.id].drafted) {
         counts[p.position]++;
@@ -532,10 +559,10 @@
 
   /**
    * @param {State} state
-   * @returns {{QB:number, RB:number, WR:number, TE:number}}
+   * @returns {{QB:number, RB:number, WR:number, TE:number, DST:number, K:number}}
    */
   function myRosterCounts(state) {
-    var counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    var counts = { QB: 0, RB: 0, WR: 0, TE: 0, DST: 0, K: 0 };
     state.players.forEach(function (p) {
       var m = state.marks[p.id];
       if (m && m.drafted && m.mine) {
@@ -676,14 +703,14 @@
 
   /**
    * @param {State} state
-   * @returns {null|{QB:{filled:number,req:number}, RB:{filled:number,req:number}, WR:{filled:number,req:number}, TE:{filled:number,req:number}, FLEX:{filled:number,req:number}, BENCH:{filled:number}}}
+   * @returns {null|{QB:{filled:number,req:number}, RB:{filled:number,req:number}, WR:{filled:number,req:number}, TE:{filled:number,req:number}, FLEX:{filled:number,req:number}, DST:{filled:number,req:number}, K:{filled:number,req:number}, BENCH:{filled:number}}}
    */
   function rosterNeeds(state) {
     if (!state.league || !state.league.roster) {
       return null;
     }
     var req = state.league.roster;
-    var filled = { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, BENCH: 0 };
+    var filled = { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, DST: 0, K: 0, BENCH: 0 };
     var byId = {};
     state.players.forEach(function (p) { byId[p.id] = p; });
 
@@ -712,6 +739,8 @@
       WR: { filled: filled.WR, req: req.WR },
       TE: { filled: filled.TE, req: req.TE },
       FLEX: { filled: filled.FLEX, req: req.FLEX },
+      DST: { filled: filled.DST, req: req.DST },
+      K: { filled: filled.K, req: req.K },
       BENCH: { filled: filled.BENCH }
     };
   }
@@ -747,7 +776,7 @@
     if (typeof obj.filters !== 'object' || obj.filters === null) {
       return false;
     }
-    if (!VALID_POSITIONS[obj.filters.position] && obj.filters.position !== 'ALL') {
+    if (!VALID_POSITIONS[obj.filters.position] && obj.filters.position !== 'ALL' && obj.filters.position !== 'FLEX') {
       return false;
     }
     if (!VALID_STATUSES[obj.filters.status]) {
@@ -911,6 +940,7 @@
     STORAGE_KEY: STORAGE_KEY,
     VALUE_DRIFT_MIN: VALUE_DRIFT_MIN,
     VALUE_RANK_CEILING: VALUE_RANK_CEILING,
+    DEFAULT_ROSTER: DEFAULT_ROSTER,
     createSeedState: createSeedState,
     reduce: reduce,
     createStore: createStore,
