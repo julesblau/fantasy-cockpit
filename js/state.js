@@ -28,8 +28,8 @@
   var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true };
   var ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'BENCH'];
   var FLEX_ELIGIBLE = { RB: true, WR: true, TE: true };
-  var VALUE_DRIFT_MIN = 10;
-  var VALUE_RANK_CEILING = 100;
+  var VALUE_DRIFT_MIN = 15;
+  var VALUE_RANK_CEILING = 75;
 
   /** @type {Object<number, function(*): State>} old-version-number -> upgrader to next version */
   var migrations = {};
@@ -78,11 +78,16 @@
     return Object.assign({}, state, { marks: nextMarks });
   }
 
-  // ---- tier invariant helpers (pure; among tiered players, tier is monotone non-decreasing
-  // in board order; nulls are transparent/skipped when scanning for neighbors) ------------
+  // ---- tier invariant helpers (pure; position-scoped: among same-position tiered players,
+  // tier is monotone non-decreasing in board order; nulls are transparent/skipped when
+  // scanning for neighbors, as is any player at a different position) ---------------------
 
   function nearestTieredAbove(players, index) {
+    var position = players[index].position;
     for (var i = index - 1; i >= 0; i--) {
+      if (players[i].position !== position) {
+        continue;
+      }
       var t = players[i].tier;
       if (t !== null && t !== undefined) {
         return t;
@@ -92,7 +97,11 @@
   }
 
   function nearestTieredBelow(players, index) {
+    var position = players[index].position;
     for (var i = index + 1; i < players.length; i++) {
+      if (players[i].position !== position) {
+        continue;
+      }
       var t = players[i].tier;
       if (t !== null && t !== undefined) {
         return t;
@@ -101,39 +110,42 @@
     return null;
   }
 
-  /** @param {Player[]} players @param {number} index @param {number|null} desiredTier @returns {number|null} */
+  /** @param {Player[]} players @param {number} index @param {number|null} desiredTier @returns {number|null} position-scoped */
   function clampTierAt(players, index, desiredTier) {
     if (desiredTier === null) {
       return null;
     }
     var above = nearestTieredAbove(players, index);
     var below = nearestTieredBelow(players, index);
+    // asymmetric by design: no same-position-above leaves the floor at -Infinity (caller-healed
+    // input assumed), whereas stepperBounds below floors min at 1 in the same situation.
     var min = above !== null ? above : -Infinity;
     var max = below !== null ? below : Infinity;
     return Math.min(Math.max(desiredTier, min), max);
   }
 
-  /** @param {Player[]} players @returns {Player[]} new array (or same ref if nothing changed) */
+  /** @param {Player[]} players @returns {Player[]} new array (or same ref if nothing changed); position-scoped */
   function normalizeTiers(players) {
-    var runningMax = null;
+    var runningMax = {};
     var changed = false;
     var result = players.map(function (p) {
       var t = p.tier;
       if (t === null || t === undefined) {
         return p;
       }
-      var newTier = runningMax === null ? t : Math.max(t, runningMax);
-      runningMax = newTier;
+      var prevMax = runningMax[p.position];
+      var newTier = prevMax === undefined ? t : Math.max(t, prevMax);
+      runningMax[p.position] = newTier;
       if (newTier === t) {
         return p;
       }
       changed = true;
-      return Object.assign({}, p, { tier: newTier });
+      return { id: p.id, rank: p.rank, name: p.name, team: p.team, position: p.position, byeWeek: p.byeWeek, tier: newTier };
     });
     return changed ? result : players;
   }
 
-  /** @param {Player[]} players @param {number} index @returns {{min:number, max:(number|null), start:number|undefined}} */
+  /** @param {Player[]} players @param {number} index @returns {{min:number, max:(number|null), start:number|undefined}} position-scoped */
   function stepperBounds(players, index) {
     var above = nearestTieredAbove(players, index);
     var below = nearestTieredBelow(players, index);
@@ -146,9 +158,10 @@
   }
 
   /**
-   * Shared with edit.js AND ui.js (single source of truth for the divider truth table — do not
-   * duplicate). Lives here rather than only on DC.edit so a test that stubs out DC.edit wholesale
-   * can never take ui.js's render() down with it.
+   * Single source of truth for the divider truth table — do not duplicate. Consumed by edit.js;
+   * ui.js drops its main-board divider usage in Task 2, leaving edit.js as the sole caller. Lives
+   * here rather than only on DC.edit so a test that stubs out DC.edit wholesale can never take
+   * ui.js's render() down with it.
    * @param {{tier:(number|null)}|null} prevView the row rendered immediately before view, or null at list start
    * @param {{tier:(number|null)}} view
    * @returns {string|null} "Tier {n}" when view starts a new tiered block; null otherwise.
@@ -176,6 +189,17 @@
       return null;
     }
     return t;
+  }
+
+  /** @param {number|null|undefined} tier @returns {string|null} CSS class for tiers 1-6, 'tier-cx' for >=7, null otherwise */
+  function tierColorClass(tier) {
+    if (tier === null || tier === undefined) {
+      return null;
+    }
+    if (typeof tier !== 'number' || !isFinite(tier) || Math.floor(tier) !== tier || tier < 1) {
+      return null;
+    }
+    return tier <= 6 ? 'tier-c' + tier : 'tier-cx';
   }
 
   /** @param {Player[]} players @returns {Player[]} rebuilt in canonical key order, tier healed */
@@ -626,33 +650,6 @@
 
   /**
    * @param {State} state
-   * @returns {Object<string, boolean>} ids of the first picksUntilMine available players in board order
-   */
-  function likelyGoneIds(state) {
-    var result = {};
-    if (!state.league) {
-      return result;
-    }
-    var math = pickMath(state);
-    if (!math || math.isMyPick) {
-      return result;
-    }
-    var k = math.picksUntilMine;
-    var count = 0;
-    for (var i = 0; i < state.players.length && count < k; i++) {
-      var p = state.players[i];
-      var m = state.marks[p.id];
-      if (m && m.drafted) {
-        continue;
-      }
-      result[p.id] = true;
-      count++;
-    }
-    return result;
-  }
-
-  /**
-   * @param {State} state
    * @returns {Object<string, boolean>} league-free: available ids drifting >= VALUE_DRIFT_MIN past current pick, ranked <= VALUE_RANK_CEILING
    */
   function valueFlagIds(state) {
@@ -929,9 +926,9 @@
     normalizeTiers: normalizeTiers,
     stepperBounds: stepperBounds,
     tierBreakBefore: tierBreakBefore,
+    tierColorClass: tierColorClass,
     pickMath: pickMath,
     lastInTierIds: lastInTierIds,
-    likelyGoneIds: likelyGoneIds,
     valueFlagIds: valueFlagIds,
     rosterNeeds: rosterNeeds
   };

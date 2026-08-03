@@ -4368,14 +4368,18 @@
       };
     }
 
-    t('REORDER_PLAYERS: tiers param applies per-id tiers then normalizes a non-monotone map into monotone order', function () {
-      var state = makeBaseState();
+    t('REORDER_PLAYERS: tiers param applies per-id tiers then normalizes non-monotone tiers into position-scoped monotone order (mixed-position board)', function () {
+      var state = makeBaseState(); // a=QB, b=RB, c=WR, d=TE, e=RB
       var next = DC.state.reduce(state, {
         type: 'REORDER_PLAYERS',
         order: ['a', 'b', 'c', 'd', 'e'],
-        tiers: { a: 2, b: 1, c: 1, d: 3, e: 3 }
+        tiers: { a: 2, b: 3, c: 1, d: 1, e: 1 }
       });
-      assertEq(next.players.map(function (p) { return p.tier; }), [2, 2, 2, 3, 3], 'normalizeTiers clamps b and c up to running max 2');
+      var tiers = next.players.map(function (p) { return p.tier; });
+      assertEq(tiers, [2, 3, 1, 1, 3], 'e (RB) clamps 1->3 from same-position b; c/d untouched at 1');
+      assertEq(tiers[2], 1, 'c (WR) is untouched despite higher tiers earlier at other positions');
+      assertEq(tiers[3], 1, 'd (TE) is untouched despite higher tiers earlier at other positions');
+      assertEq(tiers[4], 3, 'e (RB) is clamped up from same-position b, not from the intervening c/d');
     });
 
     t('REORDER_PLAYERS: without a tiers param, behaves byte-identically to the pre-tiers reducer (order/rank/manuallyEdited/marks/undoStack unaffected)', function () {
@@ -4400,22 +4404,39 @@
       assertEq(next.players, expected, 'normalizeTiers must be a no-op on an all-untiered board, so back-compat is untouched by construction');
     });
 
-    t('REORDER_PLAYERS: a board with tiers (set via a prior tiers-bearing reorder) stays monotone through a LATER order-only reorder that would otherwise violate it', function () {
-      var state = makeBaseState();
+    // per-position monotonicity: group players by position (board order preserved within each
+    // group), then check each group's own tier subsequence is non-decreasing — a global check
+    // across mixed positions is exactly the bug this round fixes, so it must not be reused here.
+    function assertPositionMonotone(players, msg) {
+      var byPosition = {};
+      players.forEach(function (p) {
+        (byPosition[p.position] = byPosition[p.position] || []).push(p.tier);
+      });
+      Object.keys(byPosition).forEach(function (pos) {
+        var group = byPosition[pos];
+        for (var i = 1; i < group.length; i++) {
+          if (group[i - 1] === null || group[i - 1] === undefined || group[i] === null || group[i] === undefined) {
+            continue;
+          }
+          assert(group[i] >= group[i - 1], (msg || 'tier must be monotone non-decreasing') + ' within position ' + pos + ': ' + JSON.stringify(group));
+        }
+      });
+    }
+
+    t('REORDER_PLAYERS: a board with tiers (set via a prior tiers-bearing reorder) stays position-scoped monotone through a LATER order-only reorder that would otherwise violate it', function () {
+      var state = makeBaseState(); // a=QB, b=RB, c=WR, d=TE, e=RB
       state = DC.state.reduce(state, {
         type: 'REORDER_PLAYERS',
         order: ['a', 'b', 'c', 'd', 'e'],
         tiers: { a: 1, b: 2, c: 2, d: 3, e: 3 }
       });
-      assertEq(state.players.map(function (p) { return p.tier; }), [1, 2, 2, 3, 3], 'precondition: tiered and monotone in this order');
+      assertEq(state.players.map(function (p) { return p.tier; }), [1, 2, 2, 3, 3], 'precondition: tiered and position-monotone in this order');
 
-      // reversing the order with no tiers param would otherwise persist tiers [3,3,2,2,1] mid-session
+      // reversing the order with no tiers param would otherwise persist b's tier below e's mid-session
       var next = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['e', 'd', 'c', 'b', 'a'] });
       var tiers = next.players.map(function (p) { return p.tier; });
-      for (var i = 1; i < tiers.length; i++) {
-        assert(tiers[i] >= tiers[i - 1], 'tier must be monotone non-decreasing at index ' + i + ': ' + JSON.stringify(tiers));
-      }
-      assertEq(tiers, [3, 3, 3, 3, 3], 'c/b/a get clamped up to the running max carried in from e/d — an order-only reorder must never persist a non-monotone board');
+      assertPositionMonotone(next.players, 'REORDER_PLAYERS result');
+      assertEq(tiers, [3, 3, 2, 3, 1], 'b (RB) gets clamped up to the running max (3) carried in from e (RB); c/a (WR/QB) are untouched — the exact discriminator the shipped global-clamp bug would fail');
     });
 
     t('REORDER_PLAYERS: invalid per-id tier values (string, float, zero, negative) heal to null; unknown ids in the map are ignored', function () {
@@ -4428,17 +4449,17 @@
       assertEq(next.players.map(function (p) { return p.tier; }), [null, null, null, null, 1]);
     });
 
-    t('IMPORT_PLAYERS: normalizes incoming tiers before storing (non-monotone incoming tiers come out monotone); league carries over unchanged', function () {
+    t('IMPORT_PLAYERS: normalizes incoming tiers before storing, position-scoped (non-monotone same-position tiers come out monotone; cross-position leak is dead); league carries over unchanged', function () {
       var state = makeBaseState();
       var league = { size: 10, slot: 2, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
       state = DC.state.reduce(state, { type: 'SET_LEAGUE', league: league });
       var newPlayers = [
         { id: 'b', rank: 1, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7, tier: 2 },
         { id: 'c', rank: 2, name: 'Cody Catch', team: 'MIA', position: 'WR', byeWeek: 10, tier: 1 },
-        { id: 'z', rank: 3, name: 'Zeke New', team: 'NYG', position: 'RB', byeWeek: 12, tier: 5 }
+        { id: 'z', rank: 3, name: 'Zeke New', team: 'NYG', position: 'RB', byeWeek: 12, tier: 1 }
       ];
       var next = DC.state.reduce(state, { type: 'IMPORT_PLAYERS', players: newPlayers });
-      assertEq(next.players.map(function (p) { return p.tier; }), [2, 2, 5], 'c healed up to running max 2 from b');
+      assertEq(next.players.map(function (p) { return p.tier; }), [2, 1, 2], 'z (RB) healed up to running max 2 from same-position b; c (WR) untouched at 1 despite b\'s higher tier');
       assertEq(next.league, league, 'league is untouched by a rankings import');
     });
 
@@ -4527,7 +4548,124 @@
   })();
   </script>
 
-  <!-- Round 4 Task 1: board-signal selectors — pickMath / lastInTierIds / likelyGoneIds / valueFlagIds / rosterNeeds -->
+  <!-- Round 5 Task 1: position-scoped tier invariant — mixed-position regressions for the shipped global-clamp bug -->
+  <script>
+  (function () {
+    'use strict';
+    section('state');
+
+    // mixed-position fixture: a physically-nearer different-position tiered neighbor must never
+    // act as a bound — only the nearest SAME-position tiered neighbor may.
+    function makeMixedPlayers() {
+      return [
+        { id: 'a1', rank: 1, name: 'A One', team: 'KC', position: 'QB', byeWeek: 9, tier: 1 },
+        { id: 'b1', rank: 2, name: 'B One', team: 'DAL', position: 'RB', byeWeek: 7, tier: null },
+        { id: 'a2', rank: 3, name: 'A Two', team: 'MIA', position: 'QB', byeWeek: 10, tier: 4 },
+        { id: 'c1', rank: 4, name: 'C One', team: 'SEA', position: 'WR', byeWeek: 13, tier: 2 },
+        { id: 'b2', rank: 5, name: 'B Two', team: 'BUF', position: 'RB', byeWeek: 5, tier: 3 },
+        { id: 'a3', rank: 6, name: 'A Three', team: 'NYG', position: 'QB', byeWeek: 12, tier: null }
+      ];
+    }
+
+    t('clampTierAt: mixed-position board — bound comes from the nearest SAME-position tiered neighbor, not the physically-nearer different-position one', function () {
+      var players = makeMixedPlayers();
+      assertEq(DC.state.clampTierAt(players, 1, 10), 3, 'b1 (RB) is bound by b2 (RB, tier 3) below it, not by a2 (QB, tier 4) which is physically nearer — the old global-scoped code would return 4');
+    });
+
+    t('stepperBounds: mixed-position board — no same-position tiered neighbor above opens min to 1, even though a different-position neighbor is physically above', function () {
+      var players = makeMixedPlayers();
+      assertEq(DC.state.stepperBounds(players, 1), { min: 1, max: 3, start: 3 }, 'b1 (RB) has no same-position tiered-above (a1 is QB), so min defaults to 1; max/start come from b2 (RB, tier 3)');
+    });
+
+    t('normalizeTiers: mixed-position board — per-position clamping fires on same-position violations; cross-position values are fully untouched', function () {
+      var players = [
+        { id: 'a', rank: 1, name: 'Aaron Ace', team: 'KC', position: 'QB', byeWeek: 9, tier: 2 },
+        { id: 'b', rank: 2, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7, tier: 3 },
+        { id: 'c', rank: 3, name: 'Cody Catch', team: 'MIA', position: 'WR', byeWeek: 10, tier: 1 },
+        { id: 'd', rank: 4, name: 'Dave Deep', team: 'KC', position: 'TE', byeWeek: 9, tier: 1 },
+        { id: 'e', rank: 5, name: 'Erik End', team: 'SEA', position: 'RB', byeWeek: 13, tier: 1 }
+      ];
+      var fixed = DC.state.normalizeTiers(players);
+      assert(fixed !== players, 'a same-position violation must return a new array');
+      assertEq(fixed.map(function (p) { return p.tier; }), [2, 3, 1, 1, 3], 'e (RB) clamps up to running max 3 from same-position b; c (WR) and d (TE) are untouched despite earlier higher tiers at other positions');
+    });
+
+    t('clampTierAt: floor asymmetry pin — with no same-position-above, a sub-1 (even negative) desired tier passes through unclamped', function () {
+      var players = makeMixedPlayers();
+      assertEq(DC.state.clampTierAt(players, 0, -3), -3, 'a1 has no tiered-above (top of board); clampTierAt floors at -Infinity here, assuming caller-healed input');
+    });
+
+    t('stepperBounds: floor asymmetry pin — the same no-tiered-above spot floors min at 1, unlike clampTierAt', function () {
+      var players = makeMixedPlayers();
+      assertEq(DC.state.stepperBounds(players, 0).min, 1, 'stepperBounds floors min at 1 even though clampTierAt leaves the same spot unbounded below');
+    });
+
+    t('tierColorClass: table — ints 1..6 map to tier-c1..tier-c6, ints >=7 map to tier-cx, everything else (null/undefined/non-int/<1) is null', function () {
+      assertEq(DC.state.tierColorClass(1), 'tier-c1');
+      assertEq(DC.state.tierColorClass(2), 'tier-c2');
+      assertEq(DC.state.tierColorClass(3), 'tier-c3');
+      assertEq(DC.state.tierColorClass(4), 'tier-c4');
+      assertEq(DC.state.tierColorClass(5), 'tier-c5');
+      assertEq(DC.state.tierColorClass(6), 'tier-c6');
+      assertEq(DC.state.tierColorClass(7), 'tier-cx');
+      assertEq(DC.state.tierColorClass(100), 'tier-cx');
+      assertEq(DC.state.tierColorClass(null), null);
+      assertEq(DC.state.tierColorClass(undefined), null);
+      assertEq(DC.state.tierColorClass(0), null);
+      assertEq(DC.state.tierColorClass(-1), null);
+      assertEq(DC.state.tierColorClass(1.5), null);
+    });
+
+    // THE round's acceptance test: dragging a QB to the front of an interleaved mixed-position
+    // board must never touch any other position's tiers — this is the exact shipped bug (a T4
+    // QB dragged to QB1 clamped every tiered player below it, all positions, up to >=4).
+    t('REORDER_PLAYERS regression: dragging qb4 to the front of an interleaved 9-player board only staged-clamps qb4 — every other player\'s tier is byte-identical to before', function () {
+      var before = [
+        { id: 'qb1', rank: 1, name: 'QB One', team: 'KC', position: 'QB', byeWeek: 9, tier: 1 },
+        { id: 'rb1', rank: 2, name: 'RB One', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1 },
+        { id: 'qb2', rank: 3, name: 'QB Two', team: 'MIA', position: 'QB', byeWeek: 10, tier: 2 },
+        { id: 'wr1', rank: 4, name: 'WR One', team: 'SEA', position: 'WR', byeWeek: 13, tier: 1 },
+        { id: 'qb3', rank: 5, name: 'QB Three', team: 'BUF', position: 'QB', byeWeek: 5, tier: 3 },
+        { id: 'te1', rank: 6, name: 'TE One', team: 'NYG', position: 'TE', byeWeek: 12, tier: 1 },
+        { id: 'qb4', rank: 7, name: 'QB Four', team: 'PHI', position: 'QB', byeWeek: 8, tier: 4 },
+        { id: 'rb2', rank: 8, name: 'RB Two', team: 'CIN', position: 'RB', byeWeek: 6, tier: 2 },
+        { id: 'wr2', rank: 9, name: 'WR Two', team: 'LAR', position: 'WR', byeWeek: 11, tier: 2 }
+      ];
+      var beforeById = {};
+      before.forEach(function (p) { beforeById[p.id] = p.tier; });
+
+      var marks = {};
+      before.forEach(function (p) { marks[p.id] = { drafted: false, target: false, avoid: false, mine: false }; });
+      var state = {
+        schemaVersion: 4, players: before, marks: marks, undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null
+      };
+
+      // tiers map = before-values with qb4 overridden to 1 — exactly what the UI's own clamp
+      // (a correct staging pass) would have computed before dispatching the drag.
+      var stagedTiers = {};
+      before.forEach(function (p) { stagedTiers[p.id] = p.tier; });
+      stagedTiers.qb4 = 1;
+
+      var next = DC.state.reduce(state, {
+        type: 'REORDER_PLAYERS',
+        order: ['qb4', 'qb1', 'rb1', 'qb2', 'wr1', 'qb3', 'te1', 'rb2', 'wr2'],
+        tiers: stagedTiers
+      });
+
+      var qb4 = next.players.filter(function (p) { return p.id === 'qb4'; })[0];
+      assertEq(qb4.tier, 1, 'qb4 lands at its staged tier 1');
+      next.players.forEach(function (p) {
+        if (p.id === 'qb4') {
+          return;
+        }
+        assertEq(p.tier, beforeById[p.id], p.id + '\'s tier must be byte-identical to before — dragging qb4 must never touch other players\' tiers, at any position');
+      });
+    });
+  })();
+  </script>
+
+  <!-- Round 4 Task 1: board-signal selectors — pickMath / lastInTierIds / valueFlagIds / rosterNeeds -->
   <script>
   (function () {
     'use strict';
@@ -4645,24 +4783,6 @@
       assertEq(!!ids2.g1, false, 'a drafted player is never flagged even though it would otherwise anchor the group');
     });
 
-    t('likelyGoneIds: empty when picksUntilMine is 0 (my pick) or league is unset', function () {
-      var league = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
-      var atMyPick = makePickMathState({ league: league, draftedCount: 23 });
-      assertEq(Object.keys(DC.state.likelyGoneIds(atMyPick)).length, 0, 'empty when it is currently my pick');
-
-      var noLeague = makePickMathState({});
-      assertEq(Object.keys(DC.state.likelyGoneIds(noLeague)).length, 0, 'empty when league is unset');
-    });
-
-    t('likelyGoneIds: flags exactly the first K available players in board order, where K = picksUntilMine', function () {
-      var league = { size: 12, slot: 5, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
-      var state = makePickMathState({ league: league, draftedCount: 0 });
-      var math = DC.state.pickMath(state);
-      assertEq(math.picksUntilMine, 4);
-      var ids = DC.state.likelyGoneIds(state);
-      assertEq(Object.keys(ids).sort(), ['pm1', 'pm2', 'pm3', 'pm4'].sort());
-    });
-
     function makeValuePlayers() {
       var arr = [];
       for (var i = 1; i <= 250; i++) {
@@ -4683,22 +4803,22 @@
       return { schemaVersion: 4, players: players, marks: marks, undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null };
     }
 
-    t('valueFlagIds: drift boundary — exactly VALUE_DRIFT_MIN flags, one less does not; works with league null', function () {
+    t('valueFlagIds: drift boundary — exactly VALUE_DRIFT_MIN (15) flags, one less does not; works with league null', function () {
       var draftedRanks = [];
       for (var r = 21; r <= 39; r++) { draftedRanks.push(r); }
       var state = makeValueState(draftedRanks);
       var ids = DC.state.valueFlagIds(state);
-      assertEq(!!ids.v10, true, 'drift exactly VALUE_DRIFT_MIN (20-10) flags');
-      assertEq(!!ids.v11, false, 'drift VALUE_DRIFT_MIN-1 (20-11) does not flag');
+      assertEq(!!ids.v5, true, 'drift exactly VALUE_DRIFT_MIN (20-5=15) flags');
+      assertEq(!!ids.v6, false, 'drift VALUE_DRIFT_MIN-1 (20-6=14) does not flag');
     });
 
-    t('valueFlagIds: rank ceiling boundary — rank at VALUE_RANK_CEILING is eligible, one past it is excluded even with sufficient drift', function () {
+    t('valueFlagIds: rank ceiling boundary — rank at VALUE_RANK_CEILING (75) is eligible, one past it is excluded even with sufficient drift', function () {
       var draftedRanks = [];
       for (var r = 111; r <= 220; r++) { draftedRanks.push(r); }
       var state = makeValueState(draftedRanks);
       var ids = DC.state.valueFlagIds(state);
-      assertEq(!!ids.v100, true, 'rank 100 at the ceiling with drift 11 -> flagged');
-      assertEq(!!ids.v101, false, 'rank 101 exceeds the ceiling despite drift 10');
+      assertEq(!!ids.v75, true, 'rank 75 at the ceiling with drift 36 -> flagged');
+      assertEq(!!ids.v76, false, 'rank 76 exceeds the ceiling despite sufficient drift (35)');
     });
 
     function makeRosterPlayers() {
@@ -4808,14 +4928,14 @@
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
-    t('load(): a non-monotone tier sequence (e.g. a hand-edited or foreign backup) is normalized on load, keeping the invariant unbreakable through the heal path too', function () {
+    t('load(): a non-monotone tier sequence (e.g. a hand-edited or foreign backup) is normalized position-scoped on load, keeping the invariant unbreakable through the heal path too', function () {
       var payload = {
         schemaVersion: 4,
         players: [
           { id: 'm1', rank: 1, name: 'M One', team: 'KC', position: 'QB', byeWeek: 9, tier: 3 },
-          { id: 'm2', rank: 2, name: 'M Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1 },
+          { id: 'm2', rank: 2, name: 'M Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 2 },
           { id: 'm3', rank: 3, name: 'M Three', team: 'MIA', position: 'WR', byeWeek: 10, tier: null },
-          { id: 'm4', rank: 4, name: 'M Four', team: 'KC', position: 'TE', byeWeek: 9, tier: 5 }
+          { id: 'm4', rank: 4, name: 'M Four', team: 'KC', position: 'RB', byeWeek: 9, tier: 1 }
         ],
         marks: {
           m1: { drafted: false, target: false, avoid: false, mine: false },
@@ -4831,7 +4951,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.players.map(function (p) { return p.tier; }), [3, 3, null, 5], 'tier 1 on m2 is clamped up to the running max (3) from m1');
+      assertEq(loaded.players.map(function (p) { return p.tier; }), [3, 2, null, 2], 'm4 (RB) is clamped up to the running max (2) from same-position m2, NOT dragged up to m1\'s QB tier 3');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
