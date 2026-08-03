@@ -308,21 +308,12 @@ button.player-rank {
 }
 
 .player-name {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-  min-width: 0;
   font-size: 17px;
   font-weight: 600;
   line-height: 22px;
-}
-
-.player-name .name-text {
-  min-width: 0;
-  flex: 1 1 auto;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .tier-chip {
@@ -348,6 +339,10 @@ button.player-rank {
   font-size: 13px;
   color: var(--text-2);
   line-height: 16px;
+}
+
+.player-meta .tier-chip {
+  margin-left: 6px;
 }
 
 /* quiet signal tags: available rows only, up to 2, priority VALUE > CLIFF */

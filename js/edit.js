@@ -380,8 +380,8 @@
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '"' + tierAttr + '>' +
         '<button type="button" class="' + rankBtnClass + '" data-action="rank-jump" data-id="' + esc(view.id) + '">' + rankHTML + '</button>' +
         '<div class="player-info">' +
-          '<div class="player-name"><span class="name-text">' + esc(view.name) + '</span>' + tierChipHTML(view.tier) + '</div>' +
-          '<div class="player-meta">' + metaLine(view) + '</div>' +
+          '<div class="player-name">' + esc(view.name) + '</div>' +
+          '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
         '</div>' +
         draftedPill +
         '<div class="drag-handle" data-id="' + esc(view.id) + '">' + GRIP_ICON + '</div>' +

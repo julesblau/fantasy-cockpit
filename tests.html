@@ -3980,11 +3980,15 @@
       }
     });
 
-    t('editRowHTML: tier chip renders as a sibling AFTER .name-text when tiered, absent when tier is null', function () {
+    t('editRowHTML: tier chip renders inside .player-meta after the meta text when tiered, absent when tier is null', function () {
       var base = { id: 'e1', rank: 4, name: 'Edit Guy', team: 'KC', position: 'RB', byeWeek: 9, drafted: false };
       var tieredHtml = DC.edit.templates.editRowHTML(Object.assign({}, base, { tier: 2 }), {});
       assert(tieredHtml.indexOf('<span class="tier-chip tier-c2">T2</span>') !== -1, tieredHtml);
-      assert(tieredHtml.indexOf('</span><span class="tier-chip') !== -1, 'chip must follow the closed .name-text span, not sit inside it: ' + tieredHtml);
+      var metaIdx = tieredHtml.indexOf('<div class="player-meta">');
+      var metaCloseIdx = tieredHtml.indexOf('</div>', metaIdx);
+      var chipIdx = tieredHtml.indexOf('<span class="tier-chip');
+      assert(chipIdx > metaIdx && chipIdx < metaCloseIdx, 'chip must sit inside .player-meta, after the meta text: ' + tieredHtml);
+      assert(tieredHtml.indexOf('<div class="player-name">Edit Guy</div>') !== -1, 'name line must hold the plain, unwrapped name: ' + tieredHtml);
 
       var noTierHtml = DC.edit.templates.editRowHTML(Object.assign({}, base, { tier: null }), {});
       assert(noTierHtml.indexOf('tier-chip') === -1, 'no chip when tier is null: ' + noTierHtml);
@@ -4166,11 +4170,15 @@
       assert(draftedHtml.indexOf('sig-value') === -1, 'drafted rows must never render signal tags: ' + draftedHtml);
     });
 
-    t('playerRowHTML: tier chip renders as a sibling AFTER .name-text (never inside it), across available, drafted, and drafted-search row kinds; absent when tier is null', function () {
+    t('playerRowHTML: tier chip renders inside .player-meta, after the meta text, across available, drafted, and drafted-search row kinds; absent when tier is null', function () {
       var availableView = { id: 'a1', rank: 5, name: 'Avail One', team: 'KC', position: 'QB', byeWeek: 9, drafted: false, target: false, avoid: false, tier: 3 };
       var availableHtml = DC.ui.templates.playerRowHTML(availableView, {});
       assert(availableHtml.indexOf('<span class="tier-chip tier-c3">T3</span>') !== -1, availableHtml);
-      assert(availableHtml.indexOf('</span><span class="tier-chip') !== -1, 'chip must follow the closed .name-text span, not sit inside it: ' + availableHtml);
+      var metaIdx = availableHtml.indexOf('<div class="player-meta">');
+      var metaCloseIdx = availableHtml.indexOf('</div>', metaIdx);
+      var chipIdx = availableHtml.indexOf('<span class="tier-chip');
+      assert(chipIdx > metaIdx && chipIdx < metaCloseIdx, 'chip must sit inside .player-meta, after the meta text: ' + availableHtml);
+      assert(availableHtml.indexOf('<div class="player-name">Avail One</div>') !== -1, 'name line must hold the plain, unwrapped name: ' + availableHtml);
 
       var noTierView = Object.assign({}, availableView, { tier: null });
       var noTierHtml = DC.ui.templates.playerRowHTML(noTierView, {});
@@ -4189,15 +4197,6 @@
       var view = { id: 'a2', rank: 40, name: 'Deep Sleeper', team: 'KC', position: 'WR', byeWeek: 9, drafted: false, target: false, avoid: false, tier: 9 };
       var html = DC.ui.templates.playerRowHTML(view, {});
       assert(html.indexOf('<span class="tier-chip tier-cx">T9</span>') !== -1, html);
-    });
-
-    t('playerRowHTML: .name-text wraps only the escaped name, not the tier chip — pins the ellipsis-safety flex restructure', function () {
-      var view = { id: 'a3', rank: 1, name: 'Very Long Player Name Here', team: 'KC', position: 'RB', byeWeek: 9, drafted: false, target: false, avoid: false, tier: 2 };
-      var html = DC.ui.templates.playerRowHTML(view, {});
-      var m = /<span class="name-text">([^<]*)<\/span>/.exec(html);
-      assert(m, 'expected a .name-text span: ' + html);
-      assertEq(m[1], 'Very Long Player Name Here', 'name-text must contain only the name, no chip markup inside it');
-      assert(html.indexOf('tier-chip') > html.indexOf('name-text'), 'tier-chip markup must appear after name-text: ' + html);
     });
 
     t('emptyStateHTML: kind "mine" renders a distinct title/sub', function () {

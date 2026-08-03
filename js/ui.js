@@ -113,8 +113,8 @@
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
         '<div class="player-rank">' + view.rank + '</div>' +
         '<div class="player-info">' +
-          '<div class="player-name"><span class="name-text">' + esc(view.name) + '</span>' + tierChipHTML(view.tier) + '</div>' +
-          '<div class="player-meta">' + metaLine(view) + '</div>' +
+          '<div class="player-name">' + esc(view.name) + '</div>' +
+          '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
           signalTagsHTML(view.id, ctx.signals) +
         '</div>' +
         '<button class="' + starClass + '" data-action="toggle-target" data-id="' + esc(view.id) + '">' + starIcon + '</button>' +
@@ -130,8 +130,8 @@
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
         '<div class="player-rank">' + view.rank + '</div>' +
         '<div class="player-info">' +
-          '<div class="player-name"><span class="name-text">' + esc(view.name) + '</span>' + tierChipHTML(view.tier) + '</div>' +
-          '<div class="player-meta">' + metaLine(view) + '</div>' +
+          '<div class="player-name">' + esc(view.name) + '</div>' +
+          '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
         '</div>' +
         '<span class="drafted-pill">DRAFTED</span>' +
       '</div>'
@@ -152,10 +152,10 @@
         '<div class="player-rank">' + view.rank + '</div>' +
         '<div class="player-info">' +
           '<div class="player-name">' +
-            '<span style="display:inline-flex;width:16px;height:16px;align-self:center;color:var(--accent-draft)">' + icon('check', 16) + '</span>' +
-            '<span class="name-text">' + esc(view.name) + '</span>' + tierChipHTML(view.tier) +
+            '<span style="display:inline-flex;width:16px;height:16px;vertical-align:-3px;color:var(--accent-draft);margin-right:4px">' + icon('check', 16) + '</span>' +
+            esc(view.name) +
           '</div>' +
-          '<div class="player-meta">' + metaLine(view) + '</div>' +
+          '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
         '</div>' +
         '<span class="pick-badge">Pick ' + pickText + '</span>' +
         '<button class="' + mineToggleClass + '" data-action="toggle-mine" data-id="' + esc(view.id) + '">' + icon('user') + '</button>' +
