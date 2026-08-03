@@ -5394,7 +5394,7 @@
       return { calls: calls, restore: function () { store.dispatch = original; } };
     }
 
-    var DEFAULT_LEAGUE_EXPECTED = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } };
+    var DEFAULT_LEAGUE_EXPECTED = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
 
     // ---- E: league settings section ----
 
@@ -5477,13 +5477,13 @@
 
     t('league size shrink clamps slot into the new bounds within the SAME dispatch', function () {
       var fixture = buildMountFixture();
-      var league = { size: 5, slot: 5, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } };
+      var league = { size: 5, slot: 5, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 6 } };
       var store = DC.state.createStore(Object.assign({}, DC.state.createSeedState(), { league: league }));
       try {
         DC.ui.mount(store);
         fixture.querySelector('[data-action="open-settings"]').click();
         fixture.querySelector('[data-action="league-size-step"][data-dir="-1"]').click();
-        assertEq(store.getState().league, { size: 4, slot: 4, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } }, 'slot should clamp from 5 to 4 when size shrinks to 4');
+        assertEq(store.getState().league, { size: 4, slot: 4, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 6 } }, 'slot should clamp from 5 to 4 when size shrinks to 4');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
@@ -5492,13 +5492,13 @@
 
     t('league roster stepper: increments the named key only, one full dispatch', function () {
       var fixture = buildMountFixture();
-      var league = { size: 10, slot: 5, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } };
+      var league = { size: 10, slot: 5, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 6 } };
       var store = DC.state.createStore(Object.assign({}, DC.state.createSeedState(), { league: league }));
       try {
         DC.ui.mount(store);
         fixture.querySelector('[data-action="open-settings"]').click();
         fixture.querySelector('[data-action="league-roster-step"][data-key="TE"][data-dir="1"]').click();
-        assertEq(store.getState().league.roster, { QB: 1, RB: 2, WR: 3, TE: 2, FLEX: 1, BENCH: 6 });
+        assertEq(store.getState().league.roster, { QB: 1, RB: 2, WR: 3, TE: 2, FLEX: 1, DST: 1, K: 1, BENCH: 6 });
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
@@ -5543,7 +5543,7 @@
         assertEq(trackerEl.textContent, '', 'tracker strip should be empty when league is unset');
         assert(!trackerEl.querySelector('.tracker-card'), 'no tracker card when league is unset: ' + trackerEl.innerHTML);
 
-        var league = { size: 10, slot: 5, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } };
+        var league = { size: 10, slot: 5, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 6 } };
         store.dispatch({ type: 'SET_LEAGUE', league: league });
         assert(trackerEl.querySelector('.tracker-card'), 'tracker card should appear once league is set: ' + trackerEl.innerHTML);
         assert(trackerEl.textContent.indexOf('R1') !== -1, 'tracker strip should show R1 right after league is set: ' + trackerEl.textContent);

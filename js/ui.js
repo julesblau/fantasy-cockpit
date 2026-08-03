@@ -22,8 +22,9 @@
   var LEAGUE_SIZE_MAX = 20;
   var LEAGUE_ROSTER_MIN = 0;
   var LEAGUE_ROSTER_MAX = 12;
-  var LEAGUE_ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'BENCH'];
-  var DEFAULT_LEAGUE = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } };
+  var LEAGUE_ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'BENCH']; // keep in lockstep with js/state.js ROSTER_KEYS
+  // roster reads the single source in js/state.js — never re-typed here
+  var DEFAULT_LEAGUE = { size: 12, slot: 1, snake: true, roster: Object.assign({}, DC.state.DEFAULT_ROSTER) };
 
   function esc(s) {
     return String(s === null || s === undefined ? '' : s)
