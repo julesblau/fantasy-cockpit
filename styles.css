@@ -251,10 +251,10 @@ body.searching #bottom-bar {
 .player-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background: var(--surface-2);
   border-radius: var(--radius-card);
-  padding: 10px 12px;
+  padding: 10px 8px;
   margin-bottom: 8px;
   min-height: 64px;
   max-height: 80px;
@@ -323,7 +323,7 @@ button.player-rank {
   font-weight: 700;
   line-height: 1;
   border-radius: 5px;
-  padding: 2px 6px;
+  padding: 2px 4px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -339,10 +339,14 @@ button.player-rank {
   font-size: 13px;
   color: var(--text-2);
   line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .player-meta .tier-chip {
-  margin-left: 6px;
+  margin-left: 3px;
+  vertical-align: middle;
 }
 
 /* quiet signal tags: available rows only, up to 2, priority VALUE > CLIFF */
