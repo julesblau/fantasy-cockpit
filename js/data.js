@@ -281,7 +281,32 @@
     ['Theo Johnson', 'NYG', 'TE'],
     ['Van Jefferson', 'TEN', 'WR'],
     ['Noah Brown', 'WAS', 'WR'],
-    ['Jaylin Lane', 'WAS', 'WR']
+    ['Jaylin Lane', 'WAS', 'WR'],
+    // 253-276: kickers + team defenses, interleaved in blocks of 6 (run-length guard: max 7)
+    ['Justin Tucker', 'BAL', 'K'],
+    ['Harrison Butker', 'KC', 'K'],
+    ['Brandon Aubrey', 'DAL', 'K'],
+    ['Jake Bates', 'DET', 'K'],
+    ['Cameron Dicker', 'LAC', 'K'],
+    ['Chris Boswell', 'PIT', 'K'],
+    ['49ers D/ST', 'SF', 'DST'],
+    ['Broncos D/ST', 'DEN', 'DST'],
+    ['Ravens D/ST', 'BAL', 'DST'],
+    ['Steelers D/ST', 'PIT', 'DST'],
+    ['Cowboys D/ST', 'DAL', 'DST'],
+    ['Eagles D/ST', 'PHI', 'DST'],
+    ['Younghoe Koo', 'ATL', 'K'],
+    ['Tyler Bass', 'BUF', 'K'],
+    ['Jason Sanders', 'MIA', 'K'],
+    ["Ka'imi Fairbairn", 'HOU', 'K'],
+    ['Evan McPherson', 'CIN', 'K'],
+    ['Joshua Karty', 'LAR', 'K'],
+    ['Texans D/ST', 'HOU', 'DST'],
+    ['Packers D/ST', 'GB', 'DST'],
+    ['Jets D/ST', 'NYJ', 'DST'],
+    ['Vikings D/ST', 'MIN', 'DST'],
+    ['Bills D/ST', 'BUF', 'DST'],
+    ['Chargers D/ST', 'LAC', 'DST']
   ];
 
   var SEED_PLAYERS = RAW_PLAYERS.map(function (row, index) {

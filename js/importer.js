@@ -4,7 +4,7 @@
 
   /** @typedef {{id:string, rank:number, name:string, team:string, position:string, byeWeek:number, tier:(number|null)}} Player */
 
-  var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true };
+  var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true, DST: true, K: true };
   var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true };
   var MAX_WARNINGS = 10;
   var POSITION_TOKEN_RE = /^(QB|RB|WR|TE|K|DST|DEF|D\/ST)\d*$/i;
@@ -200,8 +200,13 @@
     };
   }
 
+  // canonicalize before the gate — headerless D/ST tokens and column DEF cells
+  // must resolve to DST here, or a widened gate still can't match them
+  var POSITION_CANON_MAP = { DEF: 'DST', 'D/ST': 'DST' };
+
   function normalizePosition(raw) {
-    return (raw || '').replace(/\d+$/, '').toUpperCase();
+    var stripped = (raw || '').replace(/\d+$/, '').toUpperCase();
+    return POSITION_CANON_MAP[stripped] || stripped;
   }
 
   // base-10 int >= 1 only; "", "0", floats ("2.5"), and other junk -> null
@@ -246,7 +251,7 @@
 
     var position = normalizePosition(positionRaw);
     if (!VALID_POSITIONS[position]) {
-      // K/DST/DEF/D-ST are a normal, expected part of full rankings exports
+      // skip counter now means genuinely-unrecognized position tokens only
       ctx.skipped++;
       return;
     }

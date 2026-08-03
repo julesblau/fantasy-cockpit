@@ -100,9 +100,9 @@
   <script>
     section('data');
 
-    t('SEED_PLAYERS.length is between 240 and 260', function () {
+    t('SEED_PLAYERS.length is between 265 and 295', function () {
       var n = DC.data.SEED_PLAYERS.length;
-      assert(n >= 240 && n <= 260, 'length=' + n);
+      assert(n >= 265 && n <= 295, 'length=' + n);
     });
 
     t('all player ids are unique', function () {
@@ -126,15 +126,15 @@
       });
     });
 
-    t('every position is QB, RB, WR, or TE', function () {
-      var valid = { QB: true, RB: true, WR: true, TE: true };
+    t('every position is QB, RB, WR, TE, DST, or K', function () {
+      var valid = { QB: true, RB: true, WR: true, TE: true, DST: true, K: true };
       DC.data.SEED_PLAYERS.forEach(function (p) {
         assert(valid[p.position], 'invalid position: ' + p.position + ' for ' + p.id);
       });
     });
 
-    t('position mix meets minimums (>=15 QB, >=50 RB, >=70 WR, >=20 TE)', function () {
-      var counts = { QB: 0, RB: 0, WR: 0, TE: 0 };
+    t('position mix meets minimums (>=15 QB, >=50 RB, >=70 WR, >=20 TE, >=8 K, >=8 DST)', function () {
+      var counts = { QB: 0, RB: 0, WR: 0, TE: 0, DST: 0, K: 0 };
       DC.data.SEED_PLAYERS.forEach(function (p) {
         counts[p.position] = (counts[p.position] || 0) + 1;
       });
@@ -142,6 +142,8 @@
       assert(counts.RB >= 50, 'RB=' + counts.RB);
       assert(counts.WR >= 70, 'WR=' + counts.WR);
       assert(counts.TE >= 20, 'TE=' + counts.TE);
+      assert(counts.K >= 8, 'K=' + counts.K);
+      assert(counts.DST >= 8, 'DST=' + counts.DST);
     });
 
     t('TEAM_BYE_WEEKS has exactly 32 keys, all byes ints 5-14', function () {
@@ -1548,14 +1550,26 @@
     ];
     var CSV_TEXT = [CSV_HEADER].concat(CSV_ROWS).join('\n');
 
-    t('parseRankings: FantasyPros CSV — quoted fields, TIERS column, K/DST skipped, ranks 1..N', function () {
+    t('parseRankings: FantasyPros CSV — quoted fields, TIERS column, K/DST now included, ranks 1..N', function () {
       var result = DC.importer.parseRankings(CSV_TEXT);
       assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
-      assertEq(result.players.length, 20, 'kept player count');
-      assertEq(result.skipped, 2, 'K + DST rows skipped');
+      assertEq(result.players.length, 22, 'kept player count, K/DST no longer skipped');
+      assertEq(result.skipped, 0, 'K + DST rows are valid positions now');
       result.players.forEach(function (p, i) {
         assertEq(p.rank, i + 1, 'rank at index ' + i);
       });
+      var butker = result.players.filter(function (p) { return p.name === 'Harrison Butker'; })[0];
+      assert(butker, 'Harrison Butker (K) should now be included');
+      assertEq(butker.position, 'K');
+      assertEq(butker.team, 'KC');
+      assertEq(butker.byeWeek, 9, 'bye from BYE WEEK column');
+      assertEq(butker.tier, 5, 'tier from TIERS column');
+      var sf = result.players.filter(function (p) { return p.name === 'San Francisco'; })[0];
+      assert(sf, 'San Francisco (DST) should now be included');
+      assertEq(sf.position, 'DST', 'DST1 -> digit-stripped DST');
+      assertEq(sf.team, 'SF');
+      assertEq(sf.byeWeek, 13, 'bye from BYE WEEK column');
+      assertEq(sf.tier, 5, 'tier from TIERS column');
       var mahomes = result.players.filter(function (p) { return p.name === 'Patrick Mahomes II'; })[0];
       assert(mahomes, 'quoted name "Patrick Mahomes II" should survive intact');
       assertEq(mahomes.team, 'KC');
@@ -1588,15 +1602,99 @@
     ];
     var TSV_TEXT = TSV_FIELDS.map(function (row) { return row.join('\t'); }).join('\n');
 
-    t('parseRankings: TSV (tab-delimited) — parses same shape as CSV', function () {
+    t('parseRankings: TSV (tab-delimited) — parses same shape as CSV, kicker row now included', function () {
       var result = DC.importer.parseRankings(TSV_TEXT);
       assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
-      assertEq(result.players.length, 10, 'kicker row skipped');
-      assertEq(result.skipped, 1);
+      assertEq(result.players.length, 11, 'kicker row no longer skipped');
+      assertEq(result.skipped, 0);
       assertEq(result.players[0].name, 'Bijan Robinson');
       assertEq(result.players[0].rank, 1);
       assertEq(result.players[0].position, 'RB');
       assertEq(result.players[0].byeWeek, 5);
+      var butker = result.players.filter(function (p) { return p.name === 'Harrison Butker'; })[0];
+      assert(butker, 'Harrison Butker (K) should now be included');
+      assertEq(butker.position, 'K');
+      assertEq(butker.team, 'KC');
+      assertEq(butker.byeWeek, 9, 'bye from BYE WEEK column');
+      assertEq(butker.tier, 5, 'tier from TIERS column');
+    });
+
+    // --- R6 Task 2: normative traces — canonicalization before the gate ---
+    t('parseRankings: headerless "12. Justin Tucker BAL K" — no bye/K token collision', function () {
+      var text = [
+        '1. Christian McCaffrey SF RB',
+        '2. Josh Allen BUF QB',
+        '3. Brock Bowers LV TE',
+        '4. Justin Jefferson MIN WR',
+        '12. Justin Tucker BAL K'
+      ].join('\n');
+      var result = DC.importer.parseRankings(text);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 5);
+      assertEq(result.skipped, 0);
+      var tucker = result.players.filter(function (p) { return p.name === 'Justin Tucker'; })[0];
+      assert(tucker, 'Justin Tucker should have parsed');
+      assertEq(tucker.team, 'BAL');
+      assertEq(tucker.position, 'K');
+      assertEq(tucker.byeWeek, DC.data.TEAM_BYE_WEEKS.BAL, 'no numeric token was mistaken for a bye override');
+    });
+
+    t('parseRankings: headerless "12. 49ers D/ST SF" — D/ST token canonicalizes to DST', function () {
+      var text = [
+        '1. Christian McCaffrey SF RB',
+        '2. Josh Allen BUF QB',
+        '3. Brock Bowers LV TE',
+        '4. Justin Jefferson MIN WR',
+        '12. 49ers D/ST SF'
+      ].join('\n');
+      var result = DC.importer.parseRankings(text);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 5);
+      assertEq(result.skipped, 0);
+      var dst = result.players.filter(function (p) { return p.position === 'DST'; })[0];
+      assert(dst, 'the D/ST row should have parsed as DST, not been skipped');
+      assertEq(dst.team, 'SF');
+      assertEq(dst.name, '49ers', 'D/ST token is consumed as the position token, not part of the name');
+    });
+
+    t('parseRankings: headerless team-less "San Francisco DST" — documented fallback, no city-name heuristics', function () {
+      var text = [
+        '1. Christian McCaffrey SF RB',
+        '2. Josh Allen BUF QB',
+        '3. Brock Bowers LV TE',
+        '4. Justin Jefferson MIN WR',
+        'San Francisco DST'
+      ].join('\n');
+      var result = DC.importer.parseRankings(text);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 5);
+      assertEq(result.skipped, 0);
+      var sf = result.players.filter(function (p) { return p.team === 'FA'; })[0];
+      assert(sf, 'expected a row falling back to team FA');
+      assertEq(sf.name, 'San Francisco', '"San Francisco" is not mapped to team code SF — no city-name heuristic');
+      assertEq(sf.position, 'DST');
+      assertEq(sf.byeWeek, 0, 'no team match -> byeWeek fallback of 0');
+    });
+
+    t('parseRankings: column-based DEF and D/ST both canonicalize to DST', function () {
+      var text = [
+        'RK,PLAYER,TEAM,POS,BYE',
+        '1,Christian McCaffrey,SF,RB,13',
+        '2,Josh Allen,BUF,QB,5',
+        '3,Brock Bowers,LV,TE,10',
+        '4,San Francisco,SF,DEF,13',
+        '5,Denver,DEN,D/ST,7'
+      ].join('\n');
+      var result = DC.importer.parseRankings(text);
+      assertEq(result.ok, true, 'expected ok:true — ' + (result.error || ''));
+      assertEq(result.players.length, 5);
+      assertEq(result.skipped, 0);
+      var sf = result.players.filter(function (p) { return p.name === 'San Francisco'; })[0];
+      assert(sf, 'DEF row should have parsed');
+      assertEq(sf.position, 'DST', 'DEF -> DST');
+      var den = result.players.filter(function (p) { return p.name === 'Denver'; })[0];
+      assert(den, 'D/ST row should have parsed');
+      assertEq(den.position, 'DST', 'D/ST -> DST');
     });
 
     // --- Fixture 3: numbered plain list, 20 lines ---
