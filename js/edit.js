@@ -219,7 +219,7 @@
     return { fromIndex: fromIndex, toIndex: toIndex };
   }
 
-  // tierBreakBefore moved to DC.state (shared truth table with ui.js; see state.js's doc comment) —
+  // tierBreakBefore moved to DC.state (edit.js-only truth table now; see state.js's doc comment) —
   // aliased below under DC.edit.staging so every existing internal/external call site is unchanged.
   var tierBreakBefore = DC.state.tierBreakBefore;
 
@@ -343,6 +343,12 @@
       '<line x1="4" y1="17" x2="20" y2="17"></line>' +
     '</svg>';
 
+  // duplicated per the esc() precedent — not exported from state, not shared with ui.js
+  function tierChipHTML(tier) {
+    var cls = DC.state.tierColorClass(tier);
+    return cls ? '<span class="tier-chip ' + cls + '">T' + tier + '</span>' : '';
+  }
+
   /**
    * @param {Object} view player + marks (same shape ui.js templates receive)
    * @param {{moved:boolean, tierBreak:(string|null), positionRank:(number|null)}} ctx
@@ -374,7 +380,7 @@
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '"' + tierAttr + '>' +
         '<button type="button" class="' + rankBtnClass + '" data-action="rank-jump" data-id="' + esc(view.id) + '">' + rankHTML + '</button>' +
         '<div class="player-info">' +
-          '<div class="player-name">' + esc(view.name) + '</div>' +
+          '<div class="player-name"><span class="name-text">' + esc(view.name) + '</span>' + tierChipHTML(view.tier) + '</div>' +
           '<div class="player-meta">' + metaLine(view) + '</div>' +
         '</div>' +
         draftedPill +
@@ -464,10 +470,15 @@
       return n;
     }
 
-    // true iff no player strictly before `index` in `merged` carries a tier — the "min===1 is a
-    // default, not a real neighbor constraint" case the tier stepper's clear-to-null relies on.
+    // true iff no SAME-POSITION player strictly before `index` in `merged` carries a tier — the
+    // "min===1 is a default, not a real neighbor constraint" case the tier stepper's
+    // clear-to-null relies on.
     function noTieredAbove(merged, index) {
+      var position = merged[index].position;
       for (var i = 0; i < index; i++) {
+        if (merged[i].position !== position) {
+          continue;
+        }
         if (merged[i].tier !== null && merged[i].tier !== undefined) {
           return false;
         }
@@ -659,12 +670,16 @@
         });
       }
 
+      // dividers only make sense inside a single position's tier sequence — ALL view interleaves
+      // positions, and a search can too, so both suppress the break label; the tier chip itself
+      // still renders unconditionally below (resolved pre-filter, from stagedTiers).
+      var showDividers = editPosition !== 'ALL' && !searching;
       var prevTierView = null;
       listEl.innerHTML = rows.map(function (p) {
         var t = stagedTiers[p.id];
         t = t === undefined ? null : t;
         var tierView = { tier: t };
-        var breakLabel = tierBreakBefore(prevTierView, tierView);
+        var breakLabel = showDividers ? tierBreakBefore(prevTierView, tierView) : null;
         prevTierView = tierView;
 
         var view = Object.assign({}, p, marksAtOpen[p.id], { rank: indexOfId[p.id] + 1, tier: t });

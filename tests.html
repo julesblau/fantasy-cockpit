@@ -3698,6 +3698,13 @@
         DC.edit.open();
         var editRoot = fixture.querySelector('#edit-root');
 
+        // ALL view (the default on open): tiers are set but dividers must never render here.
+        assertEq(editRoot.querySelectorAll('#edit-list .tier-break').length, 0, 'ALL view must show zero dividers even with tiers set');
+
+        // fixture is RB-only, so this filter doesn't change which rows show — it only lifts the
+        // ALL-view divider gate so the assertions below (which need real dividers) can run.
+        editRoot.querySelector('[data-action="edit-set-position"][data-position="RB"]').click();
+
         // r4 is untiered, sandwiched between a T2 (r3) above and a T3 (r5) below.
         editRoot.querySelector('[data-action="rank-jump"][data-id="r4"]').click();
         var card = editRoot.querySelector('.edit-card');
@@ -3924,6 +3931,127 @@
         var moved = expected.splice(fromIndex, 1)[0];
         expected.splice(targetIndex - 1, 0, moved);
         assertEq(idsAfter, expected, 'the RB-filtered commit must match the same slot-based preview convention used unfiltered');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    // ---- Round 5 Task 3: divider gating + chips + the DOM-level Mahomes companion ----
+
+    t('divider gating (standalone): ALL view never shows .tier-break regardless of tiers', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(makeTieredState());
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+        assertEq(editRoot.querySelectorAll('#edit-list .tier-break').length, 0, 'ALL view must render zero dividers even with tiers set');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('divider gating: RB-filtered dividers show; typing into edit search hides them; clearing restores them; tier chips stay visible throughout', function () {
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(makeTieredState());
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+        editRoot.querySelector('[data-action="edit-set-position"][data-position="RB"]').click();
+
+        assert(editRoot.querySelectorAll('#edit-list .tier-break').length > 0, 'RB-filtered view should show dividers');
+        assert(editRoot.querySelectorAll('#edit-list .tier-chip').length > 0, 'tier chips render alongside dividers');
+
+        var searchInput = editRoot.querySelector('.edit-search-input');
+        searchInput.value = 'RB';
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        assertEq(editRoot.querySelectorAll('#edit-list .tier-break').length, 0, 'typing into edit search hides dividers even while position-filtered');
+        assert(editRoot.querySelectorAll('#edit-list .tier-chip').length > 0, 'tier chips remain visible while searching');
+
+        searchInput.value = '';
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        assert(editRoot.querySelectorAll('#edit-list .tier-break').length > 0, 'clearing search restores dividers');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('editRowHTML: tier chip renders as a sibling AFTER .name-text when tiered, absent when tier is null', function () {
+      var base = { id: 'e1', rank: 4, name: 'Edit Guy', team: 'KC', position: 'RB', byeWeek: 9, drafted: false };
+      var tieredHtml = DC.edit.templates.editRowHTML(Object.assign({}, base, { tier: 2 }), {});
+      assert(tieredHtml.indexOf('<span class="tier-chip tier-c2">T2</span>') !== -1, tieredHtml);
+      assert(tieredHtml.indexOf('</span><span class="tier-chip') !== -1, 'chip must follow the closed .name-text span, not sit inside it: ' + tieredHtml);
+
+      var noTierHtml = DC.edit.templates.editRowHTML(Object.assign({}, base, { tier: null }), {});
+      assert(noTierHtml.indexOf('tier-chip') === -1, 'no chip when tier is null: ' + noTierHtml);
+    });
+
+    // DOM-level companion to the reducer-level acceptance test above (Task 1): proves the WHOLE
+    // pipeline — position-scoped staging clamp (edit.js) + Done's {order, tiers} payload + the
+    // reducer's normalizeTiers safety net — never lets one position's rank-jump touch another's tiers.
+    t('DOM Mahomes companion: rank-jumping qb4 to overall #1 through the full edit-mode pipeline only staged-clamps qb4 — every other tier is byte-identical, exactly one dispatch', function () {
+      var before = [
+        { id: 'qb1', rank: 1, name: 'QB One', team: 'KC', position: 'QB', byeWeek: 9, tier: 1 },
+        { id: 'rb1', rank: 2, name: 'RB One', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1 },
+        { id: 'qb2', rank: 3, name: 'QB Two', team: 'MIA', position: 'QB', byeWeek: 10, tier: 2 },
+        { id: 'wr1', rank: 4, name: 'WR One', team: 'SEA', position: 'WR', byeWeek: 13, tier: 1 },
+        { id: 'qb3', rank: 5, name: 'QB Three', team: 'BUF', position: 'QB', byeWeek: 5, tier: 3 },
+        { id: 'te1', rank: 6, name: 'TE One', team: 'NYG', position: 'TE', byeWeek: 12, tier: 1 },
+        { id: 'qb4', rank: 7, name: 'QB Four', team: 'PHI', position: 'QB', byeWeek: 8, tier: 4 },
+        { id: 'rb2', rank: 8, name: 'RB Two', team: 'CIN', position: 'RB', byeWeek: 6, tier: 2 },
+        { id: 'wr2', rank: 9, name: 'WR Two', team: 'LAR', position: 'WR', byeWeek: 11, tier: 2 }
+      ];
+      var beforeById = {};
+      before.forEach(function (p) { beforeById[p.id] = p.tier; });
+      var marks = {};
+      before.forEach(function (p) { marks[p.id] = { drafted: false, target: false, avoid: false, mine: false }; });
+      var state = {
+        schemaVersion: 4, players: before, marks: marks, undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null
+      };
+
+      var fixture = buildEditFixture();
+      try {
+        var store = DC.state.createStore(state);
+        var dispatchCount = 0;
+        var lastAction = null;
+        var originalDispatch = store.dispatch;
+        store.dispatch = function (action) {
+          dispatchCount++;
+          lastAction = action;
+          return originalDispatch(action);
+        };
+
+        DC.edit.mount(store);
+        DC.edit.open();
+        var editRoot = fixture.querySelector('#edit-root');
+
+        editRoot.querySelector('[data-action="rank-jump"][data-id="qb4"]').click();
+        var input = editRoot.querySelector('.rank-input');
+        input.value = '1';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        editRoot.querySelector('[data-action="rank-jump-move"]').click();
+
+        withSyncTimeouts(function () {
+          editRoot.querySelector('[data-action="done-edit"]').click();
+        });
+
+        assertEq(dispatchCount, 1, 'exactly one dispatch expected');
+        assertEq(lastAction.type, 'REORDER_PLAYERS');
+
+        var next = store.getState();
+        var qb4 = next.players.filter(function (p) { return p.id === 'qb4'; })[0];
+        assertEq(qb4.tier, 1, 'qb4 lands at its staged, clamped tier 1');
+        next.players.forEach(function (p) {
+          if (p.id === 'qb4') {
+            return;
+          }
+          assertEq(p.tier, beforeById[p.id], p.id + '\'s tier must be byte-identical to before — rank-jumping qb4 must never touch other players\' tiers, at any position');
+        });
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
