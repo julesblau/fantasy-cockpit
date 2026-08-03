@@ -5230,12 +5230,12 @@
       function addPlayer(id, position, tier) {
         players.push({ id: id, rank: players.length + 1, name: id, team: 'KC', position: position, byeWeek: 9, tier: tier === undefined ? null : tier });
       }
-      addPlayer('goneSoon1', 'RB'); // rank1 — stays available: first-in-board-order -> GONE SOON, and drift-eligible -> VALUE too
+      addPlayer('goneSoon1', 'RB'); // rank1 — stays available, drift-eligible -> VALUE only (GONE SOON is a dead stub pending Task 2)
       addPlayer('val1', 'RB'); // rank2 — stays available, drift-eligible -> VALUE only
       addPlayer('wrA', 'WR', 1); // rank3 — gets drafted, leaving wrB as the sole tier-1 WR
       addPlayer('wrB', 'WR', 1); // rank4 — stays available -> CLIFF only (not drift-eligible)
-      for (var i = 1; i <= 12; i++) {
-        addPlayer('filler' + i, i % 2 === 0 ? 'TE' : 'QB'); // rank5..16; filler1-10 get drafted as drift filler, 11-12 stay available with no signals
+      for (var i = 1; i <= 17; i++) {
+        addPlayer('filler' + i, i % 2 === 0 ? 'TE' : 'QB'); // rank5..21; filler1-15 get drafted as drift filler (VALUE_DRIFT_MIN=15 needs the extra depth), 16-17 stay available with no signals
       }
       var marks = {};
       players.forEach(function (p) { marks[p.id] = { drafted: false, target: false, avoid: false, mine: false }; });
@@ -5253,14 +5253,14 @@
 
     function draftSignalBoardFillers(store, mineForFiller1) {
       store.dispatch({ type: 'DRAFT_PLAYER', playerId: 'wrA', mine: false });
-      for (var i = 1; i <= 10; i++) {
+      for (var i = 1; i <= 15; i++) {
         store.dispatch({ type: 'DRAFT_PLAYER', playerId: 'filler' + i, mine: i === 1 && mineForFiller1 });
       }
-      // picksMade=11, currentPick=12 now; size=10/slot=3/snake=false -> picksUntilMine=1 (see report for the arithmetic)
+      // picksMade=16, currentPick=17 now: goneSoon1 drift=16, val1 drift=15 (both clear VALUE_DRIFT_MIN=15)
       store.dispatch({ type: 'SET_LEAGUE', league: { size: 10, slot: 3, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } } });
     }
 
-    t('signal tags: real dispatches produce the right VALUE/CLIFF/GONE SOON badges on the right rows, none on ordinary rows', function () {
+    t('signal tags: real dispatches produce the right VALUE/CLIFF badges on the right rows, none on ordinary rows (GONE SOON is a dead transitional stub)', function () {
       var fixture = buildMountFixture();
       var store = DC.state.createStore(buildSignalBoard());
       try {
@@ -5275,11 +5275,11 @@
           }).sort();
         }
 
-        assertEq(tagsFor('goneSoon1'), ['sig-gone', 'sig-value'], 'goneSoon1 should carry both VALUE and GONE SOON');
+        assertEq(tagsFor('goneSoon1'), ['sig-value'], 'goneSoon1 should carry only VALUE now — GONE SOON is a dead transitional stub, removed in Task 2');
         assertEq(tagsFor('val1'), ['sig-value'], 'val1 should carry only VALUE');
         assertEq(tagsFor('wrB'), ['sig-cliff'], 'wrB should carry only CLIFF (sole surviving WR tier 1)');
-        assertEq(tagsFor('filler11'), [], 'an ordinary available row should carry no tags');
-        assertEq(tagsFor('filler12'), [], 'an ordinary available row should carry no tags');
+        assertEq(tagsFor('filler16'), [], 'an ordinary available row should carry no tags');
+        assertEq(tagsFor('filler17'), [], 'an ordinary available row should carry no tags');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);

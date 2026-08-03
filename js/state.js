@@ -648,6 +648,11 @@
     return result;
   }
 
+  // transitional no-op stub; ui.js call site and this stub are removed together in the chips commit
+  function likelyGoneIds() {
+    return {};
+  }
+
   /**
    * @param {State} state
    * @returns {Object<string, boolean>} league-free: available ids drifting >= VALUE_DRIFT_MIN past current pick, ranked <= VALUE_RANK_CEILING
@@ -929,6 +934,7 @@
     tierColorClass: tierColorClass,
     pickMath: pickMath,
     lastInTierIds: lastInTierIds,
+    likelyGoneIds: likelyGoneIds,
     valueFlagIds: valueFlagIds,
     rosterNeeds: rosterNeeds
   };
