@@ -42,7 +42,7 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
-**Reminder for this release:** this release bumps the service-worker cache to v4. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+**Reminder for this release:** tiers previously rewritten by the old global monotonicity rule stay exactly as saved -- position-scoped healing only raises a tier to match its same-position neighbors, it never lowers one, so nothing corrects itself automatically. To restore your intended tiers, re-import a rankings file with a `TIERS` column, adjust individual players via the tier stepper in Edit Rankings, or restore an import auto-backup. This release also bumps the service-worker cache to v5. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
 
 ## Install on iPhone
 
@@ -90,7 +90,7 @@ Re-importing preserves your Drafted/Target/Avoid marks for any player whose name
 
 Once you've manually reordered your rankings (see Edit your rankings in-app, below), Import Rankings automatically downloads a backup file before replacing the board with the imported one. See the iOS standalone note under Backup/restore if the download prompt doesn't appear.
 
-The board itself is the single source of truth for every feature above and below this section -- ranks, tiers, marks, all of it. A planned future import mode will let you blend multiple ranking and tier sources (say, two different analysts' rankings files) into one board at import time. Because tier dividers, quiet signals, and roster needs all read straight off the board, a blended import will need no other changes to reach every one of them at once.
+The board itself is the single source of truth for every feature above and below this section -- ranks, tiers, marks, all of it. A planned future import mode will let you blend multiple ranking and tier sources (say, two different analysts' rankings files) into one board at import time. Because tiers, quiet signals, and roster needs all read straight off the board, a blended import will need no other changes to reach every one of them at once.
 
 ## Edit your rankings in-app
 
@@ -102,13 +102,13 @@ Manual edits persist until your next Import Rankings.
 
 ## Tiers
 
-Tiers group the board into named bands (Tier 1, Tier 2, ...). Import a header-based rankings file (FantasyPros-style CSV/TSV) with a `TIERS` or `TIER` column and tiers come in automatically; the headerless formats (numbered list, plain list, parenthesized team/position) have no column to read a tier from, so those players import untiered. However the source file orders its tier values, the app forces them into non-decreasing order down the board on import, correcting anything out of order in the file itself.
+Tiers group same-position players into named bands (Tier 1, Tier 2, ...). They're scoped per position -- Tier 2 QBs and Tier 2 RBs are unrelated groups, with no relationship to each other. Import a header-based rankings file (FantasyPros-style CSV/TSV) with a `TIERS` or `TIER` column and tiers come in automatically; the headerless formats (numbered list, plain list, parenthesized team/position) have no column to read a tier from, so those players import untiered. However the source file orders its tier values, the app forces them into non-decreasing order down the board within each position on import, correcting anything out of order in the file itself.
 
-A divider line marks every tier break, everywhere a tiered player can appear -- the Available list, the Drafted list, and the Edit Rankings editor all use the same rule.
+The always-on indicator is a colored T-chip (e.g. `T3`) next to a player's name -- it shows on the main board (Available and Drafted lists) and inside Edit Rankings alike. Divider lines are separate and narrower: they appear only in Edit Rankings, and only while a single position chip (QB/RB/WR/TE) is active, marking tier breaks within that position's list. Switching back to All, or typing a search, clears the dividers; the T-chips keep showing regardless.
 
-Inside Edit Rankings, tap a player's rank to open the rank-jump card; it always includes a Tier -/+ stepper. The stepper is bounded by the nearest tiered players above and below in board order -- untiered rows in between don't constrain it -- so a tier can never be stepped out of order relative to its neighbors; stepping below the floor clears the tier to none when nothing above it is tiered at all.
+Dragging a player across a tier boundary, or rank-jumping him via the rank-jump card, re-tiers only that player so he stays consistent with his new same-position neighbors -- no other player's tier ever changes as a side effect of someone else's move.
 
-Dragging a player across a tier boundary re-tiers him automatically to stay consistent with his new neighbors -- you don't need to touch the stepper for a plain reorder.
+Inside Edit Rankings, tap a player's rank to open the rank-jump card; it always includes a Tier -/+ stepper. The stepper is bounded by the nearest same-position tiered players above and below in board order -- untiered rows and other positions in between don't constrain it -- so a tier can never be stepped out of order relative to its same-position neighbors; stepping below the floor clears the tier to none when no same-position player above it is tiered at all.
 
 ## Track your own roster
 
@@ -129,15 +129,14 @@ Set up your league in Settings -> League: league size, your draft slot, and snak
 
 The tracker has no separate "record a pick" step: it derives round/pick/picks-until-you entirely from a count of how many players are marked Drafted on the board. Forgetting to mark a pick drifts the tracker out of sync with the real draft, so keep every pick logged as it happens.
 
-Tap "Clear league setup" in Settings -> League to remove your league config. The tracker strip and the GONE SOON signal below disappear, and the roster-needs summary above reverts to the plain position-counts line, until you set league config up again.
+Tap "Clear league setup" in Settings -> League to remove your league config. The tracker strip disappears, and the roster-needs summary above reverts to the plain position-counts line, until you set league config up again.
 
 ## Quiet signals
 
-Small tags that can appear next to an available player's name. They're passive markers, never suggestions on who to draft; at most two show per player, in this priority order:
+Small tags that can appear next to an available player's name. They're passive markers, never suggestions on who to draft; both can show at once, no league setup needed for either:
 
-- **VALUE** -- still on the board 10+ picks past his own rank (and ranked 100 or better). Works with no league setup.
-- **CLIFF** -- the last available player left in his tier at his position. Also works with no league setup.
-- **GONE SOON** -- one of the next N available players in board order, where N is how many picks stand between the current pick and your next one. Needs a league set up (see Draft position tracker, above); VALUE and CLIFF do not, so GONE SOON is the one signal that goes silent without league config while the other two keep working.
+- **VALUE** -- still on the board 15+ picks past his own rank (and ranked 75 or better).
+- **CLIFF** -- the last available player left in his tier at his position.
 
 ## Backup / restore
 
