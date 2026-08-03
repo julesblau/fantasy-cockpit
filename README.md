@@ -42,7 +42,7 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
-**Reminder for this release:** tiers previously rewritten by the old global monotonicity rule stay exactly as saved -- position-scoped healing only raises a tier to match its same-position neighbors, it never lowers one, so nothing corrects itself automatically. To restore your intended tiers, re-import a rankings file with a `TIERS` column, adjust individual players via the tier stepper in Edit Rankings, or restore an import auto-backup. This release also bumps the service-worker cache to v5. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+**Reminder for this release:** upgrading from an older version resets your league's roster template to the new QB/RB/WR/TE/FLEX/DST/K/Bench default on first load -- league size, draft slot, and snake setting are all kept, only the roster slot counts reset. If you'd customized the steppers, re-tune them in Settings -> League after upgrading. This release also bumps the service-worker cache to v8. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
 
 ## Install on iPhone
 
@@ -82,7 +82,7 @@ Supported rankings formats:
   Josh Allen (BUF - QB)
   ```
 
-A line needs a recognizable position token to parse at all; name-only lines (no team, no position) are skipped with a warning because there's nothing to classify them by. K and DST/DEF rows are skipped by design, this app only tracks QB/RB/WR/TE. Rank order comes from the order rows appear in the file (top to bottom), not from any rank number in the file.
+A line needs a recognizable position token to parse at all; name-only lines (no team, no position) are skipped with a warning because there's nothing to classify them by. Kickers and team defenses import as their own positions, K and DST -- DEF and D/ST both normalize to DST, so either spelling is recognized whether it comes from a header-based POS/TEAM column or a headerless token. In a headerless line like `49ers D/ST SF`, the D/ST token is read as the position and the name becomes just "49ers"; column-based files keep whatever full name text sits in the PLAYER column untouched. Rows whose position token isn't recognized at all are genuinely skipped, and the import preview reports how many. Rank order comes from the order rows appear in the file (top to bottom), not from any rank number in the file.
 
 To export from FantasyPros: go to your Rankings page -> Export -> CSV, then paste the downloaded file's contents into the Import box (or upload the file directly).
 
@@ -96,7 +96,7 @@ The board itself is the single source of truth for every feature above and below
 
 Open Settings -> Edit Rankings to reorder the board by hand, without re-importing a file. Drag a row's handle to move a player, or tap a player's rank number to type an exact rank and jump straight there. Tap Done to commit your changes to the board, or Cancel to discard them; Cancel asks for confirmation first if you've moved anyone. Drafted players show their DRAFTED badge in the editor and can still be dragged or rank-jumped like anyone else. Searching inside edit mode is for finding a player: dragging is disabled while a search filter is active, but tapping a player's rank number to jump still works.
 
-Tap a position chip (All/QB/RB/WR/TE) above the list to scope the editor to one position. Ranks then display position-scoped, with the overall rank alongside -- e.g. `RB1  #14` -- and the rank-jump card asks for a position rank instead of an overall one ("Move Bijan Robinson to RB rank"); back on All, each player's rank shows the overall/board rank with their position rank beneath it (e.g. `14` over `RB3`). Dragging still works while a position chip is active; only an active text search pauses dragging, a position filter never does.
+Tap a position chip (All/QB/RB/WR/TE/FLEX/DST/K) above the list to scope the editor. FLEX is not a player position -- it's a filter showing the combined pool of RB/WR/TE players, the same three positions that can roll into a FLEX roster slot. Tapping a single position (QB/RB/WR/TE/DST/K) scopes ranks to that position: they display position-scoped, with the overall rank alongside -- e.g. `RB1  #14` -- and the rank-jump card asks for a position rank instead of an overall one ("Move Bijan Robinson to RB rank"). On All or FLEX, each player's rank shows the overall/board rank with their own position rank beneath it (e.g. `14` over `RB3`), and the rank-jump card asks for an overall rank -- FLEX has no ranks of its own. Dragging still works while a position chip is active; only an active text search pauses dragging, a position filter never does.
 
 Manual edits persist until your next Import Rankings.
 
@@ -104,7 +104,7 @@ Manual edits persist until your next Import Rankings.
 
 Tiers group same-position players into named bands (Tier 1, Tier 2, ...). They're scoped per position -- Tier 2 QBs and Tier 2 RBs are unrelated groups, with no relationship to each other. Import a header-based rankings file (FantasyPros-style CSV/TSV) with a `TIERS` or `TIER` column and tiers come in automatically; the headerless formats (numbered list, plain list, parenthesized team/position) have no column to read a tier from, so those players import untiered. However the source file orders its tier values, the app forces them into non-decreasing order down the board within each position on import, correcting anything out of order in the file itself.
 
-The always-on indicator is a colored T-chip (e.g. `T3`) next to a player's name -- it shows on the main board (Available and Drafted lists) and inside Edit Rankings alike. Divider lines are separate and narrower: they appear only in Edit Rankings, and only while a single position chip (QB/RB/WR/TE) is active, marking tier breaks within that position's list. Switching back to All, or typing a search, clears the dividers; the T-chips keep showing regardless.
+The always-on indicator is a colored T-chip (e.g. `T3`) next to a player's name -- it shows on the main board (Available and Drafted lists) and inside Edit Rankings alike. Divider lines are separate and narrower: they appear only in Edit Rankings, and only while a single position chip (QB/RB/WR/TE/DST/K) is active, marking tier breaks within that position's list. FLEX behaves like All here -- both mix multiple positions, so neither ever shows dividers, only the T-chips. Switching to All or FLEX, or typing a search, clears the dividers; the T-chips keep showing regardless.
 
 Dragging a player across a tier boundary, or rank-jumping him via the rank-jump card, re-tiers only that player so he stays consistent with his new same-position neighbors -- no other player's tier ever changes as a side effect of someone else's move.
 
@@ -116,12 +116,12 @@ While drafting, mark which picks are yours as you go.
 
 - **Tap DRAFT** normally to record someone else's pick -- unchanged from before.
 - **Long-press DRAFT** (about half a second -- the button fills blue while you hold) to mark that pick as yours instead.
-- Tap the **Mine** chip to filter the board down to your picks. In place of the usual filter summary line, it shows a roster summary: your QB/RB/WR/TE counts and total picks.
+- Tap the **Mine** chip to filter the board down to your picks. In place of the usual filter summary line, it shows a roster summary: your QB/RB/WR/TE/DST/K counts and total picks.
 - Made a mistake? In the Drafted or Mine view, tap the person icon on any pick to toggle whether it's yours, no need to undo and redraft.
 
-Without a league set up (see Draft position tracker, below), the Mine summary is just position counts: a QB/RB/WR/TE total for each position plus your total pick count.
+Without a league set up (see Draft position tracker, below), the Mine summary is just position counts: a QB/RB/WR/TE/DST/K total for each position plus your total pick count.
 
-Set a roster template in Settings -> League -- steppers for QB, RB, WR, TE, FLEX, and Bench slot counts, alongside the league size/slot/snake settings. Once a template is set, the Mine summary switches to filled-vs-required for each of QB, RB, WR, TE, and FLEX, plus a plain filled count for Bench. Each of your picks fills its own position's slots first; once those are full, an RB/WR/TE pick rolls into FLEX if there's room, otherwise it counts as Bench. Picks are counted in the order you drafted them, so backfilling marks out of draft order can shuffle which slot a given pick lands in.
+Set a roster template in Settings -> League -- steppers for QB, RB, WR, TE, FLEX, DST, K, and Bench slot counts, alongside the league size/slot/snake settings. The default template (used the first time you set one up) is QB 1, RB 2, WR 2, TE 1, FLEX 1, DST 1, K 1, Bench 7. Once a template is set, the Mine summary switches to filled-vs-required for each of QB, RB, WR, TE, FLEX, DST, and K, plus a plain filled count for Bench. Each of your picks fills its own position's slots first; only an RB, WR, or TE pick can roll into FLEX once its own slot is full -- K and DST have no FLEX eligibility, so once their own slot is full they go straight to Bench. Picks are counted in the order you drafted them, so backfilling marks out of draft order can shuffle which slot a given pick lands in.
 
 ## Draft position tracker
 
@@ -160,7 +160,7 @@ draft-cockpit/
   sw.js                   service worker: cache-first offline support; bump CACHE_NAME on any precached file change
   tests.html              in-browser unit test harness (open directly, or run headless via scripts\run-tests.ps1)
   js/
-    data.js               seed player data (252 players), team bye weeks, id slugging
+    data.js               seed player data (276 players: QB/RB/WR/TE plus K/DST), team bye weeks, id slugging
     state.js              state shape, reducer, localStorage load/save, schema migrations
     importer.js           rankings + backup file parsing (CSV/TSV/list/parenthesized/backup JSON)
     ui.js                 all rendering and event wiring (search, filters, undo, settings sheet)
