@@ -2011,15 +2011,6 @@
       assert(html.indexOf('Bye —') !== -1, 'byeWeek 0 -> Bye —: ' + html);
     });
 
-    t('statsStripHTML: renders 4 stats with counts and marks active position', function () {
-      var counts = { QB: 12, RB: 40, WR: 55, TE: 18 };
-      var html = DC.ui.templates.statsStripHTML(counts, 'RB');
-      var statMatches = html.match(/<button class="stat/g) || [];
-      assertEq(statMatches.length, 4, 'expected 4 stat buttons');
-      assert(html.indexOf('stat-count">40<') !== -1, 'RB count shown: ' + html);
-      assert(/class="stat active"[^>]*data-position="RB"/.test(html), 'RB marked active: ' + html);
-    });
-
     t('chipsHTML: renders 9 chips total (5 position + 4 status incl. Mine); RB position + TARGETS status marked active', function () {
       var html = DC.ui.templates.chipsHTML({ position: 'RB', status: 'TARGETS' });
       var chipMatches = html.match(/<button class="chip/g) || [];
@@ -2135,7 +2126,6 @@
         '<div id="app">' +
           '<header id="header">' +
             '<div id="search-container"></div>' +
-            '<div id="stats-strip"></div>' +
             '<div id="tracker-strip"></div>' +
             '<div id="filter-chips"></div>' +
             '<div id="summary-line"></div>' +
@@ -4167,19 +4157,29 @@
       assert(html.indexOf('My roster — QB 1/1 · RB 2/2 · WR 2/3 · TE 0/1 · FLEX 1/1 · Bench 2') !== -1, html);
     });
 
-    t('trackerStripHTML: normal (not my pick) format "R{round} · Pick {currentPick} · {n} until you"', function () {
+    t('trackerStripHTML: normal (not my pick) renders a .tracker-card with three .tracker-stat blocks — R{round}/ROUND, #{currentPick}/PICK, {n}/UNTIL YOU', function () {
       var html = DC.ui.templates.trackerStripHTML({ round: 3, currentPick: 29, picksUntilMine: 4, isMyPick: false });
-      assert(html.indexOf('R3 · Pick 29 · 4 until you') !== -1, html);
+      assert(/^<div class="tracker-card">/.test(html), 'top-level element must be .tracker-card: ' + html);
+      assert(html.indexOf('class="tracker-card my-pick"') === -1, 'normal state must not carry my-pick: ' + html);
+      var statMatches = html.match(/<div class="tracker-stat">/g) || [];
+      assertEq(statMatches.length, 3, 'expected exactly 3 tracker-stat blocks: ' + html);
+      assert(html.indexOf('<div class="tracker-value">R3</div><div class="tracker-label">ROUND</div>') !== -1, html);
+      assert(html.indexOf('<div class="tracker-value">#29</div><div class="tracker-label">PICK</div>') !== -1, html);
+      assert(html.indexOf('<div class="tracker-value">4</div><div class="tracker-label">UNTIL YOU</div>') !== -1, html);
     });
 
-    t('trackerStripHTML: n=1 renders "1 until you" (no plural noun to worry about)', function () {
+    t('trackerStripHTML: picksUntilMine renders the bare number with no trailing noun (label carries "until you" instead)', function () {
       var html = DC.ui.templates.trackerStripHTML({ round: 1, currentPick: 5, picksUntilMine: 1, isMyPick: false });
-      assert(html.indexOf('1 until you') !== -1, html);
+      assert(html.indexOf('<div class="tracker-value">1</div><div class="tracker-label">UNTIL YOU</div>') !== -1, html);
     });
 
-    t('trackerStripHTML: isMyPick format "You\'re up — R{round}, Pick {currentPick}"', function () {
+    t('trackerStripHTML: isMyPick renders .tracker-card.my-pick with "YOU\'RE UP" and a "R{round} · Pick {currentPick}" sub-line', function () {
       var html = DC.ui.templates.trackerStripHTML({ round: 2, currentPick: 13, picksUntilMine: 0, isMyPick: true });
-      assert(html.indexOf("You're up — R2, Pick 13") !== -1, html);
+      assert(/^<div class="tracker-card my-pick">/.test(html), 'top-level element must carry my-pick: ' + html);
+      assert(html.indexOf('<div class="tracker-up-text">') !== -1, html);
+      assert(html.indexOf("YOU'RE UP") !== -1, html);
+      assert(html.indexOf('R2 · Pick 13') !== -1, html);
+      assert(html.indexOf('tracker-stat') === -1, 'my-pick state must not render the three-stat layout: ' + html);
     });
 
     t('signalTagsHTML: both VALUE and CLIFF flagged — VALUE appears before CLIFF in DOM order', function () {
@@ -4281,7 +4281,6 @@
         '<div id="app">' +
           '<header id="header">' +
             '<div id="search-container"></div>' +
-            '<div id="stats-strip"></div>' +
             '<div id="tracker-strip"></div>' +
             '<div id="filter-chips"></div>' +
             '<div id="summary-line"></div>' +
@@ -5234,7 +5233,6 @@
         '<div id="app">' +
           '<header id="header">' +
             '<div id="search-container"></div>' +
-            '<div id="stats-strip"></div>' +
             '<div id="tracker-strip"></div>' +
             '<div id="filter-chips"></div>' +
             '<div id="summary-line"></div>' +
@@ -5405,15 +5403,17 @@
         DC.ui.mount(store);
         var trackerEl = fixture.querySelector('#tracker-strip');
         assertEq(trackerEl.textContent, '', 'tracker strip should be empty when league is unset');
+        assert(!trackerEl.querySelector('.tracker-card'), 'no tracker card when league is unset: ' + trackerEl.innerHTML);
 
         var league = { size: 10, slot: 5, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } };
         store.dispatch({ type: 'SET_LEAGUE', league: league });
+        assert(trackerEl.querySelector('.tracker-card'), 'tracker card should appear once league is set: ' + trackerEl.innerHTML);
         assert(trackerEl.textContent.indexOf('R1') !== -1, 'tracker strip should show R1 right after league is set: ' + trackerEl.textContent);
-        assert(trackerEl.textContent.indexOf('Pick 1') !== -1, trackerEl.textContent);
+        assert(trackerEl.textContent.indexOf('#1') !== -1, trackerEl.textContent);
 
         var firstId = store.getState().players[0].id;
         store.dispatch({ type: 'DRAFT_PLAYER', playerId: firstId, mine: false });
-        assert(trackerEl.textContent.indexOf('Pick 2') !== -1, 'tracker strip should update after a draft dispatch: ' + trackerEl.textContent);
+        assert(trackerEl.textContent.indexOf('#2') !== -1, 'tracker strip should update after a draft dispatch: ' + trackerEl.textContent);
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
@@ -5427,7 +5427,7 @@
       function addPlayer(id, position, tier) {
         players.push({ id: id, rank: players.length + 1, name: id, team: 'KC', position: position, byeWeek: 9, tier: tier === undefined ? null : tier });
       }
-      addPlayer('goneSoon1', 'RB'); // rank1 — stays available, drift-eligible -> VALUE only (name is legacy; GONE SOON tag no longer exists)
+      addPlayer('valDrift1', 'RB'); // rank1 — stays available, drift-eligible -> VALUE only
       addPlayer('val1', 'RB'); // rank2 — stays available, drift-eligible -> VALUE only
       addPlayer('wrA', 'WR', 1); // rank3 — gets drafted, leaving wrB as the sole tier-1 WR
       addPlayer('wrB', 'WR', 1); // rank4 — stays available -> CLIFF only (not drift-eligible)
@@ -5453,7 +5453,7 @@
       for (var i = 1; i <= 15; i++) {
         store.dispatch({ type: 'DRAFT_PLAYER', playerId: 'filler' + i, mine: i === 1 && mineForFiller1 });
       }
-      // picksMade=16, currentPick=17 now: goneSoon1 drift=16, val1 drift=15 (both clear VALUE_DRIFT_MIN=15)
+      // picksMade=16, currentPick=17 now: valDrift1 drift=16, val1 drift=15 (both clear VALUE_DRIFT_MIN=15)
       store.dispatch({ type: 'SET_LEAGUE', league: { size: 10, slot: 3, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } } });
     }
 
@@ -5472,7 +5472,7 @@
           }).sort();
         }
 
-        assertEq(tagsFor('goneSoon1'), ['sig-value'], 'goneSoon1 should carry only VALUE (GONE SOON tag no longer exists)');
+        assertEq(tagsFor('valDrift1'), ['sig-value'], 'valDrift1 should carry only VALUE');
         assertEq(tagsFor('val1'), ['sig-value'], 'val1 should carry only VALUE');
         assertEq(tagsFor('wrB'), ['sig-cliff'], 'wrB should carry only CLIFF (sole surviving WR tier 1)');
         assertEq(tagsFor('filler16'), [], 'an ordinary available row should carry no tags');

@@ -125,11 +125,11 @@ Set a roster template in Settings -> League -- steppers for QB, RB, WR, TE, FLEX
 
 ## Draft position tracker
 
-Set up your league in Settings -> League: league size, your draft slot, and snake vs. linear draft order (a "Set up draft tracker" button appears there if you haven't configured one yet). Once set, a tracker strip appears under the position-counts row at the top of the screen, showing the current round, the current overall pick, and how many picks remain until you're on the clock -- or "You're up" when it's your pick right now.
+Set up your league in Settings -> League: league size, your draft slot, and snake vs. linear draft order (a "Set up draft tracker" button appears there if you haven't configured one yet). Once set, a tracker card appears near the top of the screen, showing the current round, the current overall pick, and how many picks remain until you're on the clock -- or "YOU'RE UP" when it's your pick right now.
 
 The tracker has no separate "record a pick" step: it derives round/pick/picks-until-you entirely from a count of how many players are marked Drafted on the board. Forgetting to mark a pick drifts the tracker out of sync with the real draft, so keep every pick logged as it happens.
 
-Tap "Clear league setup" in Settings -> League to remove your league config. The tracker strip disappears, and the roster-needs summary above reverts to the plain position-counts line, until you set league config up again.
+Tap "Clear league setup" in Settings -> League to remove your league config. The tracker card disappears, and the roster-needs summary above reverts to the plain position-counts line, until you set league config up again.
 
 ## Quiet signals
 

@@ -179,29 +179,29 @@
     return availableRowHTML(view, ctx);
   }
 
-  /**
-   * @param {{QB:number, RB:number, WR:number, TE:number}} counts
-   * @param {string} positionFilter
-   */
-  function statsStripHTML(counts, positionFilter) {
-    var items = POSITIONS.map(function (pos) {
-      var active = positionFilter === pos ? ' active' : '';
-      return (
-        '<button class="stat' + active + '" data-action="set-position" data-position="' + pos + '">' +
-          '<span class="stat-count">' + (counts[pos] || 0) + '</span>' +
-          '<span class="stat-label">' + pos + '</span>' +
-        '</button>'
-      );
-    });
-    return '<div class="stats-strip">' + items.join('') + '</div>';
+  function trackerStatHTML(value, label) {
+    return '<div class="tracker-stat"><div class="tracker-value">' + esc(value) + '</div><div class="tracker-label">' + esc(label) + '</div></div>';
   }
 
   /** @param {{round:number, currentPick:number, picksUntilMine:number, isMyPick:boolean}} pm non-null DC.state.pickMath(state) result */
   function trackerStripHTML(pm) {
     if (pm.isMyPick) {
-      return '<div class="tracker-strip">' + "You're up " + EMDASH + ' R' + pm.round + ', Pick ' + pm.currentPick + '</div>';
+      return (
+        '<div class="tracker-card my-pick">' +
+          '<div class="tracker-up">' +
+            '<div class="tracker-up-text">' + "YOU'RE UP" + '</div>' +
+            '<div class="tracker-up-sub">R' + pm.round + ' ' + MIDDOT + ' Pick ' + pm.currentPick + '</div>' +
+          '</div>' +
+        '</div>'
+      );
     }
-    return '<div class="tracker-strip">R' + pm.round + ' ' + MIDDOT + ' Pick ' + pm.currentPick + ' ' + MIDDOT + ' ' + pm.picksUntilMine + ' until you</div>';
+    return (
+      '<div class="tracker-card">' +
+        trackerStatHTML('R' + pm.round, 'ROUND') +
+        trackerStatHTML('#' + pm.currentPick, 'PICK') +
+        trackerStatHTML(pm.picksUntilMine, 'UNTIL YOU') +
+      '</div>'
+    );
   }
 
   var POSITION_CHIPS = [['ALL', 'All'], ['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE']];
@@ -349,7 +349,6 @@
     playerRowHTML: playerRowHTML,
     signalTagsHTML: signalTagsHTML,
     trackerStripHTML: trackerStripHTML,
-    statsStripHTML: statsStripHTML,
     chipsHTML: chipsHTML,
     summaryHTML: summaryHTML,
     rosterSummaryHTML: rosterSummaryHTML,
@@ -405,7 +404,6 @@
   function mount(store) {
     var appEl = document.getElementById('app');
     var searchContainer = document.getElementById('search-container');
-    var statsEl = document.getElementById('stats-strip');
     var trackerEl = document.getElementById('tracker-strip');
     var chipsEl = document.getElementById('filter-chips');
     var summaryEl = document.getElementById('summary-line');
@@ -1007,9 +1005,6 @@
         searchInput.value = state.searchText;
       }
       searchClearBtn.style.display = state.searchText !== '' ? '' : 'none';
-
-      var counts = DC.state.availableCountsByPosition(state);
-      statsEl.innerHTML = templates.statsStripHTML(counts, state.filters.position);
 
       var pm = DC.state.pickMath(state);
       trackerEl.innerHTML = pm ? templates.trackerStripHTML(pm) : ''; // hidden entirely when league unset

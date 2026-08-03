@@ -45,7 +45,6 @@ body {
 
 button,
 .chip,
-.stat,
 .bar-item,
 .bar-undo,
 .btn-toggle,
@@ -68,7 +67,6 @@ button,
   transform: scale(0.96);
 }
 
-.stat:active,
 .bar-item:active,
 .bar-undo:active,
 .btn-toggle:active,
@@ -105,7 +103,6 @@ button,
   flex-shrink: 0;
 }
 
-body.searching #stats-strip,
 body.searching #filter-chips,
 body.searching #summary-line,
 body.searching #bottom-bar {
@@ -146,43 +143,67 @@ body.searching #bottom-bar {
   border-radius: 50%;
 }
 
-/* stats strip */
-.stats-strip {
+/* draft tracker card: hidden entirely when league is unset (mount() leaves it empty) */
+.tracker-card {
   display: flex;
+  align-items: center;
+  margin: 8px 16px 12px;
+  padding: 10px 0;
+  background: var(--surface-1);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
 }
 
-.stat {
+.tracker-stat {
   flex: 1;
-  height: 44px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
+  gap: 2px;
+  border-right: 1px solid var(--hairline);
 }
 
-.stat-count {
+.tracker-stat:last-child {
+  border-right: none;
+}
+
+.tracker-value {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-1);
-}
-
-.stat-label {
-  font-size: 13px;
-  color: var(--text-2);
-}
-
-.stat.active .stat-label {
-  color: var(--accent-position);
-}
-
-/* draft tracker strip: hidden entirely when league is unset (mount() leaves it empty) */
-.tracker-strip {
-  font-size: 13px;
-  color: var(--text-2);
   font-variant-numeric: tabular-nums;
-  padding: 16px;
+}
+
+.tracker-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.tracker-card.my-pick {
+  justify-content: center;
+  background: rgba(48, 209, 88, 0.18);
+  border-color: var(--accent-draft);
+}
+
+.tracker-up {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.tracker-up-text {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--accent-draft);
+}
+
+.tracker-up-sub {
+  font-size: 11px;
+  color: var(--text-2);
 }
 
 /* chips */
