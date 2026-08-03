@@ -158,10 +158,9 @@
   }
 
   /**
-   * Single source of truth for the divider truth table — do not duplicate. Consumed by edit.js;
-   * ui.js drops its main-board divider usage in Task 2, leaving edit.js as the sole caller. Lives
-   * here rather than only on DC.edit so a test that stubs out DC.edit wholesale can never take
-   * ui.js's render() down with it.
+   * Single source of truth for the divider truth table — do not duplicate. edit.js is the sole
+   * caller (ui.js's main board renders tier chips instead). Lives here rather than only on DC.edit
+   * so a test that stubs out DC.edit wholesale can never take ui.js's render() down with it.
    * @param {{tier:(number|null)}|null} prevView the row rendered immediately before view, or null at list start
    * @param {{tier:(number|null)}} view
    * @returns {string|null} "Tier {n}" when view starts a new tiered block; null otherwise.
@@ -648,11 +647,6 @@
     return result;
   }
 
-  // transitional no-op stub; ui.js call site and this stub are removed together in the chips commit
-  function likelyGoneIds() {
-    return {};
-  }
-
   /**
    * @param {State} state
    * @returns {Object<string, boolean>} league-free: available ids drifting >= VALUE_DRIFT_MIN past current pick, ranked <= VALUE_RANK_CEILING
@@ -934,7 +928,6 @@
     tierColorClass: tierColorClass,
     pickMath: pickMath,
     lastInTierIds: lastInTierIds,
-    likelyGoneIds: likelyGoneIds,
     valueFlagIds: valueFlagIds,
     rosterNeeds: rosterNeeds
   };

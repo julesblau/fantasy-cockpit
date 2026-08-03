@@ -12,11 +12,10 @@
   var STATUS_LABELS = { AVAILABLE: 'Available', TARGETS: 'Targets', AVOID: 'Avoid', DRAFTED: 'Drafted' };
   var POSITIONS = ['QB', 'RB', 'WR', 'TE'];
 
-  // signal tag priority order: VALUE > CLIFF > GONE SOON, max 2 rendered
+  // signal tag priority order: VALUE > CLIFF, max 2 rendered (vacuous now but kept for future signals)
   var SIGNAL_DEFS = [
     ['value', 'sig-value', 'VALUE'],
-    ['cliff', 'sig-cliff', 'CLIFF'],
-    ['gone', 'sig-gone', 'GONE SOON']
+    ['cliff', 'sig-cliff', 'CLIFF']
   ];
 
   var LEAGUE_SIZE_MIN = 4;
@@ -69,18 +68,12 @@
     return esc(view.team) + ' ' + MIDDOT + ' ' + esc(view.position) + ' ' + MIDDOT + ' Bye ' + bye;
   }
 
-  // shared by all three row templates so a tier change between adjacent VISIBLE rows renders
-  // identically to edit.js's divider (ctx.tierBreak is the "Tier N" label from the shared
-  // DC.state.tierBreakBefore truth table, computed once per render — see mount()'s render())
-  function tierBreakAttr(ctx) {
-    return ctx && ctx.tierBreak ? ' data-tier-label="' + esc(ctx.tierBreak) + '"' : '';
-  }
-
   /**
    * @param {string} playerId
-   * @param {{value:Object, cliff:Object, gone:Object}} [signals] id->true maps (DC.state.valueFlagIds/
-   *   lastInTierIds/likelyGoneIds), computed ONCE per render — never call the selectors per row
-   * @returns {string} up to 2 .sig-tag spans, priority VALUE > CLIFF > GONE SOON; '' when none/absent
+   * @param {{value:Object, cliff:Object}} [signals] id->true maps (DC.state.valueFlagIds/
+   *   lastInTierIds), computed ONCE per render — never call the selectors per row. Unrecognized
+   *   keys (e.g. a stray 'gone') are silently ignored — only keys in SIGNAL_DEFS are read.
+   * @returns {string} up to 2 .sig-tag spans, priority VALUE > CLIFF; '' when none/absent
    */
   function signalTagsHTML(playerId, signals) {
     if (!signals) {
@@ -97,7 +90,13 @@
     return tags.length ? '<div class="signal-tags">' + tags.join('') + '</div>' : '';
   }
 
-  /** @param {{tierBreak:(string|null), signals:*}} [ctx] */
+  // duplicated per the esc() precedent — not exported from state, not shared with edit.js
+  function tierChipHTML(tier) {
+    var cls = DC.state.tierColorClass(tier);
+    return cls ? '<span class="tier-chip ' + cls + '">T' + tier + '</span>' : '';
+  }
+
+  /** @param {{signals:*}} [ctx] */
   function availableRowHTML(view, ctx) {
     ctx = ctx || {};
     var rowClasses = ['player-row'];
@@ -107,17 +106,14 @@
     if (view.avoid) {
       rowClasses.push('is-avoid');
     }
-    if (ctx.tierBreak) {
-      rowClasses.push('tier-break');
-    }
     var starClass = 'btn-toggle' + (view.target ? ' on-target' : '');
     var starIcon = view.target ? icon('star-filled') : icon('star');
     var xClass = 'btn-toggle' + (view.avoid ? ' on-avoid' : '');
     return (
-      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '"' + tierBreakAttr(ctx) + '>' +
+      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
         '<div class="player-rank">' + view.rank + '</div>' +
         '<div class="player-info">' +
-          '<div class="player-name">' + esc(view.name) + '</div>' +
+          '<div class="player-name"><span class="name-text">' + esc(view.name) + '</span>' + tierChipHTML(view.tier) + '</div>' +
           '<div class="player-meta">' + metaLine(view) + '</div>' +
           signalTagsHTML(view.id, ctx.signals) +
         '</div>' +
@@ -128,18 +124,13 @@
     );
   }
 
-  /** @param {{tierBreak:(string|null)}} [ctx] */
-  function draftedSearchRowHTML(view, ctx) {
-    ctx = ctx || {};
+  function draftedSearchRowHTML(view) {
     var rowClasses = ['player-row', 'is-drafted-search'];
-    if (ctx.tierBreak) {
-      rowClasses.push('tier-break');
-    }
     return (
-      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '"' + tierBreakAttr(ctx) + '>' +
+      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
         '<div class="player-rank">' + view.rank + '</div>' +
         '<div class="player-info">' +
-          '<div class="player-name">' + esc(view.name) + '</div>' +
+          '<div class="player-name"><span class="name-text">' + esc(view.name) + '</span>' + tierChipHTML(view.tier) + '</div>' +
           '<div class="player-meta">' + metaLine(view) + '</div>' +
         '</div>' +
         '<span class="drafted-pill">DRAFTED</span>' +
@@ -147,7 +138,7 @@
     );
   }
 
-  /** @param {{pickNumber:(number|null), tierBreak:(string|null)}} [ctx] */
+  /** @param {{pickNumber:(number|null)}} [ctx] */
   function draftedRowHTML(view, ctx) {
     ctx = ctx || {};
     var pickText = typeof ctx.pickNumber === 'number' ? ctx.pickNumber : EMDASH;
@@ -155,17 +146,14 @@
     if (view.mine) {
       rowClasses.push('is-mine');
     }
-    if (ctx.tierBreak) {
-      rowClasses.push('tier-break');
-    }
     var mineToggleClass = 'btn-toggle' + (view.mine ? ' on-mine' : '');
     return (
-      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '"' + tierBreakAttr(ctx) + '>' +
+      '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
         '<div class="player-rank">' + view.rank + '</div>' +
         '<div class="player-info">' +
           '<div class="player-name">' +
-            '<span style="display:inline-flex;width:16px;height:16px;vertical-align:-3px;color:var(--accent-draft);margin-right:4px">' + icon('check', 16) + '</span>' +
-            esc(view.name) +
+            '<span style="display:inline-flex;width:16px;height:16px;align-self:center;color:var(--accent-draft)">' + icon('check', 16) + '</span>' +
+            '<span class="name-text">' + esc(view.name) + '</span>' + tierChipHTML(view.tier) +
           '</div>' +
           '<div class="player-meta">' + metaLine(view) + '</div>' +
         '</div>' +
@@ -177,14 +165,14 @@
   }
 
   /**
-   * @param {Object} view player + marks (id, rank, name, team, position, byeWeek, drafted, target, avoid)
-   * @param {{searching:boolean, statusFilter:string, pickNumber:(number|null), tierBreak:(string|null), signals:*}} ctx
+   * @param {Object} view player + marks (id, rank, name, team, position, byeWeek, tier, drafted, target, avoid)
+   * @param {{searching:boolean, statusFilter:string, pickNumber:(number|null), signals:*}} ctx
    */
   function playerRowHTML(view, ctx) {
     ctx = ctx || {};
     if (view.drafted) {
       if (ctx.searching) {
-        return draftedSearchRowHTML(view, ctx);
+        return draftedSearchRowHTML(view);
       }
       return draftedRowHTML(view, ctx);
     }
@@ -1040,19 +1028,13 @@
         // signal id-sets computed ONCE per render, shared by every row's ctx — never per row
         var signals = {
           value: DC.state.valueFlagIds(state),
-          cliff: DC.state.lastInTierIds(state),
-          gone: DC.state.likelyGoneIds(state)
+          cliff: DC.state.lastInTierIds(state)
         };
-        var prevTierView = null;
         listEl.innerHTML = visible.map(function (v) {
-          var tierView = { tier: v.tier };
-          var breakLabel = DC.state.tierBreakBefore(prevTierView, tierView); // shared truth table with edit.js (DC.state so a test stubbing DC.edit can't take render() down)
-          prevTierView = tierView;
           var ctx = {
             searching: searching,
             statusFilter: state.filters.status,
             pickNumber: v.drafted ? DC.state.pickNumber(state, v.id) : null,
-            tierBreak: breakLabel,
             signals: signals
           };
           return templates.playerRowHTML(v, ctx);

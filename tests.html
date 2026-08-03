@@ -4000,49 +4000,35 @@
       assert(html.indexOf("You're up — R2, Pick 13") !== -1, html);
     });
 
-    t('signalTagsHTML: priority order VALUE > CLIFF > GONE SOON, max 2 rendered', function () {
-      var allThree = { value: { p1: true }, cliff: { p1: true }, gone: { p1: true } };
-      var html = DC.ui.templates.signalTagsHTML('p1', allThree);
+    t('signalTagsHTML: both VALUE and CLIFF flagged — VALUE appears before CLIFF in DOM order', function () {
+      var both = { value: { p1: true }, cliff: { p1: true } };
+      var html = DC.ui.templates.signalTagsHTML('p1', both);
       assert(html.indexOf('sig-value') !== -1, 'VALUE should render: ' + html);
       assert(html.indexOf('sig-cliff') !== -1, 'CLIFF should render: ' + html);
-      assert(html.indexOf('sig-gone') === -1, 'GONE SOON should be dropped once 2 tags are already present: ' + html);
+      assert(html.indexOf('sig-value') < html.indexOf('sig-cliff'), 'VALUE must come before CLIFF in DOM order: ' + html);
+    });
+
+    t('signalTagsHTML: an unrecognized key in signals is silently ignored — no tag, no throw', function () {
+      var html = DC.ui.templates.signalTagsHTML('p1', { value: {}, cliff: {}, gone: { p1: true } });
+      assert(html.indexOf('sig-gone') === -1, 'no tag should render for an unrecognized signal key: ' + html);
+      assert(html.indexOf('GONE SOON') === -1, html);
     });
 
     t('signalTagsHTML: each individual signal renders its own class + label in isolation', function () {
-      var valueOnly = DC.ui.templates.signalTagsHTML('p1', { value: { p1: true }, cliff: {}, gone: {} });
+      var valueOnly = DC.ui.templates.signalTagsHTML('p1', { value: { p1: true }, cliff: {} });
       assert(valueOnly.indexOf('sig-value') !== -1 && valueOnly.indexOf('VALUE') !== -1, valueOnly);
-      var cliffOnly = DC.ui.templates.signalTagsHTML('p1', { value: {}, cliff: { p1: true }, gone: {} });
+      var cliffOnly = DC.ui.templates.signalTagsHTML('p1', { value: {}, cliff: { p1: true } });
       assert(cliffOnly.indexOf('sig-cliff') !== -1 && cliffOnly.indexOf('CLIFF') !== -1, cliffOnly);
-      var goneOnly = DC.ui.templates.signalTagsHTML('p1', { value: {}, cliff: {}, gone: { p1: true } });
-      assert(goneOnly.indexOf('sig-gone') !== -1 && goneOnly.indexOf('GONE SOON') !== -1, goneOnly);
     });
 
     t('signalTagsHTML: no signals for this id, or signals absent entirely, renders empty string', function () {
-      assertEq(DC.ui.templates.signalTagsHTML('p1', { value: {}, cliff: {}, gone: {} }), '');
+      assertEq(DC.ui.templates.signalTagsHTML('p1', { value: {}, cliff: {} }), '');
       assertEq(DC.ui.templates.signalTagsHTML('p1', null), '');
       assertEq(DC.ui.templates.signalTagsHTML('p1', undefined), '');
     });
 
-    t('playerRowHTML: ctx.tierBreak renders a .tier-break row with data-tier-label, absent when ctx.tierBreak is null — pinned across available, drafted, and drafted-search rows', function () {
-      var availableView = { id: 'a1', rank: 5, name: 'Avail One', team: 'KC', position: 'QB', byeWeek: 9, drafted: false, target: false, avoid: false };
-      var withBreak = DC.ui.templates.playerRowHTML(availableView, { tierBreak: 'Tier 2' });
-      assert(withBreak.indexOf('tier-break') !== -1, withBreak);
-      assert(withBreak.indexOf('data-tier-label="Tier 2"') !== -1, withBreak);
-      var withoutBreak = DC.ui.templates.playerRowHTML(availableView, { tierBreak: null });
-      assert(withoutBreak.indexOf('tier-break') === -1, withoutBreak);
-
-      var draftedView = Object.assign({}, availableView, { drafted: true, mine: false });
-      var draftedWithBreak = DC.ui.templates.playerRowHTML(draftedView, { statusFilter: 'DRAFTED', pickNumber: 3, tierBreak: 'Tier 1' });
-      assert(draftedWithBreak.indexOf('tier-break') !== -1, draftedWithBreak);
-      assert(draftedWithBreak.indexOf('data-tier-label="Tier 1"') !== -1, draftedWithBreak);
-
-      var draftedSearchWithBreak = DC.ui.templates.playerRowHTML(draftedView, { searching: true, tierBreak: 'Tier 1' });
-      assert(draftedSearchWithBreak.indexOf('tier-break') !== -1, draftedSearchWithBreak);
-      assert(draftedSearchWithBreak.indexOf('is-drafted-search') !== -1, draftedSearchWithBreak);
-    });
-
     t('availableRowHTML (via playerRowHTML): ctx.signals renders tags after the meta line; drafted rows never render tags regardless of ctx.signals', function () {
-      var signals = { value: { a1: true }, cliff: {}, gone: {} };
+      var signals = { value: { a1: true }, cliff: {} };
       var availableView = { id: 'a1', rank: 5, name: 'Avail One', team: 'KC', position: 'QB', byeWeek: 9, drafted: false, target: false, avoid: false };
       var html = DC.ui.templates.playerRowHTML(availableView, { signals: signals });
       assert(html.indexOf('sig-value') !== -1, html);
@@ -4050,6 +4036,40 @@
       var draftedView = Object.assign({}, availableView, { drafted: true, mine: false });
       var draftedHtml = DC.ui.templates.playerRowHTML(draftedView, { statusFilter: 'DRAFTED', pickNumber: 1, signals: signals });
       assert(draftedHtml.indexOf('sig-value') === -1, 'drafted rows must never render signal tags: ' + draftedHtml);
+    });
+
+    t('playerRowHTML: tier chip renders as a sibling AFTER .name-text (never inside it), across available, drafted, and drafted-search row kinds; absent when tier is null', function () {
+      var availableView = { id: 'a1', rank: 5, name: 'Avail One', team: 'KC', position: 'QB', byeWeek: 9, drafted: false, target: false, avoid: false, tier: 3 };
+      var availableHtml = DC.ui.templates.playerRowHTML(availableView, {});
+      assert(availableHtml.indexOf('<span class="tier-chip tier-c3">T3</span>') !== -1, availableHtml);
+      assert(availableHtml.indexOf('</span><span class="tier-chip') !== -1, 'chip must follow the closed .name-text span, not sit inside it: ' + availableHtml);
+
+      var noTierView = Object.assign({}, availableView, { tier: null });
+      var noTierHtml = DC.ui.templates.playerRowHTML(noTierView, {});
+      assert(noTierHtml.indexOf('tier-chip') === -1, 'no chip when tier is null: ' + noTierHtml);
+
+      var draftedView = Object.assign({}, availableView, { drafted: true, mine: false, tier: 1 });
+      var draftedHtml = DC.ui.templates.playerRowHTML(draftedView, { statusFilter: 'DRAFTED', pickNumber: 3 });
+      assert(draftedHtml.indexOf('<span class="tier-chip tier-c1">T1</span>') !== -1, draftedHtml);
+
+      var draftedSearchHtml = DC.ui.templates.playerRowHTML(draftedView, { searching: true });
+      assert(draftedSearchHtml.indexOf('<span class="tier-chip tier-c1">T1</span>') !== -1, draftedSearchHtml);
+      assert(draftedSearchHtml.indexOf('is-drafted-search') !== -1, draftedSearchHtml);
+    });
+
+    t('playerRowHTML: tier chip class falls back to tier-cx for tiers >= 7', function () {
+      var view = { id: 'a2', rank: 40, name: 'Deep Sleeper', team: 'KC', position: 'WR', byeWeek: 9, drafted: false, target: false, avoid: false, tier: 9 };
+      var html = DC.ui.templates.playerRowHTML(view, {});
+      assert(html.indexOf('<span class="tier-chip tier-cx">T9</span>') !== -1, html);
+    });
+
+    t('playerRowHTML: .name-text wraps only the escaped name, not the tier chip — pins the ellipsis-safety flex restructure', function () {
+      var view = { id: 'a3', rank: 1, name: 'Very Long Player Name Here', team: 'KC', position: 'RB', byeWeek: 9, drafted: false, target: false, avoid: false, tier: 2 };
+      var html = DC.ui.templates.playerRowHTML(view, {});
+      var m = /<span class="name-text">([^<]*)<\/span>/.exec(html);
+      assert(m, 'expected a .name-text span: ' + html);
+      assertEq(m[1], 'Very Long Player Name Here', 'name-text must contain only the name, no chip markup inside it');
+      assert(html.indexOf('tier-chip') > html.indexOf('name-text'), 'tier-chip markup must appear after name-text: ' + html);
     });
 
     t('emptyStateHTML: kind "mine" renders a distinct title/sub', function () {
@@ -5230,7 +5250,7 @@
       function addPlayer(id, position, tier) {
         players.push({ id: id, rank: players.length + 1, name: id, team: 'KC', position: position, byeWeek: 9, tier: tier === undefined ? null : tier });
       }
-      addPlayer('goneSoon1', 'RB'); // rank1 — stays available, drift-eligible -> VALUE only (GONE SOON is a dead stub pending Task 2)
+      addPlayer('goneSoon1', 'RB'); // rank1 — stays available, drift-eligible -> VALUE only (name is legacy; GONE SOON tag no longer exists)
       addPlayer('val1', 'RB'); // rank2 — stays available, drift-eligible -> VALUE only
       addPlayer('wrA', 'WR', 1); // rank3 — gets drafted, leaving wrB as the sole tier-1 WR
       addPlayer('wrB', 'WR', 1); // rank4 — stays available -> CLIFF only (not drift-eligible)
@@ -5260,7 +5280,7 @@
       store.dispatch({ type: 'SET_LEAGUE', league: { size: 10, slot: 3, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, BENCH: 6 } } });
     }
 
-    t('signal tags: real dispatches produce the right VALUE/CLIFF badges on the right rows, none on ordinary rows (GONE SOON is a dead transitional stub)', function () {
+    t('signal tags: real dispatches produce the right VALUE/CLIFF badges on the right rows, none on ordinary rows', function () {
       var fixture = buildMountFixture();
       var store = DC.state.createStore(buildSignalBoard());
       try {
@@ -5275,7 +5295,7 @@
           }).sort();
         }
 
-        assertEq(tagsFor('goneSoon1'), ['sig-value'], 'goneSoon1 should carry only VALUE now — GONE SOON is a dead transitional stub, removed in Task 2');
+        assertEq(tagsFor('goneSoon1'), ['sig-value'], 'goneSoon1 should carry only VALUE (GONE SOON tag no longer exists)');
         assertEq(tagsFor('val1'), ['sig-value'], 'val1 should carry only VALUE');
         assertEq(tagsFor('wrB'), ['sig-cliff'], 'wrB should carry only CLIFF (sole surviving WR tier 1)');
         assertEq(tagsFor('filler16'), [], 'an ordinary available row should carry no tags');
@@ -5306,9 +5326,9 @@
       }
     });
 
-    // ---- A: tier dividers, main list (real dispatch -> DOM, incl. search view) ----
+    // ---- A: tier chips, main list (real dispatch -> DOM, incl. search view) — dividers are gone ----
 
-    t('tier dividers: a real REORDER_PLAYERS tiers dispatch renders a .tier-break row with the right label in both the main list and search results', function () {
+    t('tier chips: a real REORDER_PLAYERS tiers dispatch renders zero .tier-break rows and a .tier-chip on every tiered row, in both the main list and search results', function () {
       var fixture = buildMountFixture();
       var seed = DC.state.createSeedState();
       var order = seed.players.map(function (p) { return p.id; });
@@ -5321,16 +5341,20 @@
       try {
         DC.ui.mount(store);
         var rows = fixture.querySelectorAll('#player-list .player-row');
-        assert(rows[0].classList.contains('tier-break'), 'first row (tier 1, list start) should break');
-        assertEq(rows[0].getAttribute('data-tier-label'), 'Tier 1');
-        assert(!rows[1].classList.contains('tier-break'), 'second row shares tier 1 with the first — no break');
-        assert(rows[2].classList.contains('tier-break'), 'third row is tier 2 — breaks');
-        assertEq(rows[2].getAttribute('data-tier-label'), 'Tier 2');
+        assertEq(fixture.querySelectorAll('#player-list .tier-break').length, 0, 'main-board list should render zero .tier-break rows');
+        assert(rows[0].querySelector('.tier-chip.tier-c1'), 'row 0 (tier 1) should carry a tier-c1 chip');
+        assertEq(rows[0].querySelector('.tier-chip').textContent, 'T1');
+        assert(rows[1].querySelector('.tier-chip.tier-c1'), 'row 1 (tier 1) should carry a tier-c1 chip');
+        assertEq(rows[1].querySelector('.tier-chip').textContent, 'T1');
+        assert(rows[2].querySelector('.tier-chip.tier-c2'), 'row 2 (tier 2) should carry a tier-c2 chip');
+        assertEq(rows[2].querySelector('.tier-chip').textContent, 'T2');
 
         store.dispatch({ type: 'SET_SEARCH', text: seed.players[2].name });
         var searchRows = fixture.querySelectorAll('#player-list .player-row');
         assertEq(searchRows.length, 1, 'search should isolate the tier-2 player');
-        assert(searchRows[0].classList.contains('tier-break'), 'a lone tiered result still renders its own break in search (all views incl. search)');
+        assertEq(fixture.querySelectorAll('#player-list .tier-break').length, 0, 'search results should also render zero .tier-break rows');
+        assert(searchRows[0].querySelector('.tier-chip.tier-c2'), 'the isolated search result still carries its tier-c2 chip');
+        assertEq(searchRows[0].querySelector('.tier-chip').textContent, 'T2');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
