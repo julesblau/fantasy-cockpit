@@ -231,7 +231,13 @@ body.searching #bottom-bar {
   white-space: nowrap;
 }
 
-/* 8 chips/390px: default 15px/600 overruns FLEX/DST — position rows only, status row untouched */
+/* 8 chips/390px: default 15px/600 overruns FLEX/DST — position rows only, status row untouched.
+   Row gap trimmed 8px->6px too: frees ~14px across the row (~1.75px/chip) so real fit margin
+   is >=1px per chip, not the razor-thin scrollWidth===clientWidth the 13px/1px-padding font fix
+   alone produced. */
+.chip-row-positions {
+  gap: 6px;
+}
 .chip-row-positions .chip {
   font-size: 13px;
   padding: 0 1px;

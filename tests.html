@@ -5999,6 +5999,87 @@
         localStorage.removeItem(DC.state.STORAGE_KEY);
       }
     });
+
+    // ---- Round 6 Task 3 review fix: per-chip fit at a real 390px width (row-level
+    // scrollWidth===clientWidth is non-discriminating — .chip has flex:1/min-width:0, so the ROW
+    // always fits; it's each individual CHIP's own box that can be too narrow for its text) ----
+
+    function buildPinned390Fixture() {
+      var root = document.createElement('div');
+      root.style.position = 'fixed';
+      root.style.top = '0';
+      root.style.left = '0';
+      root.style.width = '390px'; // real layout, not display:none — descendants resolve widths against this
+      root.style.visibility = 'hidden';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    // true (sub-pixel) unclamped content width of a chip, via a throwaway clone with no
+    // width/flex constraints — scrollWidth/clientWidth are integers that clamp scrollWidth to
+    // clientWidth whenever content fits (they can prove "no overflow" but never a positive
+    // margin), so this is the only way to see how much real slack a fitting chip has.
+    function naturalChipContentWidth(chip) {
+      var cs = getComputedStyle(chip);
+      var clone = document.createElement('span');
+      clone.style.position = 'absolute';
+      clone.style.visibility = 'hidden';
+      clone.style.whiteSpace = 'nowrap';
+      clone.style.display = 'inline-flex';
+      clone.style.alignItems = 'center';
+      clone.style.gap = cs.gap;
+      clone.style.fontSize = cs.fontSize;
+      clone.style.fontWeight = cs.fontWeight;
+      clone.style.fontFamily = cs.fontFamily;
+      clone.innerHTML = chip.innerHTML;
+      document.body.appendChild(clone);
+      var w = clone.getBoundingClientRect().width;
+      document.body.removeChild(clone);
+      return w;
+    }
+
+    t('position chip row at a real, pinned 390px width: no chip overflows its own box, and the tightest chip still keeps >=1px of real sub-pixel margin', function () {
+      var fixture = buildPinned390Fixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.ui.mount(store);
+        var chips = fixture.querySelectorAll('.chip-row-positions .chip');
+        assertEq(chips.length, 8, 'expected 8 position chips');
+
+        var worstMargin = Infinity;
+        Array.prototype.forEach.call(chips, function (c) {
+          // scrollWidth is clamped to clientWidth whenever content fits (never less) — this is a
+          // real, if coarse, overflow guard: a strict "did not overflow" contract, not a margin measure.
+          assert(c.scrollWidth <= c.clientWidth, c.textContent + ' overflows its own chip box at 390px: scrollWidth=' + c.scrollWidth + ' clientWidth=' + c.clientWidth);
+
+          var cs = getComputedStyle(c);
+          var padH = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+          var contentBoxFrac = c.getBoundingClientRect().width - padH;
+          var margin = contentBoxFrac - naturalChipContentWidth(c);
+          if (margin < worstMargin) {
+            worstMargin = margin;
+          }
+        });
+
+        assert(worstMargin >= 1, 'the tightest chip should keep >=1px of real sub-pixel margin beyond its own text (font-rendering variance headroom) — worstMargin=' + worstMargin.toFixed(2));
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
   })();
   </script>
 
