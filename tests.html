@@ -6299,6 +6299,228 @@
   })();
   </script>
 
+  <!-- Task 2: positionRanks / fillAssignments / rosterBoard selectors -->
+  <script>
+  (function () {
+    'use strict';
+    section('roster-board');
+
+    function fakePlayer(id, rank, position) {
+      return { id: id, rank: rank, name: id, team: 'KC', position: position, byeWeek: 9, tier: null };
+    }
+
+    function makeBoardMarks(players) {
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+      });
+      return marks;
+    }
+
+    function makeBoardState(players, opts) {
+      opts = opts || {};
+      return {
+        schemaVersion: 4,
+        players: players,
+        marks: opts.marks || makeBoardMarks(players),
+        undoStack: opts.undoStack || [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false,
+        league: opts.league !== undefined ? opts.league : null
+      };
+    }
+
+    t('positionRanks: interleaved positions count independently, every player gets an entry', function () {
+      var players = [
+        fakePlayer('q1', 1, 'QB'),
+        fakePlayer('r1', 2, 'RB'),
+        fakePlayer('q2', 3, 'QB'),
+        fakePlayer('w1', 4, 'WR'),
+        fakePlayer('r2', 5, 'RB'),
+        fakePlayer('t1', 6, 'TE')
+      ];
+      var ranks = DC.state.positionRanks(makeBoardState(players));
+      assertEq(ranks.q1, 1, 'first QB');
+      assertEq(ranks.q2, 2, 'second QB');
+      assertEq(ranks.r1, 1, 'first RB');
+      assertEq(ranks.r2, 2, 'second RB');
+      assertEq(ranks.w1, 1, 'first WR');
+      assertEq(ranks.t1, 1, 'first TE');
+      players.forEach(function (p) {
+        assert(typeof ranks[p.id] === 'number', 'every player should have an entry: ' + p.id);
+      });
+    });
+
+    t('positionRanks: real seed — first player of each position gets rank 1', function () {
+      var state = DC.state.createSeedState();
+      var ranks = DC.state.positionRanks(state);
+      var seenPosition = {};
+      state.players.forEach(function (p) {
+        if (!seenPosition[p.position]) {
+          seenPosition[p.position] = true;
+          assertEq(ranks[p.id], 1, 'first ' + p.position + ' should have positionRank 1');
+        }
+      });
+    });
+
+    t('fillAssignments: null without a league', function () {
+      var state = makeBoardState([fakePlayer('a', 1, 'RB')], { league: null });
+      assertEq(DC.state.fillAssignments(state), null);
+    });
+
+    t('fillAssignments: cascade — direct slot, then FLEX, then BENCH, in undoStack order', function () {
+      var players = [
+        fakePlayer('rb1', 1, 'RB'),
+        fakePlayer('rb2', 2, 'RB'),
+        fakePlayer('rb3', 3, 'RB'),
+        fakePlayer('rb4', 4, 'RB')
+      ];
+      var marks = makeBoardMarks(players);
+      ['rb1', 'rb2', 'rb3', 'rb4'].forEach(function (id) {
+        marks[id] = { drafted: true, target: false, avoid: false, mine: true };
+      });
+      var undoStack = ['rb1', 'rb2', 'rb3', 'rb4'].map(function (id, idx) { return { playerId: id, timestamp: idx }; });
+      var league = { size: 10, slot: 1, snake: true, roster: { QB: 0, RB: 2, WR: 0, TE: 0, FLEX: 1, DST: 0, K: 0, BENCH: 2 } };
+      var state = makeBoardState(players, { marks: marks, undoStack: undoStack, league: league });
+      var assignments = DC.state.fillAssignments(state);
+      assertEq(assignments, [
+        { playerId: 'rb1', slot: 'RB' },
+        { playerId: 'rb2', slot: 'RB' },
+        { playerId: 'rb3', slot: 'FLEX' },
+        { playerId: 'rb4', slot: 'BENCH' }
+      ]);
+    });
+
+    t('fillAssignments: mine-only, undoStack order, unknown playerId skipped', function () {
+      var players = [
+        fakePlayer('a', 1, 'RB'),
+        fakePlayer('b', 2, 'RB')
+      ];
+      var marks = makeBoardMarks(players);
+      marks.a = { drafted: true, target: false, avoid: false, mine: false };
+      marks.b = { drafted: true, target: false, avoid: false, mine: true };
+      var undoStack = [
+        { playerId: 'unknown-id', timestamp: 0 },
+        { playerId: 'a', timestamp: 1 },
+        { playerId: 'b', timestamp: 2 }
+      ];
+      var league = { size: 10, slot: 1, snake: true, roster: { QB: 0, RB: 1, WR: 0, TE: 0, FLEX: 0, DST: 0, K: 0, BENCH: 1 } };
+      var state = makeBoardState(players, { marks: marks, undoStack: undoStack, league: league });
+      var assignments = DC.state.fillAssignments(state);
+      assertEq(assignments, [{ playerId: 'b', slot: 'RB' }], 'unknown id and non-mine entries should be skipped, order preserved');
+    });
+
+    t('rosterBoard: null without a league', function () {
+      var state = makeBoardState([fakePlayer('a', 1, 'RB')], { league: null });
+      assertEq(DC.state.rosterBoard(state), null);
+    });
+
+    t('rosterBoard: zero-pick template — default roster yields 16 tiles in Order A with correct multiplicities, all player:null', function () {
+      var state = makeBoardState([], { league: { size: 10, slot: 1, snake: true, roster: DC.state.DEFAULT_ROSTER } });
+      var tiles = DC.state.rosterBoard(state);
+      assertEq(tiles.length, 16, 'expected 16 tiles');
+      var expectedSlots = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'DST', 'K', 'BENCH', 'BENCH', 'BENCH', 'BENCH', 'BENCH', 'BENCH', 'BENCH'];
+      assertEq(tiles.map(function (tl) { return tl.slot; }), expectedSlots, 'slots should follow Order A with correct multiplicities');
+      tiles.forEach(function (tl) {
+        assertEq(tl.player, null);
+      });
+    });
+
+    t('rosterBoard: filled — picks land in the first unfilled tile of their slot; player is the same reference', function () {
+      var players = [
+        fakePlayer('rb1', 1, 'RB'),
+        fakePlayer('rb2', 2, 'RB'),
+        fakePlayer('wr1', 3, 'WR')
+      ];
+      var marks = makeBoardMarks(players);
+      ['rb1', 'rb2', 'wr1'].forEach(function (id) { marks[id] = { drafted: true, target: false, avoid: false, mine: true }; });
+      var undoStack = ['rb1', 'rb2', 'wr1'].map(function (id, idx) { return { playerId: id, timestamp: idx }; });
+      var league = { size: 10, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
+      var state = makeBoardState(players, { marks: marks, undoStack: undoStack, league: league });
+      var tiles = DC.state.rosterBoard(state);
+      var rbTiles = tiles.filter(function (tl) { return tl.slot === 'RB'; });
+      assert(rbTiles[0].player === players[0], 'first RB tile should hold rb1 by reference');
+      assert(rbTiles[1].player === players[1], 'second RB tile should hold rb2 by reference');
+      var wrTiles = tiles.filter(function (tl) { return tl.slot === 'WR'; });
+      assert(wrTiles[0].player === players[2], 'first WR tile should hold wr1 by reference');
+    });
+
+    t('rosterBoard: bench overflow appends extra tiles, never hides a pick', function () {
+      var players = [
+        fakePlayer('rb1', 1, 'RB'),
+        fakePlayer('rb2', 2, 'RB'),
+        fakePlayer('rb3', 3, 'RB')
+      ];
+      var marks = makeBoardMarks(players);
+      ['rb1', 'rb2', 'rb3'].forEach(function (id) { marks[id] = { drafted: true, target: false, avoid: false, mine: true }; });
+      var undoStack = ['rb1', 'rb2', 'rb3'].map(function (id, idx) { return { playerId: id, timestamp: idx }; });
+      var league = { size: 10, slot: 1, snake: true, roster: { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, DST: 0, K: 0, BENCH: 1 } };
+      var state = makeBoardState(players, { marks: marks, undoStack: undoStack, league: league });
+      var tiles = DC.state.rosterBoard(state);
+      var benchTiles = tiles.filter(function (tl) { return tl.slot === 'BENCH'; });
+      assertEq(benchTiles.length, 3, 'expected 3 BENCH tiles even though roster.BENCH is 1 — 2 overflow tiles appended');
+      assertEq(tiles.length, 3, 'total tile count should reflect the overflow');
+      assertEq(benchTiles.map(function (tl) { return tl.player.id; }), ['rb1', 'rb2', 'rb3'], 'no pick should be hidden');
+    });
+
+    t('undrafting an earlier pick reshuffles later picks into freed slots — accepted semantics', function () {
+      var players = [
+        fakePlayer('a', 1, 'RB'),
+        fakePlayer('b', 2, 'RB'),
+        fakePlayer('c', 3, 'RB')
+      ];
+      var marks = makeBoardMarks(players);
+      ['a', 'b', 'c'].forEach(function (id) { marks[id] = { drafted: true, target: false, avoid: false, mine: true }; });
+      var undoStack = ['a', 'b', 'c'].map(function (id, idx) { return { playerId: id, timestamp: idx }; });
+      var league = { size: 10, slot: 1, snake: true, roster: { QB: 0, RB: 2, WR: 0, TE: 0, FLEX: 1, DST: 0, K: 0, BENCH: 0 } };
+      var state = makeBoardState(players, { marks: marks, undoStack: undoStack, league: league });
+
+      var before = DC.state.fillAssignments(state);
+      assertEq(before, [
+        { playerId: 'a', slot: 'RB' },
+        { playerId: 'b', slot: 'RB' },
+        { playerId: 'c', slot: 'FLEX' }
+      ]);
+
+      var undraftedMarks = Object.assign({}, marks, { a: { drafted: false, target: false, avoid: false, mine: false } });
+      var undraftedUndoStack = undoStack.filter(function (e) { return e.playerId !== 'a'; });
+      var afterState = makeBoardState(players, { marks: undraftedMarks, undoStack: undraftedUndoStack, league: league });
+
+      var after = DC.state.fillAssignments(afterState);
+      assertEq(after, [
+        { playerId: 'b', slot: 'RB' },
+        { playerId: 'c', slot: 'RB' }
+      ], 'b and c reshuffle into the freed RB slot — accepted semantics, not a bug');
+    });
+
+    t('rosterNeeds: byte-identical output shape after the fillAssignments refactor', function () {
+      var players = [
+        fakePlayer('q1', 1, 'QB'),
+        fakePlayer('r1', 2, 'RB'),
+        fakePlayer('r2', 3, 'RB'),
+        fakePlayer('w1', 4, 'WR')
+      ];
+      var marks = makeBoardMarks(players);
+      ['q1', 'r1', 'r2', 'w1'].forEach(function (id) { marks[id] = { drafted: true, target: false, avoid: false, mine: true }; });
+      var undoStack = ['q1', 'r1', 'r2', 'w1'].map(function (id, idx) { return { playerId: id, timestamp: idx }; });
+      var league = { size: 10, slot: 1, snake: true, roster: { QB: 1, RB: 1, WR: 1, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
+      var state = makeBoardState(players, { marks: marks, undoStack: undoStack, league: league });
+      var needs = DC.state.rosterNeeds(state);
+      assertEq(needs, {
+        QB: { filled: 1, req: 1 },
+        RB: { filled: 1, req: 1 },
+        WR: { filled: 1, req: 1 },
+        TE: { filled: 0, req: 1 },
+        FLEX: { filled: 1, req: 1 },
+        DST: { filled: 0, req: 1 },
+        K: { filled: 0, req: 1 },
+        BENCH: { filled: 0 }
+      });
+    });
+  })();
+  </script>
+
   <!-- render results (runs last, after all test-section scripts) -->
   <script>
     (function () {

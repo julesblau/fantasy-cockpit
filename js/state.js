@@ -703,9 +703,26 @@
 
   /**
    * @param {State} state
-   * @returns {null|{QB:{filled:number,req:number}, RB:{filled:number,req:number}, WR:{filled:number,req:number}, TE:{filled:number,req:number}, FLEX:{filled:number,req:number}, DST:{filled:number,req:number}, K:{filled:number,req:number}, BENCH:{filled:number}}}
+   * @returns {Object<string, number>} playerId -> 1-based rank within its own position, in board order
    */
-  function rosterNeeds(state) {
+  // third copy of the per-position counter algorithm — lockstep with edit.js:81-91 (single-id
+  // lookup over staged order) and edit.js:674-691 (bulk over staged order); those work on edit
+  // mode's staged closure copy and can't be shared with this pass over committed state.players.
+  function positionRanks(state) {
+    var counters = {};
+    var result = {};
+    state.players.forEach(function (p) {
+      counters[p.position] = (counters[p.position] || 0) + 1;
+      result[p.id] = counters[p.position];
+    });
+    return result;
+  }
+
+  /**
+   * @param {State} state
+   * @returns {null|Array<{playerId:string, slot:('QB'|'RB'|'WR'|'TE'|'FLEX'|'DST'|'K'|'BENCH')}>} one entry per mine pick, in undoStack order
+   */
+  function fillAssignments(state) {
     if (!state.league || !state.league.roster) {
       return null;
     }
@@ -714,6 +731,7 @@
     var byId = {};
     state.players.forEach(function (p) { byId[p.id] = p; });
 
+    var result = [];
     state.undoStack.forEach(function (entry) {
       var mark = state.marks[entry.playerId];
       if (!mark || !mark.mine) {
@@ -724,14 +742,33 @@
         return;
       }
       var pos = player.position;
+      var slot;
       if (filled[pos] < req[pos]) {
         filled[pos]++;
+        slot = pos;
       } else if (FLEX_ELIGIBLE[pos] && filled.FLEX < req.FLEX) {
         filled.FLEX++;
+        slot = 'FLEX';
       } else {
         filled.BENCH++;
+        slot = 'BENCH';
       }
+      result.push({ playerId: entry.playerId, slot: slot });
     });
+    return result;
+  }
+
+  /**
+   * @param {State} state
+   * @returns {null|{QB:{filled:number,req:number}, RB:{filled:number,req:number}, WR:{filled:number,req:number}, TE:{filled:number,req:number}, FLEX:{filled:number,req:number}, DST:{filled:number,req:number}, K:{filled:number,req:number}, BENCH:{filled:number}}}
+   */
+  function rosterNeeds(state) {
+    if (!state.league || !state.league.roster) {
+      return null;
+    }
+    var req = state.league.roster;
+    var filled = { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, DST: 0, K: 0, BENCH: 0 };
+    fillAssignments(state).forEach(function (a) { filled[a.slot]++; });
 
     return {
       QB: { filled: filled.QB, req: req.QB },
@@ -743,6 +780,40 @@
       K: { filled: filled.K, req: req.K },
       BENCH: { filled: filled.BENCH }
     };
+  }
+
+  /**
+   * @param {State} state
+   * @returns {null|Array<{slot:string, player:(Player|null)}>} ordered slot-tile board, template in canonical Order A, bench overflow appended
+   */
+  function rosterBoard(state) {
+    if (!state.league || !state.league.roster) {
+      return null;
+    }
+    var req = state.league.roster;
+    var byId = {};
+    state.players.forEach(function (p) { byId[p.id] = p; });
+
+    var tiles = [];
+    ROSTER_KEYS.forEach(function (key) {
+      var count = key === 'BENCH' ? req.BENCH : req[key];
+      for (var i = 0; i < count; i++) {
+        tiles.push({ slot: key, player: null });
+      }
+    });
+
+    fillAssignments(state).forEach(function (a) {
+      var player = byId[a.playerId];
+      for (var i = 0; i < tiles.length; i++) {
+        if (tiles[i].slot === a.slot && tiles[i].player === null) {
+          tiles[i].player = player;
+          return;
+        }
+      }
+      tiles.push({ slot: a.slot, player: player }); // bench overflow — never hide a pick
+    });
+
+    return tiles;
   }
 
   function isValidState(obj) {
@@ -959,6 +1030,9 @@
     pickMath: pickMath,
     lastInTierIds: lastInTierIds,
     valueFlagIds: valueFlagIds,
-    rosterNeeds: rosterNeeds
+    rosterNeeds: rosterNeeds,
+    positionRanks: positionRanks,
+    fillAssignments: fillAssignments,
+    rosterBoard: rosterBoard
   };
 })();
