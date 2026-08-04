@@ -102,7 +102,7 @@ Manual edits persist until your next Import Rankings.
 
 ## Tiers
 
-Tiers group same-position players into named bands (Tier 1, Tier 2, ...). They're scoped per position -- Tier 2 QBs and Tier 2 RBs are unrelated groups, with no relationship to each other. Import a header-based rankings file (FantasyPros-style CSV/TSV) with a `TIERS` or `TIER` column and tiers come in automatically; the headerless formats (numbered list, plain list, parenthesized team/position) have no column to read a tier from, so those players import untiered. However the source file orders its tier values, the app forces them into non-decreasing order down the board within each position on import, correcting anything out of order in the file itself.
+Tiers group same-position players into named bands (Tier 1, Tier 2, ...). They're scoped per position -- Tier 2 QBs and Tier 2 RBs are unrelated groups, with no relationship to each other. The bundled sample rankings ship with tiers already assigned, banded per position, for all 276 players; importing your own rankings replaces the board (and its tiers) as described next. Import a header-based rankings file (FantasyPros-style CSV/TSV) with a `TIERS` or `TIER` column and tiers come in automatically; the headerless formats (numbered list, plain list, parenthesized team/position) have no column to read a tier from, so those players import untiered. However the source file orders its tier values, the app forces them into non-decreasing order down the board within each position on import, correcting anything out of order in the file itself.
 
 The always-on indicator is a colored T-chip (e.g. `T3`) next to a player's name -- it shows on the main board (Available and Drafted lists) and inside Edit Rankings alike. Divider lines are separate and narrower: they appear only in Edit Rankings, and only while a single position chip (QB/RB/WR/TE/DST/K) is active, marking tier breaks within that position's list. FLEX behaves like All here -- both mix multiple positions, so neither ever shows dividers, only the T-chips. Switching to All or FLEX, or typing a search, clears the dividers; the T-chips keep showing regardless.
 
@@ -116,12 +116,12 @@ While drafting, mark which picks are yours as you go.
 
 - **Tap DRAFT** normally to record someone else's pick -- unchanged from before.
 - **Long-press DRAFT** (about half a second -- the button fills blue while you hold) to mark that pick as yours instead.
-- Tap the **Mine** chip to filter the board down to your picks. In place of the usual filter summary line, it shows a roster summary: your QB/RB/WR/TE/DST/K counts and total picks.
+- Tap the **Mine** chip to filter the board down to your picks. With a league set up (see Draft position tracker, below) it shows a roster board -- one tile per starting slot, filling in as you draft; without one it just lists your picks.
 - Made a mistake? In the Drafted or Mine view, tap the person icon on any pick to toggle whether it's yours, no need to undo and redraft.
 
-Without a league set up (see Draft position tracker, below), the Mine summary is just position counts: a QB/RB/WR/TE/DST/K total for each position plus your total pick count.
+Without a league set up (see Draft position tracker, below), Mine just lists your picks in draft order, plus a hint tile telling you to set up your league in Settings to see roster slots.
 
-Set a roster template in Settings -> League -- steppers for QB, RB, WR, TE, FLEX, DST, K, and Bench slot counts, alongside the league size/slot/snake settings. The default template (used the first time you set one up) is QB 1, RB 2, WR 2, TE 1, FLEX 1, DST 1, K 1, Bench 7. Once a template is set, the Mine summary switches to filled-vs-required for each of QB, RB, WR, TE, FLEX, DST, and K, plus a plain filled count for Bench. Each of your picks fills its own position's slots first; only an RB, WR, or TE pick can roll into FLEX once its own slot is full -- K and DST have no FLEX eligibility, so once their own slot is full they go straight to Bench. Picks are counted in the order you drafted them, so backfilling marks out of draft order can shuffle which slot a given pick lands in.
+Set a roster template in Settings -> League -- steppers for QB, RB, WR, TE, FLEX, DST, K, and Bench slot counts, alongside the league size/slot/snake settings. The default template (used the first time you set one up) is QB 1, RB 2, WR 2, TE 1, FLEX 1, DST 1, K 1, Bench 7. Once a template is set, Mine becomes a roster board: one tile per starting slot, in order -- QB, RB, WR, TE, FLEX, DST, K, then Bench -- sized to your template (so the default template gives 2 RB tiles, 2 WR tiles, 7 bench tiles, and so on). Tiles fill in as you draft: a filled tile shows the player's name and team with his bye week on the right; an open slot reads "-- empty --". Each of your picks fills its own position's slots first; only an RB, WR, or TE pick can roll into FLEX once its own slot is full -- K and DST have no FLEX eligibility, so once their own slot is full they go straight to Bench. Picks are counted in the order you drafted them, so backfilling marks out of draft order can shuffle which slot a given pick lands in.
 
 ## Draft position tracker
 
@@ -129,7 +129,7 @@ Set up your league in Settings -> League: league size, your draft slot, and snak
 
 The tracker has no separate "record a pick" step: it derives round/pick/picks-until-you entirely from a count of how many players are marked Drafted on the board. Forgetting to mark a pick drifts the tracker out of sync with the real draft, so keep every pick logged as it happens.
 
-Tap "Clear league setup" in Settings -> League to remove your league config. The tracker card disappears, and the roster-needs summary above reverts to the plain position-counts line, until you set league config up again.
+Tap "Clear league setup" in Settings -> League to remove your league config. The tracker card disappears, and Mine reverts to plain pick rows (plus the setup hint tile) until you set league config up again.
 
 ## Quiet signals
 
