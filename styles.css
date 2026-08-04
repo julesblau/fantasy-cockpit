@@ -104,7 +104,6 @@ button,
 }
 
 body.searching #filter-chips,
-body.searching #summary-line,
 body.searching #bottom-bar {
   display: none;
 }
@@ -271,13 +270,6 @@ body.searching #bottom-bar {
   background: var(--accent-position);
   color: #fff;
   border-color: transparent;
-}
-
-/* summary line */
-.summary {
-  font-size: 13px;
-  color: var(--text-2);
-  padding: 0 16px 4px;
 }
 
 /* player row */

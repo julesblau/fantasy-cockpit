@@ -2197,16 +2197,6 @@
       assert(!/active-mine/.test(inactive), 'Mine chip not active when status is DRAFTED: ' + inactive);
     });
 
-    t('summaryHTML: formats position/status/count; search variant shows quoted query', function () {
-      var state1 = { filters: { position: 'RB', status: 'TARGETS' }, searchText: '' };
-      var html1 = DC.ui.templates.summaryHTML(state1, 6);
-      assert(html1.indexOf('RB') !== -1 && html1.indexOf('Targets') !== -1 && html1.indexOf('6 players') !== -1, html1);
-
-      var state2 = { filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: 'mahomes' };
-      var html2 = DC.ui.templates.summaryHTML(state2, 2);
-      assert(html2.indexOf('"mahomes"') !== -1, 'search variant shows quoted query: ' + html2);
-    });
-
     t('emptyStateHTML: each kind renders a distinct title and expected action', function () {
       var search = DC.ui.templates.emptyStateHTML('search', 'zzz');
       assert(search.indexOf('zzz') !== -1 && search.indexOf('data-action="clear-search"') !== -1, search);
@@ -4422,39 +4412,6 @@
       assert(notMineHtml.indexOf('is-mine') === -1, 'is-mine row class absent when !view.mine: ' + notMineHtml);
     });
 
-    t('rosterSummaryHTML: fallback (needs null) exact "My roster — QB 1 · RB 3 · WR 2 · TE 1 · DST 1 · K 1 (9 picks)" format, total summed from counts (order B, incl. DST/K)', function () {
-      var html = DC.ui.templates.rosterSummaryHTML(null, { QB: 1, RB: 3, WR: 2, TE: 1, DST: 1, K: 1 });
-      assert(html.indexOf('My roster — QB 1 · RB 3 · WR 2 · TE 1 · DST 1 · K 1 (9 picks)') !== -1, html);
-    });
-
-    t('rosterSummaryHTML: fallback singular "(1 pick)" vs plural "(2 picks)" — the ledgered R3 minor', function () {
-      var singular = DC.ui.templates.rosterSummaryHTML(null, { QB: 1, RB: 0, WR: 0, TE: 0 });
-      assert(singular.indexOf('(1 pick)') !== -1, singular);
-      assert(singular.indexOf('(1 picks)') === -1, singular);
-      var plural = DC.ui.templates.rosterSummaryHTML(null, { QB: 2, RB: 0, WR: 0, TE: 0 });
-      assert(plural.indexOf('(2 picks)') !== -1, plural);
-    });
-
-    t('rosterSummaryHTML: fallback total is the SUM of counts, not a separately-passed value (the other ledgered R3 minor)', function () {
-      var html = DC.ui.templates.rosterSummaryHTML(null, { QB: 1, RB: 1, WR: 1, TE: 0 });
-      assert(html.indexOf('(3 picks)') !== -1, 'total should be QB+RB+WR+TE=3 even though no total was passed in: ' + html);
-    });
-
-    t('rosterSummaryHTML: needs (non-null) format exact "My roster — QB 1/1 · RB 2/2 · WR 2/3 · TE 0/1 · FLEX 1/1 · DST 1/1 · K 0/1 · Bench 2"', function () {
-      var needs = {
-        QB: { filled: 1, req: 1 },
-        RB: { filled: 2, req: 2 },
-        WR: { filled: 2, req: 3 },
-        TE: { filled: 0, req: 1 },
-        FLEX: { filled: 1, req: 1 },
-        DST: { filled: 1, req: 1 },
-        K: { filled: 0, req: 1 },
-        BENCH: { filled: 2 }
-      };
-      var html = DC.ui.templates.rosterSummaryHTML(needs, { QB: 1, RB: 2, WR: 2, TE: 0 });
-      assert(html.indexOf('My roster — QB 1/1 · RB 2/2 · WR 2/3 · TE 0/1 · FLEX 1/1 · DST 1/1 · K 0/1 · Bench 2') !== -1, html);
-    });
-
     t('trackerStripHTML: normal (not my pick) renders a .tracker-card with three .tracker-stat blocks — R{round}/ROUND, #{currentPick}/PICK, {n}/UNTIL YOU', function () {
       var html = DC.ui.templates.trackerStripHTML({ round: 3, currentPick: 29, picksUntilMine: 4, isMyPick: false });
       assert(/^<div class="tracker-card">/.test(html), 'top-level element must be .tracker-card: ' + html);
@@ -4797,7 +4754,7 @@
       }
     });
 
-    t('Mine chip (league-null fallback): clicking it sets status MINE, renders the roster summary, lists only mine-drafted rows with a roster-hint tile after them; empty roster shows the mine empty-state', function () {
+    t('Mine chip (league-null fallback): clicking it sets status MINE, lists only mine-drafted rows with a roster-hint tile after them; empty roster shows the mine empty-state', function () {
       var fixture = buildMountFixture();
       var seed = DC.state.createSeedState();
       var store = DC.state.createStore(seed);
@@ -4815,10 +4772,6 @@
         store.dispatch({ type: 'DRAFT_PLAYER', playerId: ids[0], mine: true });
         store.dispatch({ type: 'DRAFT_PLAYER', playerId: ids[1], mine: true });
         store.dispatch({ type: 'DRAFT_PLAYER', playerId: ids[2], mine: false });
-
-        var summaryText = fixture.querySelector('#summary-line').textContent;
-        assert(summaryText.indexOf('My roster') !== -1, 'roster summary should render: ' + summaryText);
-        assert(summaryText.indexOf('(2 picks)') !== -1, 'roster summary should count only mine picks: ' + summaryText);
 
         var rows = listEl.querySelectorAll('.player-row');
         assertEq(rows.length, 2, 'only the 2 mine-drafted players should be listed');
@@ -6026,7 +5979,7 @@
       };
     }
 
-    t('main-board FLEX chip: real dispatch filters to exactly RB/WR/TE in rank order; summary reads "FLEX · ..."; re-tapping FLEX resets to ALL', function () {
+    t('main-board FLEX chip: real dispatch filters to exactly RB/WR/TE in rank order; re-tapping FLEX resets to ALL', function () {
       var fixture = buildMountFixture();
       var store = DC.state.createStore(makeFlexBoardState());
       try {
@@ -6037,9 +5990,6 @@
 
         var ids = Array.prototype.map.call(fixture.querySelectorAll('#player-list .player-row'), function (r) { return r.getAttribute('data-id'); });
         assertEq(ids, ['rb1', 'wr1', 'te1', 'rb2'], 'FLEX should show exactly RB/WR/TE, in rank order — QB/K/DST excluded');
-
-        var summaryText = fixture.querySelector('#summary-line').textContent;
-        assertEq(summaryText.indexOf('FLEX · Available'), 0, 'summary should read "FLEX · Available — N players": ' + summaryText);
 
         fixture.querySelector('[data-action="set-position"][data-position="FLEX"]').click(); // re-tap active -> ALL
         var idsAfter = Array.prototype.map.call(fixture.querySelectorAll('#player-list .player-row'), function (r) { return r.getAttribute('data-id'); });

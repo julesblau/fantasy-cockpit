@@ -10,7 +10,6 @@
   var LONG_PRESS_MS = 500;
 
   var STATUS_LABELS = { AVAILABLE: 'Available', TARGETS: 'Targets', AVOID: 'Avoid', DRAFTED: 'Drafted' };
-  var POSITIONS = ['QB', 'RB', 'WR', 'TE', 'DST', 'K']; // FLEX excluded — not a player position; drives the Mine fallback summary
 
   // signal tag priority order: VALUE > CLIFF, max 2 rendered (vacuous now but kept for future signals)
   var SIGNAL_DEFS = [
@@ -252,43 +251,6 @@
     return positionRow + statusRow;
   }
 
-  /**
-   * @param {{filters:{position:string, status:string}, searchText:string}} state
-   * @param {number} visibleCount
-   */
-  function summaryHTML(state, visibleCount) {
-    var filters = state.filters || {};
-    var posLabel = (!filters.position || filters.position === 'ALL') ? 'All positions' : filters.position;
-    var searching = !!(state.searchText && state.searchText.trim() !== '');
-    var statusHTML = searching
-      ? '"' + esc(state.searchText) + '"'
-      : esc(STATUS_LABELS[filters.status] || filters.status || '');
-    var n = typeof visibleCount === 'number' ? visibleCount : 0;
-    return '<div class="summary">' + esc(posLabel) + ' ' + MIDDOT + ' ' + statusHTML + ' ' + EMDASH + ' ' + n + ' players</div>';
-  }
-
-  /**
-   * @param {?{QB:{filled:number,req:number}, RB:*, WR:*, TE:*, FLEX:*, BENCH:{filled:number}}} needs
-   *   DC.state.rosterNeeds(state), or null when league is unset — drives the needs-line format
-   * @param {{QB:number, RB:number, WR:number, TE:number}} counts DC.state.myRosterCounts(state) —
-   *   used only in the fallback (needs===null) branch; total is summed HERE, never passed in, so a
-   *   position-filtered caller can never under-count the real total (the R3 minor this replaces)
-   */
-  function rosterSummaryHTML(needs, counts) {
-    if (needs) {
-      var needParts = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K'].map(function (k) {
-        return k + ' ' + needs[k].filled + '/' + needs[k].req;
-      });
-      return '<div class="summary">My roster ' + EMDASH + ' ' + needParts.join(' ' + MIDDOT + ' ') + ' ' + MIDDOT + ' Bench ' + needs.BENCH.filled + '</div>';
-    }
-    var total = POSITIONS.reduce(function (sum, pos) { return sum + (counts[pos] || 0); }, 0);
-    var parts = POSITIONS.map(function (pos) {
-      return pos + ' ' + (counts[pos] || 0);
-    });
-    var pickWord = total === 1 ? 'pick' : 'picks';
-    return '<div class="summary">My roster ' + EMDASH + ' ' + parts.join(' ' + MIDDOT + ' ') + ' (' + total + ' ' + pickWord + ')</div>';
-  }
-
   function emptyBody(iconName, title, sub, actionLabel, actionName) {
     var html = '<div class="empty">' +
       '<div style="display:inline-flex;width:40px;height:40px;opacity:0.5;margin-bottom:8px">' + icon(iconName, 40) + '</div>' +
@@ -377,8 +339,6 @@
     signalTagsHTML: signalTagsHTML,
     trackerStripHTML: trackerStripHTML,
     chipsHTML: chipsHTML,
-    summaryHTML: summaryHTML,
-    rosterSummaryHTML: rosterSummaryHTML,
     rosterBoardHTML: rosterBoardHTML,
     emptyStateHTML: emptyStateHTML,
     bottomBarHTML: bottomBarHTML,
@@ -434,7 +394,6 @@
     var searchContainer = document.getElementById('search-container');
     var trackerEl = document.getElementById('tracker-strip');
     var chipsEl = document.getElementById('filter-chips');
-    var summaryEl = document.getElementById('summary-line');
     var listEl = document.getElementById('player-list');
     var undoBannerRoot = document.getElementById('undo-banner-root');
     var bottomBarEl = document.getElementById('bottom-bar');
@@ -1077,11 +1036,6 @@
       trackerEl.innerHTML = pm ? templates.trackerStripHTML(pm) : ''; // hidden entirely when league unset
 
       chipsEl.innerHTML = templates.chipsHTML(state.filters);
-      if (state.filters.status === 'MINE' && !searching) {
-        summaryEl.innerHTML = templates.rosterSummaryHTML(DC.state.rosterNeeds(state), DC.state.myRosterCounts(state));
-      } else {
-        summaryEl.innerHTML = templates.summaryHTML(state, visible.length);
-      }
 
       var mineNoSearch = state.filters.status === 'MINE' && !searching;
       if (mineNoSearch && state.league) {
