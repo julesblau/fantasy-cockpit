@@ -101,6 +101,12 @@ button,
   border-top: 1px solid var(--hairline);
   padding-bottom: max(env(safe-area-inset-bottom), 8px);
   flex-shrink: 0;
+  position: relative; /* must paint above the (auto-stacked) player rows below it */
+  z-index: 5;
+}
+
+#sheet-root {
+  z-index: 6; /* must paint above #bottom-bar's raised Undo button */
 }
 
 body.searching #filter-chips,
