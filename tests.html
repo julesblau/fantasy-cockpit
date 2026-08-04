@@ -225,7 +225,7 @@
       assertEq(s.schemaVersion, 4);
       s.players.forEach(function (p, i) {
         var seed = DC.data.SEED_PLAYERS[i];
-        assertEq(p, { id: seed.id, rank: seed.rank, name: seed.name, team: seed.team, position: seed.position, byeWeek: seed.byeWeek, tier: null }, 'seed player ' + i);
+        assertEq(p, { id: seed.id, rank: seed.rank, name: seed.name, team: seed.team, position: seed.position, byeWeek: seed.byeWeek, tier: seed.tier }, 'seed player ' + i);
       });
       assertEq(s.undoStack, []);
       assertEq(s.filters, { position: 'ALL', status: 'AVAILABLE' });
@@ -234,6 +234,41 @@
       DC.data.SEED_PLAYERS.forEach(function (p) {
         assertEq(s.marks[p.id], { drafted: false, target: false, avoid: false, mine: false }, 'marks for ' + p.id);
       });
+    });
+
+    t('seed tier banding: boundary and tail spot-checks per position', function () {
+      var byPosition = {};
+      DC.data.SEED_PLAYERS.forEach(function (p) {
+        byPosition[p.position] = byPosition[p.position] || [];
+        byPosition[p.position].push(p);
+      });
+      assertEq(byPosition.QB[0].tier, 1, '1st QB should be tier 1');
+      assertEq(byPosition.QB[3].tier, 2, '4th QB should be tier 2 (band boundary)');
+      assertEq(byPosition.QB[21].tier, 7, '22nd QB should be tier 7 (tail)');
+      assertEq(byPosition.RB[3].tier, 1, '4th RB should be tier 1');
+      assertEq(byPosition.RB[4].tier, 2, '5th RB should be tier 2');
+      for (var i = 54; i < byPosition.RB.length; i++) {
+        assertEq(byPosition.RB[i].tier, 7, '55th RB and later should be tier 7 (index ' + i + ')');
+      }
+      assertEq(byPosition.K[10].tier, 4, '11th K should be tier 4');
+      assertEq(byPosition.K[11].tier, 4, '12th K should be tier 4');
+    });
+
+    t('seed tier banding: monotone non-decreasing per position, and normalizeTiers is a no-op on the seed', function () {
+      var seedState = DC.state.createSeedState();
+      var lastTierByPosition = {};
+      seedState.players.forEach(function (p) {
+        var prev = lastTierByPosition[p.position];
+        if (prev !== undefined) {
+          assert(p.tier >= prev, 'tier should be non-decreasing within ' + p.position + ': prev=' + prev + ' next=' + p.tier);
+        }
+        lastTierByPosition[p.position] = p.tier;
+      });
+      assert(DC.state.normalizeTiers(seedState.players) === seedState.players, 'normalizeTiers should return the SAME reference — the seed is already normalized');
+    });
+
+    t('seed tier banding: no singleton (position,tier) groups at boot — no CLIFF tag fires', function () {
+      assertEq(DC.state.lastInTierIds(DC.state.createSeedState()), {});
     });
 
     t('reduce is pure: DRAFT_PLAYER does not mutate the original state', function () {

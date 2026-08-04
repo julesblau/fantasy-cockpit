@@ -309,17 +309,36 @@
     ['Chargers D/ST', 'LAC', 'DST']
   ];
 
+  var NARROW_TIER_BANDS = [3, 3, 4, 5, 6]; // QB/TE/K/DST
+  var WIDE_TIER_BANDS = [4, 6, 8, 10, 12, 14]; // RB/WR
+
+  // posIndex is 1-based rank within its own position; past the last band, flat catch-all tier 7 (never a cycle)
+  function tierFor(position, posIndex) {
+    var bands = (position === 'RB' || position === 'WR') ? WIDE_TIER_BANDS : NARROW_TIER_BANDS;
+    var cum = 0;
+    for (var i = 0; i < bands.length; i++) {
+      cum += bands[i];
+      if (posIndex <= cum) {
+        return i + 1;
+      }
+    }
+    return 7;
+  }
+
+  var positionCounters = {};
   var SEED_PLAYERS = RAW_PLAYERS.map(function (row, index) {
     var name = row[0];
     var team = row[1];
     var position = row[2];
+    positionCounters[position] = (positionCounters[position] || 0) + 1;
     return {
       id: slug(name, team),
       rank: index + 1,
       name: name,
       team: team,
       position: position,
-      byeWeek: TEAM_BYE_WEEKS[team]
+      byeWeek: TEAM_BYE_WEEKS[team],
+      tier: tierFor(position, positionCounters[position])
     };
   });
 

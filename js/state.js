@@ -58,7 +58,7 @@
   /** @returns {State} */
   function createSeedState() {
     var players = DC.data.SEED_PLAYERS.map(function (p) {
-      return { id: p.id, rank: p.rank, name: p.name, team: p.team, position: p.position, byeWeek: p.byeWeek, tier: null };
+      return { id: p.id, rank: p.rank, name: p.name, team: p.team, position: p.position, byeWeek: p.byeWeek, tier: typeof p.tier === 'number' ? p.tier : null };
     });
     var marks = {};
     players.forEach(function (p) {
