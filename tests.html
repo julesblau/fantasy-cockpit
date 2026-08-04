@@ -5741,6 +5741,7 @@
       try {
         DC.ui.mount(store);
         fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="league-toggle"]').click();
 
         var incBtn = fixture.querySelector('[data-action="league-size-step"][data-dir="1"]');
         assert(incBtn, 'expected a size-increment stepper button');
@@ -5763,6 +5764,7 @@
       try {
         DC.ui.mount(store);
         fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="league-toggle"]').click();
         fixture.querySelector('[data-action="league-size-step"][data-dir="-1"]').click();
         assertEq(store.getState().league, { size: 4, slot: 4, snake: false, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 6 } }, 'slot should clamp from 5 to 4 when size shrinks to 4');
       } finally {
@@ -5778,6 +5780,7 @@
       try {
         DC.ui.mount(store);
         fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="league-toggle"]').click();
         fixture.querySelector('[data-action="league-roster-step"][data-key="TE"][data-dir="1"]').click();
         assertEq(store.getState().league.roster, { QB: 1, RB: 2, WR: 3, TE: 2, FLEX: 1, DST: 1, K: 1, BENCH: 6 });
       } finally {
@@ -5794,6 +5797,7 @@
       try {
         DC.ui.mount(store);
         fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="league-toggle"]').click();
         var clearBtn = fixture.querySelector('[data-action="league-clear"]');
         assert(clearBtn, 'expected a Clear league setup row');
 
@@ -6008,6 +6012,7 @@
       try {
         DC.ui.mount(store);
         fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="league-toggle"]').click();
         var rosterPlusBtns = fixture.querySelectorAll('[data-action="league-roster-step"][data-dir="1"]');
         assertEq(rosterPlusBtns.length, 8, 'expected 8 roster stepper rows (QB/RB/WR/TE/FLEX/DST/K/BENCH)');
         assert(fixture.querySelector('[data-action="league-roster-step"][data-key="DST"]'), 'DST stepper row should render');
@@ -6027,6 +6032,7 @@
       try {
         DC.ui.mount(store);
         fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="league-toggle"]').click();
         fixture.querySelector('[data-action="league-roster-step"][data-key="DST"][data-dir="1"]').click();
         fixture.querySelector('[data-action="league-roster-step"][data-key="K"][data-dir="1"]').click();
 
@@ -6040,6 +6046,68 @@
         assertEq(store.getState().league.roster, { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, DST: 2, K: 2, BENCH: 6 }, 'both dispatches must have been accepted as valid by the reducer');
       } finally {
         spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('league-fold: configured league shows only the toggle row until expanded, and re-collapses on a second toggle click', function () {
+      var fixture = buildMountFixture();
+      var league = { size: 10, slot: 5, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 6 } };
+      var store = DC.state.createStore(Object.assign({}, DC.state.createSeedState(), { league: league }));
+      try {
+        DC.ui.mount(store);
+        fixture.querySelector('[data-action="open-settings"]').click();
+
+        var toggleBtn = fixture.querySelector('[data-action="league-toggle"]');
+        assert(toggleBtn, 'expected a league-toggle row for a configured league');
+        assert(!fixture.querySelector('.tier-stepper-row'), 'editors should be collapsed before the toggle is clicked');
+        assert(!fixture.querySelector('[data-action="league-clear"]'), 'Clear row should be collapsed before the toggle is clicked');
+
+        toggleBtn.click();
+        assert(fixture.querySelectorAll('[data-action="league-roster-step"][data-dir="1"]').length === 8, 'expanding should render all 8 roster steppers');
+        assert(fixture.querySelector('[data-action="league-toggle"]'), 'toggle row should remain present while expanded');
+
+        fixture.querySelector('[data-action="league-toggle"]').click();
+        assert(!fixture.querySelector('.tier-stepper-row'), 'a second toggle click should collapse the editors again');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('league-fold: setup-then-Apply leaves the editors open, not collapsed', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="league-setup-open"]').click();
+        fixture.querySelector('[data-action="league-apply"]').click();
+
+        assert(fixture.querySelectorAll('[data-action="league-roster-step"][data-dir="1"]').length === 8, 'editors should still be expanded right after Apply');
+        assert(fixture.querySelector('[data-action="league-toggle"]'), 'toggle row should now render alongside the editors since a league exists');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('league-fold: resets to collapsed when the sheet is closed', function () {
+      var fixture = buildMountFixture();
+      var league = { size: 10, slot: 5, snake: true, roster: { QB: 1, RB: 2, WR: 3, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 6 } };
+      var store = DC.state.createStore(Object.assign({}, DC.state.createSeedState(), { league: league }));
+      try {
+        DC.ui.mount(store);
+        fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="league-toggle"]').click();
+        assert(fixture.querySelector('.tier-stepper-row'), 'editors should be expanded before close');
+
+        fixture.querySelector('[data-action="close-settings"]').click();
+        fixture.querySelector('[data-action="open-settings"]').click();
+        assert(!fixture.querySelector('.tier-stepper-row'), 'reopening after close should show the collapsed toggle-only state');
+        assert(fixture.querySelector('[data-action="league-toggle"]'), 'toggle row should still be present when collapsed');
+      } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
       }

@@ -441,6 +441,7 @@
     var importPreviewState = null; // {kind:'rankings'|'backup', result} — lives here, not in the store
     var leagueSetupOpen = false; // UI-only: true while "Set up draft tracker" editors are expanded pre-Apply
     var leagueDraft = null; // League|null — uncommitted defaults being edited before Apply; never touches the store
+    var leagueFoldOpen = false; // UI-only: configured-league editors expanded in Settings
     var undoBannerTimer = null;
     var lastFiltersKey = null;
     var lastSearchText = null;
@@ -467,6 +468,7 @@
       resetImportArea();
       leagueSetupOpen = false; // closing discards an un-applied setup draft, same as the import area reset above
       leagueDraft = null;
+      leagueFoldOpen = false; // closing re-collapses a configured league's editors
       renderLeagueSection(store.getState());
     }
 
@@ -478,10 +480,13 @@
 
     function renderLeagueSection(state) {
       var league = state.league;
+      var toggleRowHTML = '<button type="button" class="sheet-row" data-action="league-toggle">League settings</button>';
       if (!league && !leagueSetupOpen) {
         leagueSectionEl.innerHTML = '<button type="button" class="sheet-row" data-action="league-setup-open">Set up draft tracker</button>';
+      } else if (league && !leagueFoldOpen) {
+        leagueSectionEl.innerHTML = toggleRowHTML;
       } else {
-        leagueSectionEl.innerHTML = leagueEditorsHTML(league || leagueDraft, !league);
+        leagueSectionEl.innerHTML = (league ? toggleRowHTML : '') + leagueEditorsHTML(league || leagueDraft, !league);
       }
     }
 
@@ -892,8 +897,13 @@
         case 'export':
           handleExport();
           break;
+        case 'league-toggle':
+          leagueFoldOpen = !leagueFoldOpen;
+          renderLeagueSection(store.getState());
+          break;
         case 'league-setup-open':
           leagueSetupOpen = true;
+          leagueFoldOpen = true; // Apply must not collapse the editors it was just applied from
           leagueDraft = cloneLeague(DEFAULT_LEAGUE);
           renderLeagueSection(store.getState());
           break;
