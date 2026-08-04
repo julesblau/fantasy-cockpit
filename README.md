@@ -42,7 +42,7 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
-**Reminder for this release:** upgrading from an older version resets your league's roster template to the new QB/RB/WR/TE/FLEX/DST/K/Bench default on first load -- league size, draft slot, and snake setting are all kept, only the roster slot counts reset. If you'd customized the steppers, re-tune them in Settings -> League after upgrading. This release also bumps the service-worker cache to v8. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+**Reminder for this release:** upgrading from an older version resets your league's roster template to the new QB/RB/WR/TE/FLEX/DST/K/Bench default on first load -- league size, draft slot, and snake setting are all kept, only the roster slot counts reset. If you'd customized the steppers, re-tune them in Settings -> League after upgrading. This release also bumps the service-worker cache to v9. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
 
 ## Install on iPhone
 
