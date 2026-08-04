@@ -192,6 +192,20 @@
     return availableRowHTML(view, ctx);
   }
 
+  /**
+   * @param {Array<{slot:string, player:(Object|null)}>} tiles DC.state.rosterBoard(state) output (non-null)
+   */
+  function rosterBoardHTML(tiles) {
+    return tiles.map(function (tile) {
+      var label = tile.slot === 'BENCH' ? 'BN' : tile.slot;
+      if (!tile.player) {
+        return '<div class="roster-tile is-empty" data-slot="' + tile.slot + '"><div class="tile-slot">' + label + '</div><div class="tile-body"><div class="tile-empty">' + EMDASH + ' empty ' + EMDASH + '</div></div></div>';
+      }
+      var p = tile.player;
+      return '<div class="roster-tile" data-slot="' + tile.slot + '"><div class="tile-slot">' + label + '</div><div class="tile-body"><div class="tile-name">' + esc(p.name) + '</div><div class="tile-meta">' + esc(p.team) + '</div></div><div class="tile-bye">BYE ' + p.byeWeek + '</div><button class="btn-toggle on-mine" data-action="toggle-mine" data-id="' + esc(p.id) + '">' + icon('user') + '</button></div>';
+    }).join('');
+  }
+
   function trackerStatHTML(value, label) {
     return '<div class="tracker-stat"><div class="tracker-value">' + esc(value) + '</div><div class="tracker-label">' + esc(label) + '</div></div>';
   }
@@ -365,6 +379,7 @@
     chipsHTML: chipsHTML,
     summaryHTML: summaryHTML,
     rosterSummaryHTML: rosterSummaryHTML,
+    rosterBoardHTML: rosterBoardHTML,
     emptyStateHTML: emptyStateHTML,
     bottomBarHTML: bottomBarHTML,
     backupApplyCheck: backupApplyCheck,
@@ -1068,7 +1083,12 @@
         summaryEl.innerHTML = templates.summaryHTML(state, visible.length);
       }
 
-      if (visible.length === 0) {
+      var mineNoSearch = state.filters.status === 'MINE' && !searching;
+      if (mineNoSearch && state.league) {
+        // league configured: the roster board replaces both the row list and the empty-state,
+        // regardless of pick count — takes priority over the visible.length===0 branch below
+        listEl.innerHTML = templates.rosterBoardHTML(DC.state.rosterBoard(state));
+      } else if (visible.length === 0) {
         var empty = pickEmptyKind(state);
         listEl.innerHTML = templates.emptyStateHTML(empty.kind, empty.detail);
       } else {
@@ -1078,7 +1098,7 @@
           cliff: DC.state.lastInTierIds(state)
         };
         var posRanks = DC.state.positionRanks(state);
-        listEl.innerHTML = visible.map(function (v) {
+        var rowsHtml = visible.map(function (v) {
           var ctx = {
             searching: searching,
             statusFilter: state.filters.status,
@@ -1088,6 +1108,10 @@
           };
           return templates.playerRowHTML(v, ctx);
         }).join('');
+        if (mineNoSearch && !state.league) {
+          rowsHtml += '<div class="roster-tile is-empty roster-hint"><div class="tile-body"><div class="tile-empty">Set up your league (Settings) to see roster slots</div></div></div>';
+        }
+        listEl.innerHTML = rowsHtml;
       }
 
       bottomBarEl.innerHTML = templates.bottomBarHTML(state);
