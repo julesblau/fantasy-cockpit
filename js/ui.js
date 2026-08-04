@@ -959,14 +959,53 @@
       }
     });
 
+    // ---- active-pointer tracking + deferred body.searching removal ----
+    // independent of the long-press machinery above: tracks every pointer on appEl so a
+    // tap's blur doesn't collapse the chrome and reflow #player-list under the finger.
+
+    var activePointerIds = new Set();
+    var searchingGen = 0;
+    var blurPending = false;
+
+    function makeSearchingRemoval() {
+      var gen = searchingGen;
+      return function () {
+        if (gen === searchingGen) {
+          document.body.classList.remove('searching');
+        }
+      };
+    }
+
+    appEl.addEventListener('pointerdown', function (ev) {
+      activePointerIds.add(ev.pointerId);
+    });
+
+    function onSearchPointerLift(ev) {
+      activePointerIds.delete(ev.pointerId);
+      if (blurPending && activePointerIds.size === 0) {
+        blurPending = false;
+        window.requestAnimationFrame(makeSearchingRemoval());
+      }
+    }
+
+    appEl.addEventListener('pointerup', onSearchPointerLift);
+    appEl.addEventListener('pointercancel', onSearchPointerLift);
+
     searchInput.addEventListener('input', function () {
       store.dispatch({ type: 'SET_SEARCH', text: searchInput.value });
     });
     searchInput.addEventListener('focus', function () {
+      searchingGen++; // invalidates any removal scheduled by a prior blur
+      blurPending = false;
       document.body.classList.add('searching');
     });
     searchInput.addEventListener('blur', function () {
-      document.body.classList.remove('searching');
+      if (activePointerIds.size > 0) {
+        blurPending = true;
+        window.setTimeout(makeSearchingRemoval(), 700); // backstop: rescues a dropped pointerup/cancel
+      } else {
+        window.setTimeout(makeSearchingRemoval(), 100);
+      }
     });
 
     // ---- render ----

@@ -6083,6 +6083,222 @@
   })();
   </script>
 
+  <!-- Round: search-blur deferral (Task 1) — the search->draft two-tap bug -->
+  <script>
+  (function () {
+    'use strict';
+    section('search-collapse');
+
+    function buildMountFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function mockTimerQueue() {
+      var original = window.setTimeout;
+      var pending = [];
+      window.setTimeout = function (cb) {
+        pending.push(cb);
+        return pending.length;
+      };
+      return {
+        flushOne: function () {
+          var cb = pending.shift();
+          if (cb) {
+            cb();
+          }
+        },
+        restore: function () {
+          window.setTimeout = original;
+        }
+      };
+    }
+
+    function mockRaf() {
+      var original = window.requestAnimationFrame;
+      var pending = [];
+      window.requestAnimationFrame = function (cb) {
+        pending.push(cb);
+        return pending.length;
+      };
+      return {
+        flush: function () {
+          var callbacks = pending;
+          pending = [];
+          callbacks.forEach(function (cb) { cb(); });
+        },
+        restore: function () {
+          window.requestAnimationFrame = original;
+        }
+      };
+    }
+
+    t('pointer-less blur (e.g. keyboard dismiss) defers the searching-class removal by a flat ~100ms timeout', function () {
+      var fixture = buildMountFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.ui.mount(store);
+        var searchInput = fixture.querySelector('.search-input');
+
+        searchInput.dispatchEvent(new FocusEvent('focus'));
+        assert(document.body.classList.contains('searching'), 'focus should add body.searching synchronously');
+
+        var timers = mockTimerQueue();
+        try {
+          searchInput.dispatchEvent(new FocusEvent('blur'));
+          assert(document.body.classList.contains('searching'), 'blur with no pointers down must not remove the class synchronously');
+
+          timers.flushOne();
+          assert(!document.body.classList.contains('searching'), 'flushing the deferred timeout should remove body.searching');
+        } finally {
+          timers.restore();
+        }
+      } finally {
+        document.body.classList.remove('searching');
+        fixture.remove();
+      }
+    });
+
+    t('blur while a pointer is down waits for pointerup, then removal happens on the next animation frame', function () {
+      var fixture = buildMountFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.ui.mount(store);
+        var searchInput = fixture.querySelector('.search-input');
+        var playerList = fixture.querySelector('#player-list');
+
+        searchInput.dispatchEvent(new FocusEvent('focus'));
+
+        var timers = mockTimerQueue();
+        var raf = mockRaf();
+        try {
+          playerList.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+          searchInput.dispatchEvent(new FocusEvent('blur'));
+          assert(document.body.classList.contains('searching'), 'blur while a pointer is down must not remove the class yet');
+
+          playerList.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1 }));
+          assert(document.body.classList.contains('searching'), 'the rAF removal is only captured, not yet run, right after pointerup');
+
+          raf.flush();
+          assert(!document.body.classList.contains('searching'), 'flushing the captured rAF callback should remove body.searching');
+
+          timers.flushOne(); // the 700ms backstop, arriving late — must be a harmless no-op
+          assert(!document.body.classList.contains('searching'), 'a late backstop firing after the rAF already removed the class must not error or resurrect it');
+        } finally {
+          raf.restore();
+          timers.restore();
+        }
+      } finally {
+        document.body.classList.remove('searching');
+        fixture.remove();
+      }
+    });
+
+    t('a dropped pointerup is rescued by the 700ms backstop timeout', function () {
+      var fixture = buildMountFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.ui.mount(store);
+        var searchInput = fixture.querySelector('.search-input');
+        var playerList = fixture.querySelector('#player-list');
+
+        searchInput.dispatchEvent(new FocusEvent('focus'));
+
+        var timers = mockTimerQueue();
+        try {
+          playerList.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+          searchInput.dispatchEvent(new FocusEvent('blur'));
+          // no matching pointerup/pointercancel ever arrives
+
+          timers.flushOne(); // fires the 700ms backstop
+          assert(!document.body.classList.contains('searching'), 'the backstop timeout should remove body.searching even with no pointerup');
+        } finally {
+          timers.restore();
+        }
+      } finally {
+        document.body.classList.remove('searching');
+        fixture.remove();
+      }
+    });
+
+    t('with two pointers down, removal waits until the last one lifts', function () {
+      var fixture = buildMountFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.ui.mount(store);
+        var searchInput = fixture.querySelector('.search-input');
+        var playerList = fixture.querySelector('#player-list');
+
+        searchInput.dispatchEvent(new FocusEvent('focus'));
+
+        var timers = mockTimerQueue();
+        var raf = mockRaf();
+        try {
+          playerList.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+          playerList.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 2, button: 0 }));
+          searchInput.dispatchEvent(new FocusEvent('blur'));
+
+          playerList.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1 }));
+          assert(document.body.classList.contains('searching'), 'one of two pointers lifting must not remove the class yet');
+          raf.flush();
+          assert(document.body.classList.contains('searching'), 'no removal should have been scheduled onto the rAF queue while a second pointer is still down');
+
+          playerList.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 2 }));
+          raf.flush();
+          assert(!document.body.classList.contains('searching'), 'once the last pointer lifts, the flushed rAF callback should remove body.searching');
+        } finally {
+          raf.restore();
+          timers.restore();
+        }
+      } finally {
+        document.body.classList.remove('searching');
+        fixture.remove();
+      }
+    });
+
+    t('refocusing before a deferred removal fires invalidates it via the generation guard', function () {
+      var fixture = buildMountFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.ui.mount(store);
+        var searchInput = fixture.querySelector('.search-input');
+
+        searchInput.dispatchEvent(new FocusEvent('focus'));
+
+        var timers = mockTimerQueue();
+        try {
+          searchInput.dispatchEvent(new FocusEvent('blur')); // queues the flat 100ms removal
+          searchInput.dispatchEvent(new FocusEvent('focus'));
+          assert(document.body.classList.contains('searching'), 'refocusing should keep body.searching present');
+
+          timers.flushOne(); // the stale timer from the earlier blur, now out of generation
+          assert(document.body.classList.contains('searching'), 'a stale removal from a superseded generation must not strip the class after refocus');
+        } finally {
+          timers.restore();
+        }
+      } finally {
+        document.body.classList.remove('searching');
+        fixture.remove();
+      }
+    });
+  })();
+  </script>
+
   <!-- render results (runs last, after all test-section scripts) -->
   <script>
     (function () {
