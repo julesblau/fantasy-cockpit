@@ -97,7 +97,17 @@
     return cls ? '<span class="tier-chip ' + cls + '">T' + tier + '</span>' : '';
   }
 
-  /** @param {{signals:*}} [ctx] */
+  // shared by all three main-board row templates — same visual pattern as edit.js editRowHTML's
+  // ALL view: .rank-position/.rank-overall are primary/secondary layout slots, overall rank primary.
+  function rankBadgeHTML(view, posRanks) {
+    var posRank = posRanks && posRanks[view.id];
+    if (posRank) {
+      return '<div class="player-rank pos-rank"><span class="rank-position">' + view.rank + '</span><span class="rank-overall">' + esc(view.position) + posRank + '</span></div>';
+    }
+    return '<div class="player-rank">' + view.rank + '</div>';
+  }
+
+  /** @param {{signals:*, posRanks:*}} [ctx] */
   function availableRowHTML(view, ctx) {
     ctx = ctx || {};
     var rowClasses = ['player-row'];
@@ -112,7 +122,7 @@
     var xClass = 'btn-toggle' + (view.avoid ? ' on-avoid' : '');
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
-        '<div class="player-rank">' + view.rank + '</div>' +
+        rankBadgeHTML(view, ctx.posRanks) +
         '<div class="player-info">' +
           '<div class="player-name">' + esc(view.name) + '</div>' +
           '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
@@ -125,11 +135,13 @@
     );
   }
 
-  function draftedSearchRowHTML(view) {
+  /** @param {{posRanks:*}} [ctx] */
+  function draftedSearchRowHTML(view, ctx) {
+    ctx = ctx || {};
     var rowClasses = ['player-row', 'is-drafted-search'];
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
-        '<div class="player-rank">' + view.rank + '</div>' +
+        rankBadgeHTML(view, ctx.posRanks) +
         '<div class="player-info">' +
           '<div class="player-name">' + esc(view.name) + '</div>' +
           '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
@@ -139,7 +151,7 @@
     );
   }
 
-  /** @param {{pickNumber:(number|null)}} [ctx] */
+  /** @param {{pickNumber:(number|null), posRanks:*}} [ctx] */
   function draftedRowHTML(view, ctx) {
     ctx = ctx || {};
     var pickText = typeof ctx.pickNumber === 'number' ? ctx.pickNumber : EMDASH;
@@ -150,7 +162,7 @@
     var mineToggleClass = 'btn-toggle' + (view.mine ? ' on-mine' : '');
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
-        '<div class="player-rank">' + view.rank + '</div>' +
+        rankBadgeHTML(view, ctx.posRanks) +
         '<div class="player-info">' +
           '<div class="player-name">' +
             '<span style="display:inline-flex;width:16px;height:16px;vertical-align:-3px;color:var(--accent-draft);margin-right:4px">' + icon('check', 16) + '</span>' +
@@ -173,7 +185,7 @@
     ctx = ctx || {};
     if (view.drafted) {
       if (ctx.searching) {
-        return draftedSearchRowHTML(view);
+        return draftedSearchRowHTML(view, ctx);
       }
       return draftedRowHTML(view, ctx);
     }
@@ -1060,17 +1072,19 @@
         var empty = pickEmptyKind(state);
         listEl.innerHTML = templates.emptyStateHTML(empty.kind, empty.detail);
       } else {
-        // signal id-sets computed ONCE per render, shared by every row's ctx — never per row
+        // signal id-sets and position ranks computed ONCE per render, shared by every row's ctx — never per row
         var signals = {
           value: DC.state.valueFlagIds(state),
           cliff: DC.state.lastInTierIds(state)
         };
+        var posRanks = DC.state.positionRanks(state);
         listEl.innerHTML = visible.map(function (v) {
           var ctx = {
             searching: searching,
             statusFilter: state.filters.status,
             pickNumber: v.drafted ? DC.state.pickNumber(state, v.id) : null,
-            signals: signals
+            signals: signals,
+            posRanks: posRanks
           };
           return templates.playerRowHTML(v, ctx);
         }).join('');

@@ -6556,6 +6556,117 @@
   })();
   </script>
 
+  <!-- Round 6 Task 3, Commit 1: two-line rank badge (availableRowHTML/draftedRowHTML/draftedSearchRowHTML) + pinned-390 row geometry -->
+  <script>
+  (function () {
+    'use strict';
+    section('rank-badge');
+
+    t('availableRowHTML: ctx.posRanks containing the id renders the two-line badge — overall rank primary, POS+posRank secondary', function () {
+      var view = { id: 'p1', rank: 14, name: 'Some Guy', team: 'KC', position: 'RB', byeWeek: 9, drafted: false, target: false, avoid: false };
+      var html = DC.ui.templates.playerRowHTML(view, { posRanks: { p1: 3 } });
+      assert(html.indexOf('player-rank pos-rank') !== -1, 'pos-rank class present: ' + html);
+      assert(html.indexOf('<span class="rank-position">14</span>') !== -1, 'overall rank in the primary slot: ' + html);
+      assert(html.indexOf('<span class="rank-overall">RB3</span>') !== -1, 'position+posRank in the secondary slot: ' + html);
+    });
+
+    t('availableRowHTML: without ctx.posRanks (or id absent from it) falls back to the single-line rank, no pos-rank class', function () {
+      var view = { id: 'p2', rank: 7, name: 'No Rank Guy', team: 'SF', position: 'WR', byeWeek: 5, drafted: false, target: false, avoid: false };
+      var htmlNoCtx = DC.ui.templates.playerRowHTML(view, {});
+      assert(htmlNoCtx.indexOf('pos-rank') === -1, 'no pos-rank class when ctx.posRanks absent: ' + htmlNoCtx);
+      assert(htmlNoCtx.indexOf('<div class="player-rank">7</div>') !== -1, 'plain single-line rank: ' + htmlNoCtx);
+
+      var htmlMissingId = DC.ui.templates.playerRowHTML(view, { posRanks: { otherId: 1 } });
+      assert(htmlMissingId.indexOf('pos-rank') === -1, 'no pos-rank class when id absent from posRanks: ' + htmlMissingId);
+      assert(htmlMissingId.indexOf('<div class="player-rank">7</div>') !== -1, htmlMissingId);
+    });
+
+    t('draftedRowHTML and draftedSearchRowHTML: both render the two-line badge when ctx.posRanks has the id', function () {
+      var view = { id: 'p3', rank: 20, name: 'Drafted Guy', team: 'BAL', position: 'QB', byeWeek: 5, drafted: true, target: false, avoid: false, mine: false };
+      var draftedHtml = DC.ui.templates.playerRowHTML(view, { searching: false, statusFilter: 'DRAFTED', pickNumber: 3, posRanks: { p3: 2 } });
+      assert(draftedHtml.indexOf('player-rank pos-rank') !== -1, 'draftedRowHTML badge present: ' + draftedHtml);
+      assert(draftedHtml.indexOf('<span class="rank-position">20</span>') !== -1, draftedHtml);
+      assert(draftedHtml.indexOf('<span class="rank-overall">QB2</span>') !== -1, draftedHtml);
+
+      var draftedSearchHtml = DC.ui.templates.playerRowHTML(view, { searching: true, posRanks: { p3: 2 } });
+      assert(draftedSearchHtml.indexOf('player-rank pos-rank') !== -1, 'draftedSearchRowHTML badge present: ' + draftedSearchHtml);
+      assert(draftedSearchHtml.indexOf('<span class="rank-position">20</span>') !== -1, draftedSearchHtml);
+      assert(draftedSearchHtml.indexOf('<span class="rank-overall">QB2</span>') !== -1, draftedSearchHtml);
+    });
+
+    // ---- pinned-390 real-width test: row tightening geometry gate ----
+    // tests.html loads no stylesheet (by design — other fixtures here rely only on UA defaults),
+    // but .player-rank/.player-info are plain <div>s: without the real flex/width rules they'd
+    // just be full-width blocks, so this specific assertion is meaningless without them. Inject
+    // the exact rules this task lands in styles.css as a scoped <style>, removed in the finally
+    // below — safe because every t() here runs synchronously to completion before the next starts.
+
+    function buildPinned390FixtureRankBadge() {
+      var root = document.createElement('div');
+      root.style.position = 'fixed';
+      root.style.top = '0';
+      root.style.left = '0';
+      root.style.width = '390px'; // real layout, not display:none — descendants resolve widths against this
+      root.style.visibility = 'hidden';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function injectRowGeometryCSS() {
+      var style = document.createElement('style');
+      style.textContent =
+        '*{box-sizing:border-box}' +
+        '#player-list{padding:8px 16px}' +
+        '.player-row{display:flex;align-items:center;gap:4px;padding:10px 6px;min-height:64px;max-height:80px;overflow:hidden}' +
+        '.player-rank{width:36px}' +
+        '#player-list .player-rank.pos-rank{display:flex;flex-direction:column;align-items:flex-start;gap:1px}' +
+        '.player-info{flex:1;min-width:0}' +
+        '.btn-draft{min-width:52px;height:44px;padding:0 6px;font-size:13px;font-weight:700;border:none}';
+      document.head.appendChild(style);
+      return style;
+    }
+
+    t('row geometry at a real, pinned 390px width: .btn-draft stays >=44 wide (tap floor) and <=58; .player-rank is 36px; .player-info reclaims >=148px', function () {
+      var fixture = buildPinned390FixtureRankBadge();
+      var styleTag = injectRowGeometryCSS();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.ui.mount(store);
+        var row = fixture.querySelector('#player-list .player-row');
+        assert(row, 'expected at least one available row to render');
+
+        var btnDraft = row.querySelector('.btn-draft');
+        var draftRect = btnDraft.getBoundingClientRect();
+        assert(draftRect.width >= 44, '.btn-draft should stay >=44 wide (tap floor): ' + draftRect.width);
+        assert(draftRect.width <= 58, '.btn-draft should not be wider than 58: ' + draftRect.width);
+
+        var rankRect = row.querySelector('.player-rank').getBoundingClientRect();
+        assert(Math.abs(rankRect.width - 36) <= 0.5, '.player-rank should be 36px wide: ' + rankRect.width);
+
+        var infoRect = row.querySelector('.player-info').getBoundingClientRect();
+        assert(infoRect.width >= 148, '.player-info should reclaim >=148px of width: ' + infoRect.width);
+      } finally {
+        document.head.removeChild(styleTag);
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+  })();
+  </script>
+
   <!-- render results (runs last, after all test-section scripts) -->
   <script>
     (function () {
