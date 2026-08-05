@@ -106,7 +106,7 @@
     return '<div class="player-rank">' + view.rank + '</div>';
   }
 
-  /** @param {{signals:*, posRanks:*}} [ctx] */
+  /** @param {{signals:*, posRanks:*, myPick:boolean}} [ctx] */
   function availableRowHTML(view, ctx) {
     ctx = ctx || {};
     var rowClasses = ['player-row'];
@@ -119,6 +119,7 @@
     var starClass = 'btn-toggle' + (view.target ? ' on-target' : '');
     var starIcon = view.target ? icon('star-filled') : icon('star');
     var xClass = 'btn-toggle' + (view.avoid ? ' on-avoid' : '');
+    var draftClass = 'btn-draft' + (ctx.myPick ? ' my-pick' : '');
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
         rankBadgeHTML(view, ctx.posRanks) +
@@ -129,7 +130,7 @@
         '</div>' +
         '<button class="' + starClass + '" data-action="toggle-target" data-id="' + esc(view.id) + '">' + starIcon + '</button>' +
         '<button class="' + xClass + '" data-action="toggle-avoid" data-id="' + esc(view.id) + '">' + icon('x') + '</button>' +
-        '<button class="btn-draft" data-action="draft" data-id="' + esc(view.id) + '">DRAFT</button>' +
+        '<button class="' + draftClass + '" data-action="draft" data-id="' + esc(view.id) + '">DRAFT</button>' +
       '</div>'
     );
   }
@@ -276,7 +277,7 @@
       case 'drafted':
         return emptyBody('check', 'No picks yet', 'Players you draft will show up here.', null, null);
       case 'mine':
-        return emptyBody('user', 'No picks of yours yet', "Long-press DRAFT when it's your turn, or tag your picks in the Drafted view.", null, null);
+        return emptyBody('user', 'No picks of yours yet', 'Draft your pick on your turn, or tag your picks in the Drafted view.', null, null);
       case 'combo': {
         var status = (detail && detail.status) || '';
         var position = (detail && detail.position) || '';
@@ -336,6 +337,7 @@
 
   var templates = {
     playerRowHTML: playerRowHTML,
+    availableRowHTML: availableRowHTML,
     signalTagsHTML: signalTagsHTML,
     trackerStripHTML: trackerStripHTML,
     chipsHTML: chipsHTML,
@@ -671,7 +673,7 @@
 
     // ---- draft tap / long-press / undo tap ----
 
-    // shared by a normal tap (mine:false) and a fired long-press (mine:true)
+    // shared by a tap and a fired long-press; mine is decided by the caller, not here
     function runDraftSequence(target, mine) {
       var row = target.closest('.player-row');
       if (!row) {
@@ -692,12 +694,14 @@
     }
 
     function handleDraftTap(target) {
-      runDraftSequence(target, false);
+      var pm = DC.state.pickMath(store.getState());
+      var isMyPick = !!(pm && pm.isMyPick);
+      runDraftSequence(target, isMyPick);
     }
 
     // ---- long-press machinery: pointerdown arms a 500ms timer; pointerup/cancel/leave
-    // before it fires cancel back to a normal tap; firing marks mine:true and sets
-    // longPressFiredId so the click that always follows pointerup is suppressed once. ----
+    // before it fires cancel back to a normal tap; firing inverts the tap's mine flag and
+    // sets longPressFiredId so the click that always follows pointerup is suppressed once. ----
 
     var pressTimer = null;
     var pressBtn = null;
@@ -736,7 +740,9 @@
     function onPressFire(target, id) {
       teardownPress();
       longPressFiredId = id;
-      runDraftSequence(target, true);
+      var pm = DC.state.pickMath(store.getState());
+      var isMyPick = !!(pm && pm.isMyPick);
+      runDraftSequence(target, !isMyPick);
     }
 
     appEl.addEventListener('pointerdown', function (ev) {
@@ -1062,13 +1068,15 @@
           cliff: DC.state.lastInTierIds(state)
         };
         var posRanks = DC.state.positionRanks(state);
+        var myPick = !!(pm && pm.isMyPick);
         var rowsHtml = visible.map(function (v) {
           var ctx = {
             searching: searching,
             statusFilter: state.filters.status,
             pickNumber: v.drafted ? DC.state.pickNumber(state, v.id) : null,
             signals: signals,
-            posRanks: posRanks
+            posRanks: posRanks,
+            myPick: myPick
           };
           return templates.playerRowHTML(v, ctx);
         }).join('');

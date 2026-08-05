@@ -4507,7 +4507,7 @@
     t('emptyStateHTML: kind "mine" renders a distinct title/sub', function () {
       var mine = DC.ui.templates.emptyStateHTML('mine');
       assert(mine.indexOf('No picks of yours yet') !== -1, mine);
-      assert(mine.indexOf("Long-press DRAFT when it's your turn") !== -1, mine);
+      assert(mine.indexOf('Draft your pick on your turn, or tag your picks in the Drafted view.') !== -1, mine);
       assert(mine !== DC.ui.templates.emptyStateHTML('drafted'), 'mine empty-state must differ from drafted empty-state');
     });
 
@@ -6742,6 +6742,206 @@
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
       }
+    });
+  })();
+  </script>
+
+  <!-- Round 8 Task 1: my-pick draft-button flip -- tap/long-press inversion while it's your pick -->
+  <script>
+  (function () {
+    'use strict';
+    section('my-pick-flip');
+
+    function buildMountFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function spyDispatch(store) {
+      var calls = [];
+      var original = store.dispatch;
+      store.dispatch = function (action) {
+        calls.push(action);
+        return original(action);
+      };
+      return { calls: calls, restore: function () { store.dispatch = original; } };
+    }
+
+    // setTimeout/clearTimeout both mocked (unlike the FIFO-only queue elsewhere) so a real
+    // pointerup's clearTimeout genuinely cancels its arm timer, and flushLast can fire a
+    // just-armed long-press ahead of an older still-pending dispatch -- needed to hold two
+    // draft sequences in flight at once and prove each captured its own flag at event time.
+    function mockTimerQueue() {
+      var original = window.setTimeout;
+      var originalClear = window.clearTimeout;
+      var nextId = 1;
+      var entries = [];
+      window.setTimeout = function (cb) {
+        var id = nextId++;
+        entries.push({ id: id, cb: cb });
+        return id;
+      };
+      window.clearTimeout = function (id) {
+        entries = entries.filter(function (e) { return e.id !== id; });
+      };
+      return {
+        flushOne: function () {
+          var e = entries.shift();
+          if (e) {
+            e.cb();
+          }
+        },
+        flushLast: function () {
+          var e = entries.pop();
+          if (e) {
+            e.cb();
+          }
+        },
+        restore: function () {
+          window.setTimeout = original;
+          window.clearTimeout = originalClear;
+        }
+      };
+    }
+
+    function withSyncTimeouts(fn) {
+      var original = window.setTimeout;
+      window.setTimeout = function (cb) {
+        cb();
+        return 0;
+      };
+      try {
+        fn();
+      } finally {
+        window.setTimeout = original;
+      }
+    }
+
+    t('boots flipped: My-pick E2E through the real Apply flow -- tap/long-press invert while it is your pick, then disengage once a pick lands', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        fixture.querySelector('[data-action="open-settings"]').click();
+        fixture.querySelector('[data-action="league-setup-open"]').click();
+        fixture.querySelector('[data-action="league-apply"]').click();
+        fixture.querySelector('[data-action="close-settings"]').click();
+
+        var firstBtn = fixture.querySelectorAll('.btn-draft')[0];
+        assert(firstBtn, 'expected a DRAFT button for the first available row');
+        assert(firstBtn.classList.contains('my-pick'), 'slot 1 is live at boot -- the first row should be blue: ' + firstBtn.outerHTML);
+
+        // (a) real tap: pointerdown -> pointerup (cancels the arm timer) -> click. Its 150ms
+        // dispatch is left pending on purpose, so (b) below captures pickMath at the same
+        // stale (pre-dispatch) state.
+        firstBtn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+        firstBtn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1 }));
+        firstBtn.click();
+
+        // (b) long-press the next row while (a) is still in flight: pointerdown arms, then
+        // flushLast fires that arm timer specifically (it was scheduled after (a)'s pending
+        // dispatch), so this captures the same isMyPick=true and inverts it.
+        var secondBtn = fixture.querySelectorAll('.btn-draft')[1];
+        assert(secondBtn && secondBtn !== firstBtn, 'expected a distinct second DRAFT button');
+        secondBtn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 2, button: 0 }));
+        timers.flushLast();
+
+        timers.flushOne(); // (a)'s deferred dispatch
+        timers.flushOne(); // (b)'s deferred dispatch
+
+        var draftDispatches = spy.calls.filter(function (a) { return a.type === 'DRAFT_PLAYER'; });
+        assertEq(draftDispatches.length, 2, 'expected exactly two DRAFT_PLAYER dispatches so far');
+        assertEq(draftDispatches[0].mine, true, 'tap while it is your pick should dispatch mine:true');
+        assertEq(draftDispatches[1].mine, false, 'long-press while it is (still) your pick should invert to mine:false');
+
+        // (c) disengage: a pick now exists, picksUntilMine is nonzero, so the flip must have
+        // released -- re-derived per interaction, not latched from the render that made it blue.
+        var remainingBtns = fixture.querySelectorAll('.btn-draft');
+        assert(remainingBtns.length > 0, 'expected available rows to remain');
+        Array.prototype.forEach.call(remainingBtns, function (b) {
+          assert(!b.classList.contains('my-pick'), 'no button should carry my-pick once it is no longer your pick: ' + b.outerHTML);
+        });
+
+        var thirdBtn = remainingBtns[0];
+        thirdBtn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 3, button: 0 }));
+        thirdBtn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 3 }));
+        thirdBtn.click();
+        timers.flushOne();
+
+        var allDispatches = spy.calls.filter(function (a) { return a.type === 'DRAFT_PLAYER'; });
+        assertEq(allDispatches.length, 3, 'expected a third dispatch from the disengaged tap');
+        assertEq(allDispatches[2].mine, false, 'once disengaged, a tap should go back to the default mine:false');
+      } finally {
+        timers.restore();
+        spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('league-null regression: no league configured -- tap still drafts mine:false and long-press still drafts mine:true, unchanged', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        assertEq(store.getState().league, null, 'sanity: fresh seed state has no league configured');
+
+        var firstBtn = fixture.querySelectorAll('.btn-draft')[0];
+        assert(!firstBtn.classList.contains('my-pick'), 'no league -> never blue: ' + firstBtn.outerHTML);
+
+        firstBtn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+        firstBtn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1 }));
+        withSyncTimeouts(function () {
+          firstBtn.click();
+        });
+
+        var secondBtn = fixture.querySelectorAll('.btn-draft')[0]; // fresh query: first row just drafted away
+        assert(secondBtn, 'expected a DRAFT button to remain for the long-press half of this test');
+        var timers = mockTimerQueue();
+        try {
+          secondBtn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 2, button: 0 }));
+          timers.flushOne(); // fires the 500ms arm timer
+          timers.flushOne(); // fires the 150ms dispatch
+        } finally {
+          timers.restore();
+        }
+
+        var draftDispatches = spy.calls.filter(function (a) { return a.type === 'DRAFT_PLAYER'; });
+        assertEq(draftDispatches.length, 2, 'expected exactly two DRAFT_PLAYER dispatches');
+        assertEq(draftDispatches[0].mine, false, 'league-null tap should stay mine:false');
+        assertEq(draftDispatches[1].mine, true, 'league-null long-press should stay mine:true');
+      } finally {
+        spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('availableRowHTML: ctx.myPick true adds "my-pick" to the DRAFT button class; absent/false ctx does not', function () {
+      var view = { id: 'mp1', rank: 5, name: 'Blue Button Guy', team: 'KC', position: 'RB', byeWeek: 10, drafted: false, target: false, avoid: false, tier: 2 };
+      var flippedHtml = DC.ui.templates.availableRowHTML(view, { myPick: true });
+      assert(flippedHtml.indexOf('btn-draft my-pick') !== -1, 'expected the DRAFT button to carry my-pick: ' + flippedHtml);
+
+      var plainHtml = DC.ui.templates.availableRowHTML(view, {});
+      assert(plainHtml.indexOf('my-pick') === -1, 'no ctx.myPick -> no my-pick class: ' + plainHtml);
     });
   })();
   </script>

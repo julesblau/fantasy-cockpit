@@ -512,6 +512,12 @@ button.player-rank {
   -webkit-touch-callout: none;
 }
 
+.btn-draft.my-pick {
+  background-color: var(--accent-position);
+  background-image: linear-gradient(to right, var(--accent-draft), var(--accent-draft));
+  color: #fff;
+}
+
 .btn-draft.arming {
   animation: btn-arm-fill 500ms linear forwards;
 }
