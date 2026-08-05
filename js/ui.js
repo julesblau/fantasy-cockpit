@@ -145,6 +145,7 @@
     if (ctx.isCompared) {
       rowClasses.push('is-compared');
     }
+    var mineToggleClass = 'btn-toggle' + (view.mine ? ' on-mine' : '');
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
         rankBadgeHTML(view, ctx.posRanks) +
@@ -153,6 +154,7 @@
           '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
         '</div>' +
         '<span class="drafted-pill">DRAFTED</span>' +
+        '<button class="' + mineToggleClass + '" data-action="toggle-mine" data-id="' + esc(view.id) + '" aria-label="Toggle whether this pick is yours">' + icon('user') + '</button>' +
       '</div>'
     );
   }
@@ -180,7 +182,7 @@
           '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
         '</div>' +
         '<span class="pick-badge">Pick ' + pickText + '</span>' +
-        '<button class="' + mineToggleClass + '" data-action="toggle-mine" data-id="' + esc(view.id) + '">' + icon('user') + '</button>' +
+        '<button class="' + mineToggleClass + '" data-action="toggle-mine" data-id="' + esc(view.id) + '" aria-label="Toggle whether this pick is yours">' + icon('user') + '</button>' +
         '<button class="btn-undraft" data-action="undraft" data-id="' + esc(view.id) + '">UNDO</button>' +
       '</div>'
     );

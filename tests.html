@@ -4521,6 +4521,35 @@
       assert(DC.ui.templates.draftedSearchRowHTML(view, {}).indexOf('player-row') !== -1, 'draftedSearchRowHTML should render a player-row');
     });
 
+    t('draftedSearchRowHTML: renders a toggle-mine button carrying the view id, alongside the DRAFTED pill', function () {
+      var view = { id: 'p12', rank: 4, name: 'Search Guy', team: 'DAL', position: 'RB', byeWeek: 7, tier: null, mine: false };
+      var html = DC.ui.templates.draftedSearchRowHTML(view, {});
+      assert(html.indexOf('data-action="toggle-mine" data-id="p12"') !== -1, 'toggle-mine button with view id: ' + html);
+      assert(html.indexOf('drafted-pill') !== -1, 'drafted-pill still present: ' + html);
+    });
+
+    t('draftedSearchRowHTML: toggle-mine button carries on-mine when view.mine is true, and omits it when false', function () {
+      var base = { id: 'p13', rank: 4, name: 'Search Guy Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: null };
+      var mineHtml = DC.ui.templates.draftedSearchRowHTML(Object.assign({}, base, { mine: true }), {});
+      var notMineHtml = DC.ui.templates.draftedSearchRowHTML(Object.assign({}, base, { mine: false }), {});
+      assert(mineHtml.indexOf('on-mine') !== -1, 'on-mine present when view.mine: ' + mineHtml);
+      assert(notMineHtml.indexOf('on-mine') === -1, 'on-mine absent when !view.mine: ' + notMineHtml);
+    });
+
+    t('draftedSearchRowHTML: still renders no draft or toggle-target action, even with the mine toggle present', function () {
+      var view = { id: 'p14', rank: 4, name: 'Search Guy Three', team: 'DAL', position: 'RB', byeWeek: 7, tier: null, mine: false };
+      var html = DC.ui.templates.draftedSearchRowHTML(view, {});
+      assert(html.indexOf('data-action="draft"') === -1, 'no draft action: ' + html);
+      assert(html.indexOf('data-action="toggle-target"') === -1, 'no toggle-target action: ' + html);
+    });
+
+    t('draftedRowHTML: toggle-mine button carries an aria-label', function () {
+      var view = { id: 'p15', rank: 4, name: 'Row Guy', team: 'DAL', position: 'RB', byeWeek: 7, tier: null, mine: false };
+      var html = DC.ui.templates.draftedRowHTML(view, { pickNumber: 2 });
+      assert(html.indexOf('data-action="toggle-mine"') !== -1, 'toggle-mine present: ' + html);
+      assert(html.indexOf('aria-label="Toggle whether this pick is yours"') !== -1, 'toggle-mine button should carry an aria-label: ' + html);
+    });
+
     t('playerRowHTML (drafted): toggle-mine button always present; .on-mine class + .is-mine row class only when view.mine', function () {
       var base = { id: 'p10', rank: 15, name: 'Mine Guy', team: 'KC', position: 'RB', byeWeek: 9, drafted: true, target: false, avoid: false };
       var mineView = Object.assign({}, base, { mine: true });
@@ -4873,6 +4902,35 @@
 
         row.querySelector('[data-action="toggle-mine"]').click();
         assertEq(store.getState().marks[firstId].mine, true, 'a second toggle should flip mine back to true');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('toggle-mine from a search row: drafting a player as not-mine, then searching for him, flips TOGGLE_MINE without clearing the search', function () {
+      var fixture = buildMountFixture();
+      var seed = DC.state.createSeedState();
+      var target = seed.players[0];
+      var drafted = DC.state.reduce(seed, { type: 'DRAFT_PLAYER', playerId: target.id, mine: false });
+      var store = DC.state.createStore(drafted);
+      try {
+        DC.ui.mount(store);
+        var searchInput = fixture.querySelector('.search-input');
+        searchInput.value = target.name;
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+        var row = fixture.querySelector('.player-row[data-id="' + target.id + '"]');
+        assert(row, 'expected a search row for the drafted player');
+        assert(row.classList.contains('is-drafted-search'), 'row should be the drafted-search variant: ' + row.outerHTML);
+        var toggleBtn = row.querySelector('[data-action="toggle-mine"]');
+        assert(toggleBtn, 'expected a toggle-mine button on the search row');
+
+        toggleBtn.click();
+        assertEq(store.getState().marks[target.id].mine, true, 'clicking toggle-mine on the search row should mark the pick as mine');
+
+        fixture.querySelector('.player-row[data-id="' + target.id + '"]').querySelector('[data-action="toggle-mine"]').click();
+        assertEq(store.getState().marks[target.id].mine, false, 'clicking again should flip it back to not-mine');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
