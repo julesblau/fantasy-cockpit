@@ -7865,6 +7865,17 @@
     // slot-6 league: next=6/following=19 pre-draft (zero picks); next!=current so five-way chain runs, all 5 bands reachable
     var SLOT6_LEAGUE = { size: 12, slot: 6, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
 
+    // slot-12 league: the wheel turn -- 11 filler picks put current=12/next=12/following=13, back-to-back with no intervening picks
+    var SLOT12_LEAGUE = { size: 12, slot: 12, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
+
+    function verdictFixtureFillers(prefix, count) {
+      var fillers = [];
+      for (var i = 0; i < count; i++) {
+        fillers.push(verdictFixturePlayer(prefix + i, 50));
+      }
+      return fillers;
+    }
+
     // hand-rolled fixture player: all 3 adp sites equal `a`, so adpConsensus derives to exactly `a`
     function verdictFixturePlayer(id, a) {
       return { id: id, rank: 1, name: id, team: 'AAA', position: 'RB', byeWeek: 5, tier: null, adp: (a === null ? null : { espn: a, yahoo: a, sleeper: a }) };
@@ -8706,6 +8717,88 @@
         var vWait = root.querySelector('.compare-card[data-id="' + waitPlayer.id + '"] .compare-verdict');
         assert(vWait.classList.contains('verdict-wait'), 'a>current stays wait, unchanged');
         assertEq(vWait.textContent, 'ADP 6 ' + TEST_MIDDOT + ' market price in 2 picks', 'exact unchanged wait text');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('29. back-to-back on-the-clock: slot-12 league, 11 picks made (current=12/next=12/following=13) renders "you also pick #13" regardless of ADP', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var fillers = verdictFixtureFillers('v-b2b-filler', 11);
+        var low = verdictFixturePlayer('v-b2b-low', 5); // would have been red under the old SLACK bands
+        var high = verdictFixturePlayer('v-b2b-high', 100); // far past following+SLACK -- would have been wait
+        var players = fillers.concat([low, high]);
+        var draftedIds = fillers.map(function (p) { return p.id; });
+        var state = buildVerdictFixtureState(players, draftedIds, SLOT12_LEAGUE);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([low.id, high.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var picks = DC.state.upcomingPicks(store.getState());
+        assertEq(picks.current, 12, 'sanity: 11 filler picks put current at 12');
+        assertEq(picks.next, 12, 'sanity: on the clock');
+        assertEq(picks.following, 13, 'sanity: following is the very next pick -- back-to-back');
+
+        function verdictOf(p) {
+          return root.querySelector('.compare-card[data-id="' + p.id + '"] .compare-verdict');
+        }
+
+        var vLow = verdictOf(low);
+        assert(vLow.classList.contains('verdict-wait'), 'low consensus at a back-to-back turn should be wait, not red');
+        assertEq(vLow.textContent, 'ADP 5 ' + TEST_MIDDOT + ' on the clock ' + TEST_EMDASH + ' you also pick #13', 'exact back-to-back text for low consensus');
+
+        var vHigh = verdictOf(high);
+        assert(vHigh.classList.contains('verdict-wait'), 'high consensus at a back-to-back turn should also be wait');
+        assertEq(vHigh.textContent, 'ADP 100 ' + TEST_MIDDOT + ' on the clock ' + TEST_EMDASH + ' you also pick #13', 'exact back-to-back text for high consensus -- ADP-independent');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('30. on-the-clock NON-adjacent guard: slot-6 league, 5 picks made (current=6/next=6/following=19) still renders the existing three bands, not the back-to-back text', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var fillers = verdictFixtureFillers('v-gap-filler', 5);
+        var red = verdictFixturePlayer('v-gap-red', 14);
+        var orangeLow = verdictFixturePlayer('v-gap-orange-low', 17);
+        var orangeHigh = verdictFixturePlayer('v-gap-orange-high', 22);
+        var wait = verdictFixturePlayer('v-gap-wait', 23);
+        var players = fillers.concat([red, orangeLow, orangeHigh, wait]);
+        var draftedIds = fillers.map(function (p) { return p.id; });
+        var state = buildVerdictFixtureState(players, draftedIds, SLOT6_LEAGUE);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([red.id, orangeLow.id, orangeHigh.id, wait.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var picks = DC.state.upcomingPicks(store.getState());
+        assertEq(picks.current, 6, 'sanity: 5 filler picks put current at 6');
+        assertEq(picks.next, 6, 'sanity: on the clock');
+        assertEq(picks.following, 19, 'sanity: following is 13 picks away -- not back-to-back');
+
+        function verdictOf(p) {
+          return root.querySelector('.compare-card[data-id="' + p.id + '"] .compare-verdict');
+        }
+
+        var vRed = verdictOf(red);
+        assert(vRed.classList.contains('verdict-red'), 'a=14 (following-SLACK) should still be red, not swallowed by the back-to-back guard');
+        assertEq(vRed.textContent, 'ADP 14 ' + TEST_MIDDOT + ' on the clock ' + TEST_EMDASH + ' gone by #' + picks.following, 'exact on-the-clock red text');
+
+        var vOrangeLow = verdictOf(orangeLow);
+        assert(vOrangeLow.classList.contains('verdict-orange'), 'a=17 should be orange');
+        assertEq(vOrangeLow.textContent, 'ADP 17 ' + TEST_MIDDOT + ' on the clock ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact on-the-clock orange text (low)');
+
+        var vOrangeHigh = verdictOf(orangeHigh);
+        assert(vOrangeHigh.classList.contains('verdict-orange'), 'a=22 should be orange, same text');
+        assertEq(vOrangeHigh.textContent, 'ADP 22 ' + TEST_MIDDOT + ' on the clock ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact on-the-clock orange text (high)');
+
+        var vWait = verdictOf(wait);
+        assert(vWait.classList.contains('verdict-wait'), 'a=23 should be wait');
+        assertEq(vWait.textContent, 'ADP 23 ' + TEST_MIDDOT + ' on the clock ' + TEST_EMDASH + ' likely there at #' + picks.following, 'exact on-the-clock wait text');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);

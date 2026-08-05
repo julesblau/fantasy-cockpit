@@ -5,6 +5,7 @@
   var MIDDOT = '·';
   var EMDASH = '—';
   var SLACK = 3; // picks of cushion on either side of a bucket boundary
+  var BACK_TO_BACK_MAX_GAP = 1; // following - current this small means no one else picks in between -- his own next pick, not a rival's
 
   function esc(s) {
     return String(s === null || s === undefined ? '' : s)
@@ -45,6 +46,9 @@
       return { cls: 'verdict-wait', text: adpLabel + ' ' + MIDDOT + ' market price in ' + (a - picks.current) + ' picks' };
     }
     if (picks.next === picks.current) {
+      if (picks.following - picks.current <= BACK_TO_BACK_MAX_GAP) {
+        return { cls: 'verdict-wait', text: adpLabel + ' ' + MIDDOT + ' on the clock ' + EMDASH + ' you also pick #' + picks.following };
+      }
       if (a <= picks.following - SLACK) {
         return { cls: 'verdict-red', text: adpLabel + ' ' + MIDDOT + ' on the clock ' + EMDASH + ' gone by #' + picks.following };
       }
