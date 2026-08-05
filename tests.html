@@ -7862,6 +7862,9 @@
     // slot-1 league: next=1/following=24 pre-draft, 24/25 (back-to-back) after one pick
     var SLOT1_LEAGUE = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
 
+    // slot-6 league: next=6/following=19 pre-draft (zero picks); next!=current so five-way chain runs, all 5 bands reachable
+    var SLOT6_LEAGUE = { size: 12, slot: 6, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
+
     // hand-rolled fixture player: all 3 adp sites equal `a`, so adpConsensus derives to exactly `a`
     function verdictFixturePlayer(id, a) {
       return { id: id, rank: 1, name: id, team: 'AAA', position: 'RB', byeWeek: 5, tier: null, adp: (a === null ? null : { espn: a, yahoo: a, sleeper: a }) };
@@ -8248,37 +8251,43 @@
       }
     });
 
-    t('15. slot-1 league, pre-draft: all four reachable bands render exact verdict class + text (red is unreachable pre-draft)', function () {
+    t('15. slot-6 league, pre-draft: all five reachable bands render exact verdict class + text', function () {
       var fixture = buildCompareFixture();
       try {
-        var orange1 = verdictFixturePlayer('v-pd-orange1', 3);
-        var green = verdictFixturePlayer('v-pd-green', 15);
-        var orange2 = verdictFixturePlayer('v-pd-orange2', 25);
-        var wait = verdictFixturePlayer('v-pd-wait', 30);
-        var players = [orange1, green, orange2, wait];
-        var state = buildVerdictFixtureState(players, [], SLOT1_LEAGUE);
+        var red = verdictFixturePlayer('v-pd-red', 2);
+        var orange1 = verdictFixturePlayer('v-pd-orange1', 6);
+        var green = verdictFixturePlayer('v-pd-green', 13);
+        var orange2 = verdictFixturePlayer('v-pd-orange2', 20);
+        var wait = verdictFixturePlayer('v-pd-wait', 25);
+        var players = [red, orange1, green, orange2, wait];
+        var state = buildVerdictFixtureState(players, [], SLOT6_LEAGUE);
         var store = DC.state.createStore(state);
         DC.compare.mount(store);
         DC.compare.open(players.map(function (p) { return p.id; }));
 
         var root = fixture.querySelector('#compare-root');
         var picks = DC.state.upcomingPicks(store.getState());
+        assert(picks.next !== picks.current, 'sanity: slot 6 zero-picks keeps next!=current so the five-way chain runs');
+
+        var vRed = root.querySelector('.compare-card[data-id="' + red.id + '"] .compare-verdict');
+        assert(vRed.classList.contains('verdict-red'), 'a<=next-SLACK should be red');
+        assertEq(vRed.textContent, 'ADP ' + DC.state.adpConsensus(red) + ' ' + TEST_MIDDOT + ' likely gone by your #' + picks.next, 'exact red (a<=3) text');
 
         var vOrange1 = root.querySelector('.compare-card[data-id="' + orange1.id + '"] .compare-verdict');
         assert(vOrange1.classList.contains('verdict-orange'), 'a<=next+SLACK should be orange');
-        assertEq(vOrange1.textContent, 'ADP ' + DC.state.adpConsensus(orange1) + ' ' + TEST_MIDDOT + ' coin flip at your #' + picks.next, 'exact orange1 (a<=4) text');
+        assertEq(vOrange1.textContent, 'ADP ' + DC.state.adpConsensus(orange1) + ' ' + TEST_MIDDOT + ' coin flip at your #' + picks.next, 'exact orange1 (4-9) text');
 
         var vGreen = root.querySelector('.compare-card[data-id="' + green.id + '"] .compare-verdict');
-        assert(vGreen.classList.contains('verdict-green'), 'a in 5..21 should be green');
-        assertEq(vGreen.textContent, 'ADP ' + DC.state.adpConsensus(green) + ' ' + TEST_MIDDOT + ' should reach #' + picks.next + ' ' + TEST_EMDASH + ' gone by #' + picks.following, 'exact green (5-21) text');
+        assert(vGreen.classList.contains('verdict-green'), 'a in 10..16 should be green');
+        assertEq(vGreen.textContent, 'ADP ' + DC.state.adpConsensus(green) + ' ' + TEST_MIDDOT + ' should reach #' + picks.next + ' ' + TEST_EMDASH + ' gone by #' + picks.following, 'exact green (10-16) text');
 
         var vOrange2 = root.querySelector('.compare-card[data-id="' + orange2.id + '"] .compare-verdict');
-        assert(vOrange2.classList.contains('verdict-orange'), 'a in 22..27 should be orange');
-        assertEq(vOrange2.textContent, 'ADP ' + DC.state.adpConsensus(orange2) + ' ' + TEST_MIDDOT + ' reaches #' + picks.next + ' ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact orange2 (22-27) text');
+        assert(vOrange2.classList.contains('verdict-orange'), 'a in 17..22 should be orange');
+        assertEq(vOrange2.textContent, 'ADP ' + DC.state.adpConsensus(orange2) + ' ' + TEST_MIDDOT + ' reaches #' + picks.next + ' ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact orange2 (17-22) text');
 
         var vWait = root.querySelector('.compare-card[data-id="' + wait.id + '"] .compare-verdict');
-        assert(vWait.classList.contains('verdict-wait'), 'a>=28 should be wait');
-        assertEq(vWait.textContent, 'ADP ' + DC.state.adpConsensus(wait) + ' ' + TEST_MIDDOT + ' can wait ' + TEST_EMDASH + ' likely there at #' + picks.following, 'exact wait (>=28) text');
+        assert(vWait.classList.contains('verdict-wait'), 'a>=23 should be wait');
+        assertEq(vWait.textContent, 'ADP ' + DC.state.adpConsensus(wait) + ' ' + TEST_MIDDOT + ' can wait ' + TEST_EMDASH + ' likely there at #' + picks.following, 'exact wait (>=23) text');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
@@ -8332,34 +8341,37 @@
       }
     });
 
-    t('18. live transition: slot-1 league, pre-draft green card flips to red after a DIFFERENT player is drafted, without reopening the overlay', function () {
+    t('18. live transition: slot-6 league, pre-draft green card flips to red after SIX other players are drafted, without reopening the overlay', function () {
       var fixture = buildCompareFixture();
       try {
         var store = DC.state.createStore(DC.state.createSeedState());
         DC.compare.mount(store);
-        store.dispatch({ type: 'SET_LEAGUE', league: SLOT1_LEAGUE });
+        store.dispatch({ type: 'SET_LEAGUE', league: SLOT6_LEAGUE });
 
         var target = null;
         DC.data.SEED_PLAYERS.some(function (p) {
           var c = DC.state.adpConsensus(p);
-          if (c !== null && c >= 5 && c <= 21) {
+          if (c !== null && c >= 10 && c <= 16) {
             target = p;
             return true;
           }
           return false;
         });
-        assert(target, 'expected at least one seed player with consensus in [5,21] for the pre-draft green band');
-        var other = DC.data.SEED_PLAYERS.filter(function (p) { return p.id !== target.id; })[0];
+        assert(target, 'expected at least one seed player with consensus in [10,16] for the pre-draft green band');
+        var others = DC.data.SEED_PLAYERS.filter(function (p) { return p.id !== target.id; }).slice(0, 6);
+        assertEq(others.length, 6, 'sanity: six filler players available');
 
         DC.compare.open([target.id]);
         var root = fixture.querySelector('#compare-root');
         var cardBefore = root.querySelector('.compare-card[data-id="' + target.id + '"] .compare-verdict');
-        assert(cardBefore.classList.contains('verdict-green'), 'pre-draft, a in 5..21 should start green');
+        assert(cardBefore.classList.contains('verdict-green'), 'pre-draft, a in 10..16 should start green');
 
-        store.dispatch({ type: 'DRAFT_PLAYER', playerId: other.id, mine: false });
+        others.forEach(function (p) {
+          store.dispatch({ type: 'DRAFT_PLAYER', playerId: p.id, mine: false });
+        });
 
         var cardAfter = root.querySelector('.compare-card[data-id="' + target.id + '"] .compare-verdict');
-        assert(cardAfter.classList.contains('verdict-red'), 'after one other pick, next=24 should push a<=21 into red');
+        assert(cardAfter.classList.contains('verdict-red'), 'after six other picks, current=7/next=19 should push a<=16 into red');
         assert(!cardAfter.classList.contains('verdict-green'), 'must no longer be green');
       } finally {
         document.body.removeChild(fixture);
@@ -8455,53 +8467,63 @@
       }
     });
 
-    t('23. slot-1 league, pre-draft: exact bucket boundary values (SLACK=3) render the correct class + text at every edge', function () {
+    t('23. slot-6 league, pre-draft: exact bucket boundary values (SLACK=3) render the correct class + text at every edge, including the newly-reachable red boundary', function () {
       var fixture = buildCompareFixture();
       try {
-        var orangeLow = verdictFixturePlayer('v-b-pd-orange-low', 4);
-        var greenLow = verdictFixturePlayer('v-b-pd-green-low', 5);
-        var greenHigh = verdictFixturePlayer('v-b-pd-green-high', 21);
-        var orangeHigh1 = verdictFixturePlayer('v-b-pd-orange-high1', 22);
-        var orangeHigh2 = verdictFixturePlayer('v-b-pd-orange-high2', 27);
-        var waitLow = verdictFixturePlayer('v-b-pd-wait-low', 28);
-        var players = [orangeLow, greenLow, greenHigh, orangeHigh1, orangeHigh2, waitLow];
-        var state = buildVerdictFixtureState(players, [], SLOT1_LEAGUE);
+        var redHigh = verdictFixturePlayer('v-b-pd-red-high', 3);
+        var orangeLow1 = verdictFixturePlayer('v-b-pd-orange-low1', 4);
+        var orangeHigh1 = verdictFixturePlayer('v-b-pd-orange-high1', 9);
+        var greenLow = verdictFixturePlayer('v-b-pd-green-low', 10);
+        var greenHigh = verdictFixturePlayer('v-b-pd-green-high', 16);
+        var orangeLow2 = verdictFixturePlayer('v-b-pd-orange-low2', 17);
+        var orangeHigh2 = verdictFixturePlayer('v-b-pd-orange-high2', 22);
+        var waitLow = verdictFixturePlayer('v-b-pd-wait-low', 23);
+        var players = [redHigh, orangeLow1, orangeHigh1, greenLow, greenHigh, orangeLow2, orangeHigh2, waitLow];
+        var state = buildVerdictFixtureState(players, [], SLOT6_LEAGUE);
         var store = DC.state.createStore(state);
         DC.compare.mount(store);
         DC.compare.open(players.map(function (p) { return p.id; }));
 
         var root = fixture.querySelector('#compare-root');
         var picks = DC.state.upcomingPicks(store.getState());
-        assertEq(picks.next, 1, 'sanity: pre-draft next pick');
-        assertEq(picks.following, 24, 'sanity: pre-draft following pick');
+        assertEq(picks.next, 6, 'sanity: pre-draft next pick at slot 6');
+        assertEq(picks.following, 19, 'sanity: pre-draft following pick at slot 6');
 
         function verdictOf(p) {
           return root.querySelector('.compare-card[data-id="' + p.id + '"] .compare-verdict');
         }
 
-        var vOrangeLow = verdictOf(orangeLow);
-        assert(vOrangeLow.classList.contains('verdict-orange'), 'a=4 (next+SLACK) should be orange');
-        assertEq(vOrangeLow.textContent, 'ADP 4 ' + TEST_MIDDOT + ' coin flip at your #' + picks.next, 'exact a=4 text');
+        var vRedHigh = verdictOf(redHigh);
+        assert(vRedHigh.classList.contains('verdict-red'), 'a=3 (next-SLACK) should be red');
+        assertEq(vRedHigh.textContent, 'ADP 3 ' + TEST_MIDDOT + ' likely gone by your #' + picks.next, 'exact a=3 text');
 
-        var vGreenLow = verdictOf(greenLow);
-        assert(vGreenLow.classList.contains('verdict-green'), 'a=5 (next+SLACK+1) should be green');
-        assertEq(vGreenLow.textContent, 'ADP 5 ' + TEST_MIDDOT + ' should reach #' + picks.next + ' ' + TEST_EMDASH + ' gone by #' + picks.following, 'exact a=5 text');
-
-        var vGreenHigh = verdictOf(greenHigh);
-        assert(vGreenHigh.classList.contains('verdict-green'), 'a=21 (following-SLACK) should be green');
-        assertEq(vGreenHigh.textContent, 'ADP 21 ' + TEST_MIDDOT + ' should reach #' + picks.next + ' ' + TEST_EMDASH + ' gone by #' + picks.following, 'exact a=21 text');
+        var vOrangeLow1 = verdictOf(orangeLow1);
+        assert(vOrangeLow1.classList.contains('verdict-orange'), 'a=4 (next-SLACK+1) should be orange');
+        assertEq(vOrangeLow1.textContent, 'ADP 4 ' + TEST_MIDDOT + ' coin flip at your #' + picks.next, 'exact a=4 text');
 
         var vOrangeHigh1 = verdictOf(orangeHigh1);
-        assert(vOrangeHigh1.classList.contains('verdict-orange'), 'a=22 (following-SLACK+1) should be orange');
-        assertEq(vOrangeHigh1.textContent, 'ADP 22 ' + TEST_MIDDOT + ' reaches #' + picks.next + ' ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact a=22 text');
+        assert(vOrangeHigh1.classList.contains('verdict-orange'), 'a=9 (next+SLACK) should be orange, same text as a=4');
+        assertEq(vOrangeHigh1.textContent, 'ADP 9 ' + TEST_MIDDOT + ' coin flip at your #' + picks.next, 'exact a=9 text');
+
+        var vGreenLow = verdictOf(greenLow);
+        assert(vGreenLow.classList.contains('verdict-green'), 'a=10 (next+SLACK+1) should be green');
+        assertEq(vGreenLow.textContent, 'ADP 10 ' + TEST_MIDDOT + ' should reach #' + picks.next + ' ' + TEST_EMDASH + ' gone by #' + picks.following, 'exact a=10 text');
+
+        var vGreenHigh = verdictOf(greenHigh);
+        assert(vGreenHigh.classList.contains('verdict-green'), 'a=16 (following-SLACK) should be green');
+        assertEq(vGreenHigh.textContent, 'ADP 16 ' + TEST_MIDDOT + ' should reach #' + picks.next + ' ' + TEST_EMDASH + ' gone by #' + picks.following, 'exact a=16 text');
+
+        var vOrangeLow2 = verdictOf(orangeLow2);
+        assert(vOrangeLow2.classList.contains('verdict-orange'), 'a=17 (following-SLACK+1) should be orange');
+        assertEq(vOrangeLow2.textContent, 'ADP 17 ' + TEST_MIDDOT + ' reaches #' + picks.next + ' ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact a=17 text');
 
         var vOrangeHigh2 = verdictOf(orangeHigh2);
-        assert(vOrangeHigh2.classList.contains('verdict-orange'), 'a=27 (following+SLACK) should be orange, same text as a=22');
-        assertEq(vOrangeHigh2.textContent, 'ADP 27 ' + TEST_MIDDOT + ' reaches #' + picks.next + ' ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact a=27 text');
+        assert(vOrangeHigh2.classList.contains('verdict-orange'), 'a=22 (following+SLACK) should be orange, same text as a=17');
+        assertEq(vOrangeHigh2.textContent, 'ADP 22 ' + TEST_MIDDOT + ' reaches #' + picks.next + ' ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact a=22 text');
 
         var vWaitLow = verdictOf(waitLow);
-        assert(vWaitLow.classList.contains('verdict-wait'), 'a=28 (following+SLACK+1) should be wait');
-        assertEq(vWaitLow.textContent, 'ADP 28 ' + TEST_MIDDOT + ' can wait ' + TEST_EMDASH + ' likely there at #' + picks.following, 'exact a=28 text');
+        assert(vWaitLow.classList.contains('verdict-wait'), 'a=23 (following+SLACK+1) should be wait');
+        assertEq(vWaitLow.textContent, 'ADP 23 ' + TEST_MIDDOT + ' can wait ' + TEST_EMDASH + ' likely there at #' + picks.following, 'exact a=23 text');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
@@ -8551,6 +8573,139 @@
         var vWaitLow = verdictOf(waitLow);
         assert(vWaitLow.classList.contains('verdict-wait'), 'a=29 (following+SLACK) should be wait');
         assertEq(vWaitLow.textContent, 'ADP 29 ' + TEST_MIDDOT + ' can wait ' + TEST_EMDASH + ' likely there at #' + picks.following, 'exact a=29 text');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('25. on-the-clock: slot-1 league, ZERO picks (next===current===1): all three bands render exact "on the clock" text', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var red = verdictFixturePlayer('v-otc-red', 21);
+        var orangeLow = verdictFixturePlayer('v-otc-orange-low', 22);
+        var orangeHigh = verdictFixturePlayer('v-otc-orange-high', 27);
+        var wait = verdictFixturePlayer('v-otc-wait', 28);
+        var players = [red, orangeLow, orangeHigh, wait];
+        var state = buildVerdictFixtureState(players, [], SLOT1_LEAGUE);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open(players.map(function (p) { return p.id; }));
+
+        var root = fixture.querySelector('#compare-root');
+        var picks = DC.state.upcomingPicks(store.getState());
+        assertEq(picks.next, picks.current, 'sanity: zero picks means next===current, the on-the-clock trigger');
+        assertEq(picks.following, 24, 'sanity: following pick at slot 1');
+
+        function verdictOf(p) {
+          return root.querySelector('.compare-card[data-id="' + p.id + '"] .compare-verdict');
+        }
+
+        var vRed = verdictOf(red);
+        assert(vRed.classList.contains('verdict-red'), 'a=21 (following-SLACK) should be red');
+        assertEq(vRed.textContent, 'ADP 21 ' + TEST_MIDDOT + ' on the clock ' + TEST_EMDASH + ' gone by #' + picks.following, 'exact on-the-clock red text');
+
+        var vOrangeLow = verdictOf(orangeLow);
+        assert(vOrangeLow.classList.contains('verdict-orange'), 'a=22 (following-SLACK+1) should be orange');
+        assertEq(vOrangeLow.textContent, 'ADP 22 ' + TEST_MIDDOT + ' on the clock ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact on-the-clock orange text (low)');
+
+        var vOrangeHigh = verdictOf(orangeHigh);
+        assert(vOrangeHigh.classList.contains('verdict-orange'), 'a=27 (following+SLACK) should be orange, same text');
+        assertEq(vOrangeHigh.textContent, 'ADP 27 ' + TEST_MIDDOT + ' on the clock ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact on-the-clock orange text (high)');
+
+        var vWait = verdictOf(wait);
+        assert(vWait.classList.contains('verdict-wait'), 'a=28 (following+SLACK+1) should be wait');
+        assertEq(vWait.textContent, 'ADP 28 ' + TEST_MIDDOT + ' on the clock ' + TEST_EMDASH + ' likely there at #' + picks.following, 'exact on-the-clock wait text');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('26. on-the-clock does NOT apply once a pick exists: slot-1 league, one pick made (next=24 != current=2) renders the pre-existing red text', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var filler = verdictFixturePlayer('v-notc-filler', 50);
+        var red = verdictFixturePlayer('v-notc-red', 21);
+        var players = [filler, red];
+        var state = buildVerdictFixtureState(players, [filler.id], SLOT1_LEAGUE);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([red.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var picks = DC.state.upcomingPicks(store.getState());
+        assert(picks.next !== picks.current, 'sanity: one pick made means next!=current, the on-the-clock branch must not fire');
+        assertEq(picks.next, 24, 'sanity: next pick after one pick made');
+
+        var verdict = root.querySelector('.compare-card[data-id="' + red.id + '"] .compare-verdict');
+        assert(verdict.classList.contains('verdict-red'), 'a=21<=next-SLACK should be the pre-existing red band');
+        assertEq(verdict.textContent, 'ADP 21 ' + TEST_MIDDOT + ' likely gone by your #' + picks.next, 'exact pre-existing red text, proving on-the-clock is conditional');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('27. drafted precedence: a drafted card never gets an on-the-clock verdict, even while the league is on the clock', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var league = { size: 12, slot: 2, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
+        var draftedP = verdictFixturePlayer('v-otc-drafted', 15);
+        var undraftedP = verdictFixturePlayer('v-otc-sibling', 23);
+        var players = [draftedP, undraftedP];
+        var state = buildVerdictFixtureState(players, [draftedP.id], league);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([draftedP.id, undraftedP.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var picks = DC.state.upcomingPicks(store.getState());
+        assertEq(picks.next, picks.current, 'sanity: slot-2 league with exactly one pick made lands on the clock');
+
+        var draftedVerdict = root.querySelector('.compare-card[data-id="' + draftedP.id + '"] .compare-verdict');
+        assert(draftedVerdict.classList.contains('verdict-none'), 'drafted card stays verdict-none even though the league is on the clock');
+        assertEq(draftedVerdict.textContent, 'drafted', 'exact drafted verdict text');
+
+        var siblingVerdict = root.querySelector('.compare-card[data-id="' + undraftedP.id + '"] .compare-verdict');
+        assert(!siblingVerdict.classList.contains('verdict-none'), 'sanity: undrafted sibling gets a real verdict');
+        assertEq(siblingVerdict.textContent, 'ADP 23 ' + TEST_MIDDOT + ' on the clock ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'sibling should get the on-the-clock verdict, proving the drafted override is conditional');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('28. no league: the market-price-now edge (a === current) renders orange, with the < and > branches unchanged alongside it', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var filler1 = verdictFixturePlayer('v-mpn-f1', 50);
+        var filler2 = verdictFixturePlayer('v-mpn-f2', 51);
+        var filler3 = verdictFixturePlayer('v-mpn-f3', 52);
+        var greenPlayer = verdictFixturePlayer('v-mpn-green', 2);
+        var nowPlayer = verdictFixturePlayer('v-mpn-now', 4);
+        var waitPlayer = verdictFixturePlayer('v-mpn-wait', 6);
+        var players = [filler1, filler2, filler3, greenPlayer, nowPlayer, waitPlayer];
+        var state = buildVerdictFixtureState(players, [filler1.id, filler2.id, filler3.id], null);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([greenPlayer.id, nowPlayer.id, waitPlayer.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var picks = DC.state.upcomingPicks(store.getState());
+        assertEq(picks.current, 4, 'sanity: three drafted fillers put current at 4');
+
+        var vGreen = root.querySelector('.compare-card[data-id="' + greenPlayer.id + '"] .compare-verdict');
+        assert(vGreen.classList.contains('verdict-green'), 'a<current stays green, unchanged');
+        assertEq(vGreen.textContent, 'ADP 2 ' + TEST_MIDDOT + ' 2 past ADP ' + TEST_EMDASH + ' value now', 'exact unchanged green text');
+
+        var vNow = root.querySelector('.compare-card[data-id="' + nowPlayer.id + '"] .compare-verdict');
+        assert(vNow.classList.contains('verdict-orange'), 'a===current is the new market-price-now edge, orange');
+        assertEq(vNow.textContent, 'ADP 4 ' + TEST_MIDDOT + ' at his market price now', 'exact market-price-now text');
+
+        var vWait = root.querySelector('.compare-card[data-id="' + waitPlayer.id + '"] .compare-verdict');
+        assert(vWait.classList.contains('verdict-wait'), 'a>current stays wait, unchanged');
+        assertEq(vWait.textContent, 'ADP 6 ' + TEST_MIDDOT + ' market price in 2 picks', 'exact unchanged wait text');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);

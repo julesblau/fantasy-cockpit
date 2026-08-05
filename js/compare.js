@@ -39,7 +39,19 @@
       if (a < picks.current) {
         return { cls: 'verdict-green', text: adpLabel + ' ' + MIDDOT + ' ' + (picks.current - a) + ' past ADP ' + EMDASH + ' value now' };
       }
+      if (a === picks.current) {
+        return { cls: 'verdict-orange', text: adpLabel + ' ' + MIDDOT + ' at his market price now' };
+      }
       return { cls: 'verdict-wait', text: adpLabel + ' ' + MIDDOT + ' market price in ' + (a - picks.current) + ' picks' };
+    }
+    if (picks.next === picks.current) {
+      if (a <= picks.following - SLACK) {
+        return { cls: 'verdict-red', text: adpLabel + ' ' + MIDDOT + ' on the clock ' + EMDASH + ' gone by #' + picks.following };
+      }
+      if (a <= picks.following + SLACK) {
+        return { cls: 'verdict-orange', text: adpLabel + ' ' + MIDDOT + ' on the clock ' + EMDASH + ' coin flip at #' + picks.following };
+      }
+      return { cls: 'verdict-wait', text: adpLabel + ' ' + MIDDOT + ' on the clock ' + EMDASH + ' likely there at #' + picks.following };
     }
     if (a <= picks.next - SLACK) {
       return { cls: 'verdict-red', text: adpLabel + ' ' + MIDDOT + ' likely gone by your #' + picks.next };
