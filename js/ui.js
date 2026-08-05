@@ -827,13 +827,14 @@
       }
       var chipsHtml = compareIds.map(function (id) {
         var p = players.filter(function (pp) { return pp.id === id; })[0];
-        return '<div class="compare-chip"><span class="chip-name">' + esc(p ? p.name : '') + '</span>' +
-          '<button class="chip-remove" data-action="compare-remove" data-id="' + esc(id) + '">✕</button></div>';
+        var name = esc(p ? p.name : '');
+        return '<div class="compare-chip"><span class="chip-name">' + name + '</span>' +
+          '<button class="chip-remove" data-action="compare-remove" data-id="' + esc(id) + '" aria-label="Remove ' + name + ' from compare">✕</button></div>';
       }).join('');
       var disabledAttr = compareIds.length < 2 ? ' disabled' : '';
       trayEl.innerHTML = chipsHtml +
-        '<button class="compare-open-btn" data-action="open-compare"' + disabledAttr + '>Compare</button>' +
-        '<button class="compare-clear-btn" data-action="compare-clear">Clear</button>';
+        '<button class="compare-open-btn" data-action="open-compare" aria-label="Compare selected players"' + disabledAttr + '>Compare</button>' +
+        '<button class="compare-clear-btn" data-action="compare-clear" aria-label="Clear compare selection">Clear</button>';
     }
 
     function toggleCompareId(id) {
@@ -1119,6 +1120,19 @@
       };
     }
 
+    function makeSearchingRemovalWithPointerCheck() { // 100ms callsite only -- re-checks pointer state before removing
+      var gen = searchingGen;
+      return function () {
+        if (gen !== searchingGen) { return; }
+        if (activePointerIds.size > 0) {
+          blurPending = true;
+          window.setTimeout(makeSearchingRemoval(), 700); // re-arm the backstop so a dropped pointerup can't strand collapsed chrome
+        } else {
+          document.body.classList.remove('searching');
+        }
+      };
+    }
+
     appEl.addEventListener('pointerdown', function (ev) {
       activePointerIds.add(ev.pointerId);
     });
@@ -1147,7 +1161,7 @@
         blurPending = true;
         window.setTimeout(makeSearchingRemoval(), 700); // backstop: rescues a dropped pointerup/cancel
       } else {
-        window.setTimeout(makeSearchingRemoval(), 100);
+        window.setTimeout(makeSearchingRemovalWithPointerCheck(), 100);
       }
     });
 

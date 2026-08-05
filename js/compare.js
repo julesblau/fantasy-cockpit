@@ -109,7 +109,7 @@
 
     return (
       '<div class="compare-card" data-id="' + esc(player.id) + '">' +
-        '<button class="compare-card-x" data-action="compare-remove-card" data-id="' + esc(player.id) + '">' + DC.ui.icon('x') + '</button>' +
+        '<button class="compare-card-x" data-action="compare-remove-card" data-id="' + esc(player.id) + '" aria-label="Remove from compare">' + DC.ui.icon('x') + '</button>' +
         '<div class="compare-card-name">' + esc(player.name) + '</div>' +
         '<div class="compare-card-meta">' + esc(player.team) + ' ' + MIDDOT + ' ' + esc(player.position) + ' ' + MIDDOT + ' BYE ' + player.byeWeek + '</div>' +
         '<div class="compare-card-ranks">#' + player.rank + ' ' + MIDDOT + ' ' + esc(player.position) + card.posRank + tierChipHTML(player.tier) + '</div>' +

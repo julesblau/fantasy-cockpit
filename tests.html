@@ -6618,6 +6618,68 @@
         fixture.remove();
       }
     });
+
+    t('a pointer landing mid-flat-timer holds the class until pointerup + rAF', function () {
+      var fixture = buildMountFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.ui.mount(store);
+        var searchInput = fixture.querySelector('.search-input');
+        var playerList = fixture.querySelector('#player-list');
+
+        searchInput.dispatchEvent(new FocusEvent('focus'));
+
+        var timers = mockTimerQueue();
+        var raf = mockRaf();
+        try {
+          searchInput.dispatchEvent(new FocusEvent('blur')); // no pointers down yet -- queues the flat 100ms removal
+          playerList.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+
+          timers.flushOne(); // fires the 100ms timer with a pointer now down
+          assert(document.body.classList.contains('searching'), 'a pointer landing before the flat timer fires must hold the class');
+
+          playerList.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1 }));
+          raf.flush();
+          assert(!document.body.classList.contains('searching'), 'lifting the pointer should still remove the class via the rAF path');
+        } finally {
+          raf.restore();
+          timers.restore();
+        }
+      } finally {
+        document.body.classList.remove('searching');
+        fixture.remove();
+      }
+    });
+
+    t('the re-armed backstop rescues a dropped pointerup after a mid-flat-timer landing', function () {
+      var fixture = buildMountFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.ui.mount(store);
+        var searchInput = fixture.querySelector('.search-input');
+        var playerList = fixture.querySelector('#player-list');
+
+        searchInput.dispatchEvent(new FocusEvent('focus'));
+
+        var timers = mockTimerQueue();
+        try {
+          searchInput.dispatchEvent(new FocusEvent('blur')); // queues the flat 100ms removal
+          playerList.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+
+          timers.flushOne(); // fires the 100ms timer -- converts to pending, must arm a fresh 700ms backstop
+          assert(document.body.classList.contains('searching'), 'converting to pending must not remove the class yet');
+          // no matching pointerup/pointercancel ever arrives
+
+          timers.flushOne(); // fires the newly-armed 700ms backstop
+          assert(!document.body.classList.contains('searching'), 'the re-armed backstop should rescue the dropped pointerup');
+        } finally {
+          timers.restore();
+        }
+      } finally {
+        document.body.classList.remove('searching');
+        fixture.remove();
+      }
+    });
   })();
   </script>
 
@@ -7273,7 +7335,10 @@
         assertEq(tray.querySelectorAll('.compare-chip').length, 1, 'expected exactly one chip');
         var openBtn = tray.querySelector('[data-action="open-compare"]');
         assert(openBtn && openBtn.disabled, 'Compare button should be disabled with only 1 selected');
-        assert(tray.querySelector('[data-action="compare-clear"]'), 'Clear button should be present');
+        assertEq(openBtn.getAttribute('aria-label'), 'Compare selected players', 'Compare button should carry an aria-label');
+        var clearBtn = tray.querySelector('[data-action="compare-clear"]');
+        assert(clearBtn, 'Clear button should be present');
+        assertEq(clearBtn.getAttribute('aria-label'), 'Clear compare selection', 'Clear button should carry an aria-label');
 
         assertEq(spy.calls.length, 0, 'a long-press toggle must not dispatch anything to the store');
       } finally {
@@ -7481,6 +7546,7 @@
         var tray = fixture.querySelector('#compare-tray');
         var removeBtn = tray.querySelector('[data-action="compare-remove"][data-id="' + firstId + '"]');
         assert(removeBtn, 'expected a remove button for the selected chip');
+        assertEq(removeBtn.getAttribute('aria-label'), 'Remove ' + DC.data.SEED_PLAYERS[0].name + ' from compare', 'chip remove button should carry a name-specific aria-label');
 
         removeBtn.click();
 
@@ -7944,8 +8010,10 @@
 
         var root = fixture.querySelector('#compare-root');
         assertEq(root.querySelectorAll('.compare-card').length, 4, 'the mutated 5th id must not appear -- open() copied the array');
+        var xBtn0 = root.querySelector('.compare-card[data-id="' + id0 + '"] .compare-card-x');
+        assertEq(xBtn0.getAttribute('aria-label'), 'Remove from compare', 'card X button should carry an aria-label');
 
-        root.querySelector('.compare-card[data-id="' + id0 + '"] .compare-card-x').click();
+        xBtn0.click();
         assertEq(root.querySelectorAll('.compare-card').length, 3, 'one card should be gone');
         assert(root.querySelector('.compare-grid').classList.contains('quad'), 'should still be quad at 3 cards');
         assertEq(root.querySelectorAll('.compare-empty-cell').length, 1, 'expected placeholder cell at 3 cards');
