@@ -616,6 +616,16 @@
     return (r - 1) * league.size + slot;
   }
 
+  // module-private: count of players marked drafted; guard covers pre-heal state
+  function draftedCount(state) {
+    var n = 0;
+    state.players.forEach(function (p) {
+      var m = state.marks[p.id];
+      if (m && m.drafted) { n++; }
+    });
+    return n;
+  }
+
   /**
    * @param {State} state
    * @returns {null|{picksMade:number, currentPick:number, round:number, pickInRound:number, myNextPick:number, picksUntilMine:number, isMyPick:boolean}}
@@ -626,13 +636,7 @@
     }
     var N = state.league.size;
 
-    var picksMade = 0;
-    state.players.forEach(function (p) {
-      var m = state.marks[p.id];
-      if (m && m.drafted) {
-        picksMade++;
-      }
-    });
+    var picksMade = draftedCount(state);
     var currentPick = picksMade + 1;
     var round = Math.floor(picksMade / N) + 1;
     var pickInRound = (picksMade % N) + 1;
@@ -698,13 +702,7 @@
    * @returns {Object<string, boolean>} league-free: available ids drifting >= VALUE_DRIFT_MIN past current pick, ranked <= VALUE_RANK_CEILING
    */
   function valueFlagIds(state) {
-    var picksMade = 0;
-    state.players.forEach(function (p) {
-      var m = state.marks[p.id];
-      if (m && m.drafted) {
-        picksMade++;
-      }
-    });
+    var picksMade = draftedCount(state);
     var currentPick = picksMade + 1;
 
     var result = {};
@@ -841,14 +839,7 @@
    */
   function upcomingPicks(state) {
     if (!state.league) {
-      var picksMade = 0;
-      state.players.forEach(function (p) {
-        var m = state.marks[p.id];
-        if (m && m.drafted) {
-          picksMade++;
-        }
-      });
-      return { current: picksMade + 1, next: null, following: null };
+      return { current: draftedCount(state) + 1, next: null, following: null };
     }
 
     var pm = pickMath(state);
