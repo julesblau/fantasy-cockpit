@@ -610,6 +610,12 @@
 
   // ---- board-signal selectors (pure; scan-only, no .sort()) ------------------------------
 
+  // module-private: overall pick number for round r under this league's slot/snake config
+  function overallPickFor(league, r) {
+    var slot = (league.snake && r % 2 === 0) ? (league.size - league.slot + 1) : league.slot;
+    return (r - 1) * league.size + slot;
+  }
+
   /**
    * @param {State} state
    * @returns {null|{picksMade:number, currentPick:number, round:number, pickInRound:number, myNextPick:number, picksUntilMine:number, isMyPick:boolean}}
@@ -619,8 +625,6 @@
       return null;
     }
     var N = state.league.size;
-    var s = state.league.slot;
-    var snake = state.league.snake;
 
     var picksMade = 0;
     state.players.forEach(function (p) {
@@ -633,19 +637,12 @@
     var round = Math.floor(picksMade / N) + 1;
     var pickInRound = (picksMade % N) + 1;
 
-    function slotInRound(r) {
-      return (snake && r % 2 === 0) ? (N - s + 1) : s;
-    }
-    function overallFor(r) {
-      return (r - 1) * N + slotInRound(r);
-    }
-
     var r = round;
-    var myNextPick = overallFor(r);
+    var myNextPick = overallPickFor(state.league, r);
     var guard = 0;
     while (myNextPick < currentPick && guard < 1000) {
       r++;
-      myNextPick = overallFor(r);
+      myNextPick = overallPickFor(state.league, r);
       guard++;
     }
     var picksUntilMine = myNextPick - currentPick;
@@ -836,6 +833,50 @@
     });
 
     return tiles;
+  }
+
+  /**
+   * @param {State} state
+   * @returns {{current:number, next:(number|null), following:(number|null)}}
+   */
+  function upcomingPicks(state) {
+    if (!state.league) {
+      var picksMade = 0;
+      state.players.forEach(function (p) {
+        var m = state.marks[p.id];
+        if (m && m.drafted) {
+          picksMade++;
+        }
+      });
+      return { current: picksMade + 1, next: null, following: null };
+    }
+
+    var pm = pickMath(state);
+    var current = pm.currentPick;
+    var next = pm.myNextPick;
+
+    var r = pm.round;
+    var guard = 0;
+    while (overallPickFor(state.league, r) <= next && guard < 1000) {
+      r++;
+      guard++;
+    }
+    var following = overallPickFor(state.league, r);
+
+    return { current: current, next: next, following: following };
+  }
+
+  /**
+   * @param {Player} player
+   * @returns {number|null}
+   */
+  function adpConsensus(player) {
+    if (!player || !player.adp) {
+      return null;
+    }
+    var adp = player.adp;
+    // equal weights until the aggregation round introduces per-source weighting
+    return Math.round((adp.espn + adp.yahoo + adp.sleeper) / 3);
   }
 
   function isValidState(obj) {
@@ -1055,6 +1096,8 @@
     rosterNeeds: rosterNeeds,
     positionRanks: positionRanks,
     fillAssignments: fillAssignments,
-    rosterBoard: rosterBoard
+    rosterBoard: rosterBoard,
+    upcomingPicks: upcomingPicks,
+    adpConsensus: adpConsensus
   };
 })();

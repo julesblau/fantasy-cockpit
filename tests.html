@@ -5407,6 +5407,66 @@
       assertEq(before.picksUntilMine, 1);
     });
 
+    t('upcomingPicks: slot 1 size 12 snake, zero picks', function () {
+      var league = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var state = makePickMathState({ league: league, draftedCount: 0 });
+      assertEq(DC.state.upcomingPicks(state), { current: 1, next: 1, following: 24 });
+    });
+
+    t('upcomingPicks: slot 1 size 12 snake, 1 drafted', function () {
+      var league = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var state = makePickMathState({ league: league, draftedCount: 1 });
+      assertEq(DC.state.upcomingPicks(state), { current: 2, next: 24, following: 25 });
+    });
+
+    t('upcomingPicks: slot 1 size 12 snake, 24 drafted', function () {
+      var league = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var state = makePickMathState({ league: league, draftedCount: 24 });
+      assertEq(DC.state.upcomingPicks(state), { current: 25, next: 25, following: 48 });
+    });
+
+    t('upcomingPicks: slot 5 size 12 snake, zero picks', function () {
+      var league = { size: 12, slot: 5, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var state = makePickMathState({ league: league, draftedCount: 0 });
+      assertEq(DC.state.upcomingPicks(state), { current: 1, next: 5, following: 20 });
+    });
+
+    t('upcomingPicks: non-snake, slot 3 size 10, zero picks', function () {
+      var league = { size: 10, slot: 3, snake: false, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var state = makePickMathState({ league: league, draftedCount: 0 });
+      assertEq(DC.state.upcomingPicks(state), { current: 1, next: 3, following: 13 });
+    });
+
+    t('upcomingPicks: league null, 3 drafted — current counts drafted marks directly, next/following null', function () {
+      var state = makePickMathState({ draftedCount: 3 });
+      assertEq(DC.state.upcomingPicks(state), { current: 4, next: null, following: null });
+    });
+
+    t('upcomingPicks: following is strictly greater than next at a slot-1 boot state', function () {
+      var league = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } };
+      var state = makePickMathState({ league: league, draftedCount: 0 });
+      var result = DC.state.upcomingPicks(state);
+      assert(result.following > result.next, 'following (' + result.following + ') must exceed next (' + result.next + ')');
+    });
+
+    t('adpConsensus: seed player — equals rounded mean of its own adp.espn/yahoo/sleeper', function () {
+      var player = DC.data.SEED_PLAYERS[0];
+      var expected = Math.round((player.adp.espn + player.adp.yahoo + player.adp.sleeper) / 3);
+      assertEq(DC.state.adpConsensus(player), expected);
+    });
+
+    t('adpConsensus: rounds mean up — {espn:1,yahoo:2,sleeper:2} (mean 1.67) -> 2', function () {
+      assertEq(DC.state.adpConsensus({ adp: { espn: 1, yahoo: 2, sleeper: 2 } }), 2);
+    });
+
+    t('adpConsensus: null when adp is null', function () {
+      assertEq(DC.state.adpConsensus({ adp: null }), null);
+    });
+
+    t('adpConsensus: null when player has no adp key', function () {
+      assertEq(DC.state.adpConsensus({}), null);
+    });
+
     function makeTierGroupPlayers() {
       return [
         { id: 'g1', rank: 1, name: 'G One', team: 'KC', position: 'RB', byeWeek: 9, tier: 1 },
