@@ -7766,9 +7766,7 @@
     var TEST_MIDDOT = '·';
     var TEST_EMDASH = '—';
 
-    // size:12/slot:1/snake:true is the established "slot-1 league" fixture used elsewhere in
-    // this suite (see the compare-select section) -- pre-draft it yields next=1/following=24;
-    // after one pick it yields next=24/following=25 (back-to-back), per the task-2 spec.
+    // slot-1 league: next=1/following=24 pre-draft, 24/25 (back-to-back) after one pick
     var SLOT1_LEAGUE = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
 
     // hand-rolled fixture player: all 3 adp sites equal `a`, so adpConsensus derives to exactly `a`
@@ -8155,7 +8153,7 @@
       }
     });
 
-    t('15. slot-1 league, pre-draft: all four reachable bands render exact verdict class + text (red is unreachable pre-draft, per spec)', function () {
+    t('15. slot-1 league, pre-draft: all four reachable bands render exact verdict class + text (red is unreachable pre-draft)', function () {
       var fixture = buildCompareFixture();
       try {
         var orange1 = verdictFixturePlayer('v-pd-orange1', 3);
@@ -8192,7 +8190,7 @@
       }
     });
 
-    t('16. slot-1 league, after ONE drafted pick: red and orange bands render exact verdict class + text (green is unreachable here, per spec)', function () {
+    t('16. slot-1 league, after ONE drafted pick: red and orange bands render exact verdict class + text (green is unreachable here)', function () {
       var fixture = buildCompareFixture();
       try {
         var filler = verdictFixturePlayer('v-ap-filler', 50);
