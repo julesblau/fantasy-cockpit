@@ -225,7 +225,7 @@
       assertEq(s.schemaVersion, 5);
       s.players.forEach(function (p, i) {
         var seed = DC.data.SEED_PLAYERS[i];
-        assertEq(p, { id: seed.id, rank: seed.rank, name: seed.name, team: seed.team, position: seed.position, byeWeek: seed.byeWeek, tier: seed.tier, adp: null }, 'seed player ' + i);
+        assertEq(p, { id: seed.id, rank: seed.rank, name: seed.name, team: seed.team, position: seed.position, byeWeek: seed.byeWeek, tier: seed.tier, adp: seed.adp }, 'seed player ' + i);
       });
       assertEq(s.undoStack, []);
       assertEq(s.filters, { position: 'ALL', status: 'AVAILABLE' });
@@ -269,6 +269,33 @@
 
     t('seed tier banding: no singleton (position,tier) groups at boot — no CLIFF tag fires', function () {
       assertEq(DC.state.lastInTierIds(DC.state.createSeedState()), {});
+    });
+
+    // ---- Round 8 Task 2: deterministic fake ADP seeding ----
+
+    t('seed ADP: every player has an adp object with espn/yahoo/sleeper all numbers >= 1, in canonical key order', function () {
+      DC.data.SEED_PLAYERS.forEach(function (p) {
+        assert(p.adp && typeof p.adp === 'object', 'adp should be an object for ' + p.id);
+        assert(typeof p.adp.espn === 'number' && p.adp.espn >= 1, 'espn adp for ' + p.id);
+        assert(typeof p.adp.yahoo === 'number' && p.adp.yahoo >= 1, 'yahoo adp for ' + p.id);
+        assert(typeof p.adp.sleeper === 'number' && p.adp.sleeper >= 1, 'sleeper adp for ' + p.id);
+        assert(JSON.stringify(p.adp).indexOf('{"espn":') === 0, 'canonical key order (espn first) for ' + p.id);
+      });
+    });
+
+    t('seed ADP: determinism pin — exact hand-computed values for players 1 and 100 (any future jitter change must edit this test deliberately)', function () {
+      var p1 = DC.data.SEED_PLAYERS[0];
+      assertEq(p1.id, 'ja-marr-chase-cin', 'precondition: player 1 is Ja\'Marr Chase');
+      assertEq(p1.adp, { espn: 4, yahoo: 10, sleeper: 1 }, 'player 1 exact fakeAdp values');
+
+      var p100 = DC.data.SEED_PLAYERS[99];
+      assertEq(p100.id, 'keon-coleman-buf', 'precondition: player 100 is Keon Coleman');
+      assertEq(p100.adp, { espn: 97, yahoo: 103, sleeper: 111 }, 'player 100 exact fakeAdp values');
+    });
+
+    t('seed ADP: site variance sanity — at least one player has espn !== sleeper (jitter actually varies by site)', function () {
+      var varies = DC.data.SEED_PLAYERS.some(function (p) { return p.adp.espn !== p.adp.sleeper; });
+      assert(varies, 'expected at least one seed player with differing espn/sleeper adp');
     });
 
     t('reduce is pure: DRAFT_PLAYER does not mutate the original state', function () {

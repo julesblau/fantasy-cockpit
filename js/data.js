@@ -325,20 +325,27 @@
     return 7;
   }
 
+  function hashOf(s) { var h = 0; for (var i = 0; i < s.length; i++) { h += s.charCodeAt(i); } return h; }
+  // placeholder ADP until real multi-source data lands; sites are renameable labels downstream
+  function fakeAdp(id, site, rank) { return Math.max(1, rank + (hashOf(id + site) % 25) - 12); }
+
   var positionCounters = {};
   var SEED_PLAYERS = RAW_PLAYERS.map(function (row, index) {
     var name = row[0];
     var team = row[1];
     var position = row[2];
+    var id = slug(name, team);
+    var rank = index + 1;
     positionCounters[position] = (positionCounters[position] || 0) + 1;
     return {
-      id: slug(name, team),
-      rank: index + 1,
+      id: id,
+      rank: rank,
       name: name,
       team: team,
       position: position,
       byeWeek: TEAM_BYE_WEEKS[team],
-      tier: tierFor(position, positionCounters[position])
+      tier: tierFor(position, positionCounters[position]),
+      adp: { espn: fakeAdp(id, 'espn', rank), yahoo: fakeAdp(id, 'yahoo', rank), sleeper: fakeAdp(id, 'sleeper', rank) }
     };
   });
 
