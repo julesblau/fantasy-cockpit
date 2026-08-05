@@ -22,7 +22,7 @@
    * }} State
    */
 
-  var CURRENT_SCHEMA_VERSION = 4;
+  var CURRENT_SCHEMA_VERSION = 5;
   var STORAGE_KEY = 'draft-cockpit/state';
   var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true, DST: true, K: true };
   var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true };
@@ -55,10 +55,16 @@
              filters: v3.filters, searchText: v3.searchText, manuallyEdited: v3.manuallyEdited, league: null };
   };
 
+  // pure pass-through: stamps schemaVersion itself, iterates nothing (adp healing is normalize's job)
+  migrations[4] = function (v4) {
+    return { schemaVersion: 5, players: v4.players, marks: v4.marks, undoStack: v4.undoStack,
+             filters: v4.filters, searchText: v4.searchText, manuallyEdited: v4.manuallyEdited, league: v4.league };
+  };
+
   /** @returns {State} */
   function createSeedState() {
     var players = DC.data.SEED_PLAYERS.map(function (p) {
-      return { id: p.id, rank: p.rank, name: p.name, team: p.team, position: p.position, byeWeek: p.byeWeek, tier: typeof p.tier === 'number' ? p.tier : null };
+      return { id: p.id, rank: p.rank, name: p.name, team: p.team, position: p.position, byeWeek: p.byeWeek, tier: typeof p.tier === 'number' ? p.tier : null, adp: p.adp === undefined ? null : p.adp };
     });
     var marks = {};
     players.forEach(function (p) {
@@ -144,7 +150,7 @@
         return p;
       }
       changed = true;
-      return { id: p.id, rank: p.rank, name: p.name, team: p.team, position: p.position, byeWeek: p.byeWeek, tier: newTier };
+      return { id: p.id, rank: p.rank, name: p.name, team: p.team, position: p.position, byeWeek: p.byeWeek, tier: newTier, adp: p.adp };
     });
     return changed ? result : players;
   }
@@ -194,6 +200,22 @@
     return t;
   }
 
+  /** @param {*} n @returns {boolean} real ADP is decimal, so floats are allowed (unlike tier) */
+  function isAdpNum(n) {
+    return typeof n === 'number' && isFinite(n) && n >= 1;
+  }
+
+  /** @param {*} v @returns {{espn:number, yahoo:number, sleeper:number}|null} rebuilt in canonical key order */
+  function healAdp(v) {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) {
+      return null;
+    }
+    if (!isAdpNum(v.espn) || !isAdpNum(v.yahoo) || !isAdpNum(v.sleeper)) {
+      return null;
+    }
+    return { espn: v.espn, yahoo: v.yahoo, sleeper: v.sleeper };
+  }
+
   /** @param {number|null|undefined} tier @returns {string|null} CSS class for tiers 1-6, 'tier-cx' for >=7, null otherwise */
   function tierColorClass(tier) {
     if (tier === null || tier === undefined) {
@@ -210,7 +232,7 @@
     return players.map(function (p) {
       return {
         id: p.id, rank: p.rank, name: p.name, team: p.team,
-        position: p.position, byeWeek: p.byeWeek, tier: healTier(p.tier)
+        position: p.position, byeWeek: p.byeWeek, tier: healTier(p.tier), adp: healAdp(p.adp)
       };
     });
   }

@@ -222,10 +222,10 @@
 
     t('createSeedState: correct shape from DC.data.SEED_PLAYERS', function () {
       var s = DC.state.createSeedState();
-      assertEq(s.schemaVersion, 4);
+      assertEq(s.schemaVersion, 5);
       s.players.forEach(function (p, i) {
         var seed = DC.data.SEED_PLAYERS[i];
-        assertEq(p, { id: seed.id, rank: seed.rank, name: seed.name, team: seed.team, position: seed.position, byeWeek: seed.byeWeek, tier: seed.tier }, 'seed player ' + i);
+        assertEq(p, { id: seed.id, rank: seed.rank, name: seed.name, team: seed.team, position: seed.position, byeWeek: seed.byeWeek, tier: seed.tier, adp: null }, 'seed player ' + i);
       });
       assertEq(s.undoStack, []);
       assertEq(s.filters, { position: 'ALL', status: 'AVAILABLE' });
@@ -769,7 +769,7 @@
 
     t('STORAGE_KEY and CURRENT_SCHEMA_VERSION constants', function () {
       assertEq(DC.state.STORAGE_KEY, 'draft-cockpit/state');
-      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 4);
+      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 5);
     });
 
     t('load(): missing key falls back to a fresh seed state', function () {
@@ -998,9 +998,9 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 4);
+      assertEq(loaded.schemaVersion, 5);
       assertEq(loaded.manuallyEdited, false);
-      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null }); }), 'players preserved, tier healed null onto each');
+      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null, adp: null }); }), 'players preserved, tier and adp healed null onto each');
       assertEq(loaded.marks, {
         x1: { drafted: false, target: true, avoid: false, mine: false },
         x2: { drafted: true, target: false, avoid: false, mine: false }
@@ -1136,11 +1136,98 @@
       // state, then rely on load()'s migrate/heal pipeline on the next boot.
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(v1Payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 4, 'migrated to current schema version');
+      assertEq(loaded.schemaVersion, 5, 'migrated to current schema version');
       assertEq(loaded.manuallyEdited, false, 'v1 payload had no flag; migration defaults it to false');
       assertEq(loaded.players, v1Payload.players, 'players preserved exactly');
       assertEq(loaded.marks, v1Payload.marks, 'marks preserved exactly');
       assertEq(loaded.undoStack, v1Payload.undoStack, 'undoStack preserved exactly');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    // ---- Round 8 Task 2: schema v5 — adp field healing ----
+
+    t('load(): healAdp matrix — valid object heals with canonical key order regardless of input order; array/string/partial/NaN-member/zero/negative/missing all heal to null', function () {
+      function loadWithAdp(adp) {
+        var payload = {
+          schemaVersion: 5,
+          players: [{ id: 'ad1', rank: 1, name: 'AD One', team: 'KC', position: 'QB', byeWeek: 9, tier: null, adp: adp }],
+          marks: { ad1: { drafted: false, target: false, avoid: false, mine: false } },
+          undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null
+        };
+        localStorage.setItem(DC.state.STORAGE_KEY, '"placeholder"');
+        var origParse = JSON.parse;
+        JSON.parse = function () { return payload; };
+        try {
+          return DC.state.load();
+        } finally {
+          JSON.parse = origParse;
+          localStorage.removeItem(DC.state.STORAGE_KEY);
+        }
+      }
+
+      var healedValid = loadWithAdp({ sleeper: 3, espn: 1, yahoo: 2 });
+      assertEq(healedValid.players[0].adp, { espn: 1, yahoo: 2, sleeper: 3 }, 'valid adp heals with canonical key order regardless of input order');
+
+      var invalidCases = [
+        [1, 2, 3],
+        'not an object',
+        { espn: 1, yahoo: 2 },
+        { espn: NaN, yahoo: 2, sleeper: 3 },
+        { espn: 0, yahoo: 2, sleeper: 3 },
+        { espn: -1, yahoo: 2, sleeper: 3 },
+        undefined
+      ];
+      invalidCases.forEach(function (bad, i) {
+        var loaded = loadWithAdp(bad);
+        assertEq(loaded.players[0].adp, null, 'invalid adp case ' + i + ' should heal to null');
+      });
+    });
+
+    t('load(): migrations[4] is a pure pass-through — a v4 payload migrates to schemaVersion 5 with players content preserved and adp healed null on', function () {
+      var payload = {
+        schemaVersion: 4,
+        players: [
+          { id: 'mg1', rank: 1, name: 'MG One', team: 'KC', position: 'QB', byeWeek: 9, tier: 2 },
+          { id: 'mg2', rank: 2, name: 'MG Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: null }
+        ],
+        marks: {
+          mg1: { drafted: false, target: false, avoid: false, mine: false },
+          mg2: { drafted: true, target: false, avoid: false, mine: true }
+        },
+        undoStack: [{ playerId: 'mg2', timestamp: 11 }],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false,
+        league: null
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.schemaVersion, 5);
+      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { adp: null }); }), 'players preserved, adp healed null onto each');
+      assertEq(loaded.marks, payload.marks);
+      assertEq(loaded.undoStack, payload.undoStack);
+      assertEq(loaded.league, null);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): non-monotone tiers AND a valid adp on the clamped player — heal and tier-clamp compose; adp survives the clamp', function () {
+      var payload = {
+        schemaVersion: 5,
+        players: [
+          { id: 'cp1', rank: 1, name: 'CP One', team: 'KC', position: 'RB', byeWeek: 9, tier: 3, adp: { espn: 5, yahoo: 6, sleeper: 4 } },
+          { id: 'cp2', rank: 2, name: 'CP Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1, adp: { espn: 40, yahoo: 38, sleeper: 42 } }
+        ],
+        marks: {
+          cp1: { drafted: false, target: false, avoid: false, mine: false },
+          cp2: { drafted: false, target: false, avoid: false, mine: false }
+        },
+        undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      var cp2 = loaded.players.filter(function (p) { return p.id === 'cp2'; })[0];
+      assertEq(cp2.tier, 3, 'cp2 (RB) clamped up to running max 3 from same-position cp1');
+      assertEq(cp2.adp, { espn: 40, yahoo: 38, sleeper: 42 }, 'adp survives the heal + tier-clamp compose untouched');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
   })();
@@ -1378,8 +1465,8 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 4);
-      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null }); }));
+      assertEq(loaded.schemaVersion, 5);
+      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null, adp: null }); }));
       assertEq(loaded.marks, {
         y1: { drafted: false, target: true, avoid: false, mine: false },
         y2: { drafted: true, target: false, avoid: false, mine: false }
@@ -1406,8 +1493,8 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 4);
-      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null }); }));
+      assertEq(loaded.schemaVersion, 5);
+      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null, adp: null }); }));
       assertEq(loaded.marks, {
         y1: { drafted: true, target: false, avoid: false, mine: false },
         y2: { drafted: false, target: false, avoid: false, mine: false }
@@ -1486,7 +1573,7 @@
       var loaded = DC.state.load();
 
       var storedAfter = JSON.parse(localStorage.getItem(DC.state.STORAGE_KEY));
-      assertEq(storedAfter.schemaVersion, 4, 'storage holds the migrated v4 shape immediately, before any dispatch');
+      assertEq(storedAfter.schemaVersion, 5, 'storage holds the migrated v5 shape immediately, before any dispatch');
       assertEq(storedAfter, loaded, 'the exact returned state is what got persisted');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
@@ -1508,7 +1595,7 @@
       var loaded = DC.state.load();
 
       var storedAfter = JSON.parse(localStorage.getItem(DC.state.STORAGE_KEY));
-      assertEq(storedAfter.schemaVersion, 4, 'storage holds the migrated v4 shape immediately, before any dispatch');
+      assertEq(storedAfter.schemaVersion, 5, 'storage holds the migrated v5 shape immediately, before any dispatch');
       assertEq(storedAfter, loaded, 'the exact returned state is what got persisted');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
@@ -1771,7 +1858,8 @@
         team: 'SF',
         position: 'RB',
         byeWeek: DC.data.TEAM_BYE_WEEKS.SF,
-        tier: null
+        tier: null,
+        adp: null
       });
       assertEq(result.players[4].team, 'BUF');
       assertEq(result.players[4].position, 'QB');
@@ -2060,7 +2148,7 @@
       });
     });
 
-    t('parseRankings: emitted player has canonical key order id, rank, name, team, position, byeWeek, tier', function () {
+    t('parseRankings: emitted player has canonical key order id, rank, name, team, position, byeWeek, tier, adp', function () {
       var header = 'RK,TIER,PLAYER,TEAM,POS,BYE';
       var rows = [
         '1,2,Christian McCaffrey,SF,RB,13',
@@ -2079,7 +2167,8 @@
         team: 'SF',
         position: 'RB',
         byeWeek: 13,
-        tier: 2
+        tier: 2,
+        adp: null
       }, 'stringify-equality guards exact key order');
     });
 
@@ -4970,6 +5059,38 @@
       assertEq(next.league, league, 'league is untouched by a rankings import');
     });
 
+    t('REORDER_PLAYERS: a tier clamp that rebuilds a player carries its adp object through untouched (CARRY, not heal)', function () {
+      var players = [
+        { id: 'a', rank: 1, name: 'Aaron Ace', team: 'KC', position: 'QB', byeWeek: 9, tier: 1, adp: { espn: 1, yahoo: 1, sleeper: 1 } },
+        { id: 'b', rank: 2, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7, tier: 2, adp: { espn: 12, yahoo: 14, sleeper: 10 } },
+        { id: 'e', rank: 3, name: 'Erik End', team: 'SEA', position: 'RB', byeWeek: 13, tier: 1, adp: { espn: 30, yahoo: 28, sleeper: 33 } }
+      ];
+      var marks = {};
+      players.forEach(function (p) { marks[p.id] = { drafted: false, target: false, avoid: false, mine: false }; });
+      var state = {
+        schemaVersion: 5, players: players, marks: marks, undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null
+      };
+      var next = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['a', 'b', 'e'] });
+      var e = next.players.filter(function (p) { return p.id === 'e'; })[0];
+      assertEq(e.tier, 2, 'precondition: e (RB) got clamped up to running max 2 from same-position b');
+      assertEq(e.adp, { espn: 30, yahoo: 28, sleeper: 33 }, 'adp survives the tier-clamp rebuild untouched');
+    });
+
+    t('IMPORT_PLAYERS: non-monotone tiers force a clamp rebuild — every result player keeps the adp KEY (not merely a falsy value) through the rebuild', function () {
+      var state = makeBaseState();
+      var newPlayers = [
+        { id: 'b', rank: 1, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7, tier: 2, adp: null },
+        { id: 'c', rank: 2, name: 'Cody Catch', team: 'MIA', position: 'WR', byeWeek: 10, tier: 1, adp: null },
+        { id: 'z', rank: 3, name: 'Zeke New', team: 'NYG', position: 'RB', byeWeek: 12, tier: 1, adp: null }
+      ];
+      var next = DC.state.reduce(state, { type: 'IMPORT_PLAYERS', players: newPlayers });
+      next.players.forEach(function (p) {
+        assertEq('adp' in p, true, 'adp key must be present on ' + p.id + ' — a bare p.adp==null check cannot tell dropped-key from null');
+        assertEq(p.adp, null, 'adp value for ' + p.id);
+      });
+    });
+
     t('SET_LEAGUE: valid/invalid/null table — reducer accepts only exact-int, in-bounds leagues; rejects (same ref) anything else, including values healing would coerce', function () {
       var state = makeBaseState();
 
@@ -5425,8 +5546,8 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 4);
-      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null }); }));
+      assertEq(loaded.schemaVersion, 5);
+      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null, adp: null }); }));
       assertEq(loaded.marks, payload.marks);
       assertEq(loaded.undoStack, payload.undoStack);
       assertEq(loaded.filters, payload.filters);
@@ -5578,7 +5699,7 @@
 
     t('load(): double-load idempotence — calling load() twice with no dispatch between produces identical results (the reset heal is not force-persisted)', function () {
       var payload = {
-        schemaVersion: 4,
+        schemaVersion: 5,
         players: [{ id: 'dl1', rank: 1, name: 'DL One', team: 'KC', position: 'QB', byeWeek: 9, tier: null }],
         marks: { dl1: { drafted: false, target: false, avoid: false, mine: false } },
         undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false,

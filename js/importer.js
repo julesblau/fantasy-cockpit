@@ -287,7 +287,8 @@
       position: position,
       byeWeek: byeWeek,
       // as parsed from the file, un-normalized — IMPORT_PLAYERS reducer owns tier monotonicity, not this parser
-      tier: tier
+      tier: tier,
+      adp: null // imports have no ADP source yet
     });
   }
 
