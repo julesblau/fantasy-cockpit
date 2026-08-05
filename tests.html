@@ -7762,6 +7762,38 @@
       };
     }
 
+    // verdict-text assembly must match compare.js's own MIDDOT/EMDASH constants exactly
+    var TEST_MIDDOT = '·';
+    var TEST_EMDASH = '—';
+
+    // size:12/slot:1/snake:true is the established "slot-1 league" fixture used elsewhere in
+    // this suite (see the compare-select section) -- pre-draft it yields next=1/following=24;
+    // after one pick it yields next=24/following=25 (back-to-back), per the task-2 spec.
+    var SLOT1_LEAGUE = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
+
+    // hand-rolled fixture player: all 3 adp sites equal `a`, so adpConsensus derives to exactly `a`
+    function verdictFixturePlayer(id, a) {
+      return { id: id, rank: 1, name: id, team: 'AAA', position: 'RB', byeWeek: 5, tier: null, adp: (a === null ? null : { espn: a, yahoo: a, sleeper: a }) };
+    }
+
+    function buildVerdictFixtureState(players, draftedIds, league) {
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: draftedIds.indexOf(p.id) !== -1, target: false, avoid: false, mine: false };
+      });
+      var undoStack = draftedIds.map(function (id) { return { playerId: id, timestamp: Date.now() }; });
+      return {
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+        players: players,
+        marks: marks,
+        undoStack: undoStack,
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false,
+        league: league || null
+      };
+    }
+
     t('1. open() with 2 ids -> #compare-root unhidden, .compare-grid.cols-2 with exactly 2 .compare-card in id order, no placeholder', function () {
       var fixture = buildCompareFixture();
       try {
@@ -8075,6 +8107,179 @@
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
       }
+    });
+
+    t('13. no league: a seed player (a >= current) renders verdict-wait with exact market-price text', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var seedPlayer = DC.data.SEED_PLAYERS[0];
+        DC.compare.open([seedPlayer.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var picks = DC.state.upcomingPicks(store.getState());
+        var a = DC.state.adpConsensus(seedPlayer);
+        var verdict = root.querySelector('.compare-card[data-id="' + seedPlayer.id + '"] .compare-verdict');
+        assert(verdict.classList.contains('verdict-wait'), 'no-league, a>=current should be wait');
+        assertEq(verdict.textContent, 'ADP ' + a + ' ' + TEST_MIDDOT + ' market price in ' + (a - picks.current) + ' picks', 'exact wait text');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('14. no league: a player whose consensus is below current pick renders verdict-green with exact past-ADP text', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var filler1 = verdictFixturePlayer('v-lg-f1', 50);
+        var filler2 = verdictFixturePlayer('v-lg-f2', 51);
+        var filler3 = verdictFixturePlayer('v-lg-f3', 52);
+        var greenPlayer = verdictFixturePlayer('v-lg-green', 2);
+        var players = [filler1, filler2, filler3, greenPlayer];
+        var state = buildVerdictFixtureState(players, [filler1.id, filler2.id, filler3.id], null);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([greenPlayer.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var picks = DC.state.upcomingPicks(store.getState());
+        var a = DC.state.adpConsensus(greenPlayer);
+        assert(a < picks.current, 'sanity: fixture must land in the green branch (a < current)');
+        var verdict = root.querySelector('.compare-card[data-id="' + greenPlayer.id + '"] .compare-verdict');
+        assert(verdict.classList.contains('verdict-green'), 'no-league, a<current should be green');
+        assertEq(verdict.textContent, 'ADP ' + a + ' ' + TEST_MIDDOT + ' ' + (picks.current - a) + ' past ADP ' + TEST_EMDASH + ' value now', 'exact green text');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('15. slot-1 league, pre-draft: all four reachable bands render exact verdict class + text (red is unreachable pre-draft, per spec)', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var orange1 = verdictFixturePlayer('v-pd-orange1', 3);
+        var green = verdictFixturePlayer('v-pd-green', 15);
+        var orange2 = verdictFixturePlayer('v-pd-orange2', 25);
+        var wait = verdictFixturePlayer('v-pd-wait', 30);
+        var players = [orange1, green, orange2, wait];
+        var state = buildVerdictFixtureState(players, [], SLOT1_LEAGUE);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open(players.map(function (p) { return p.id; }));
+
+        var root = fixture.querySelector('#compare-root');
+        var picks = DC.state.upcomingPicks(store.getState());
+
+        var vOrange1 = root.querySelector('.compare-card[data-id="' + orange1.id + '"] .compare-verdict');
+        assert(vOrange1.classList.contains('verdict-orange'), 'a<=next+SLACK should be orange');
+        assertEq(vOrange1.textContent, 'ADP ' + DC.state.adpConsensus(orange1) + ' ' + TEST_MIDDOT + ' coin flip at your #' + picks.next, 'exact orange1 (a<=4) text');
+
+        var vGreen = root.querySelector('.compare-card[data-id="' + green.id + '"] .compare-verdict');
+        assert(vGreen.classList.contains('verdict-green'), 'a in 5..21 should be green');
+        assertEq(vGreen.textContent, 'ADP ' + DC.state.adpConsensus(green) + ' ' + TEST_MIDDOT + ' should reach #' + picks.next + ' ' + TEST_EMDASH + ' gone by #' + picks.following, 'exact green (5-21) text');
+
+        var vOrange2 = root.querySelector('.compare-card[data-id="' + orange2.id + '"] .compare-verdict');
+        assert(vOrange2.classList.contains('verdict-orange'), 'a in 22..27 should be orange');
+        assertEq(vOrange2.textContent, 'ADP ' + DC.state.adpConsensus(orange2) + ' ' + TEST_MIDDOT + ' reaches #' + picks.next + ' ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact orange2 (22-27) text');
+
+        var vWait = root.querySelector('.compare-card[data-id="' + wait.id + '"] .compare-verdict');
+        assert(vWait.classList.contains('verdict-wait'), 'a>=28 should be wait');
+        assertEq(vWait.textContent, 'ADP ' + DC.state.adpConsensus(wait) + ' ' + TEST_MIDDOT + ' can wait ' + TEST_EMDASH + ' likely there at #' + picks.following, 'exact wait (>=28) text');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('16. slot-1 league, after ONE drafted pick: red and orange bands render exact verdict class + text (green is unreachable here, per spec)', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var filler = verdictFixturePlayer('v-ap-filler', 50);
+        var red = verdictFixturePlayer('v-ap-red', 10);
+        var orange = verdictFixturePlayer('v-ap-orange', 25);
+        var players = [filler, red, orange];
+        var state = buildVerdictFixtureState(players, [filler.id], SLOT1_LEAGUE);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([red.id, orange.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var picks = DC.state.upcomingPicks(store.getState());
+
+        var vRed = root.querySelector('.compare-card[data-id="' + red.id + '"] .compare-verdict');
+        assert(vRed.classList.contains('verdict-red'), 'a<=next-SLACK should be red');
+        assertEq(vRed.textContent, 'ADP ' + DC.state.adpConsensus(red) + ' ' + TEST_MIDDOT + ' likely gone by your #' + picks.next, 'exact red text');
+
+        var vOrange = root.querySelector('.compare-card[data-id="' + orange.id + '"] .compare-verdict');
+        assert(vOrange.classList.contains('verdict-orange'), 'a in next+/-SLACK band should be orange');
+        assertEq(vOrange.textContent, 'ADP ' + DC.state.adpConsensus(orange) + ' ' + TEST_MIDDOT + ' coin flip at your #' + picks.next, 'exact orange text');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('17. adp null: verdict-none renders with exact "no ADP data" text', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var player = verdictFixturePlayer('v-noadp', null);
+        var state = buildVerdictFixtureState([player], [], null);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([player.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var verdict = root.querySelector('.compare-card[data-id="' + player.id + '"] .compare-verdict');
+        assert(verdict.classList.contains('verdict-none'), 'null adp should render verdict-none');
+        assertEq(verdict.textContent, 'no ADP data', 'exact none text');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('18. live transition: slot-1 league, pre-draft green card flips to red after a DIFFERENT player is drafted, without reopening the overlay', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        store.dispatch({ type: 'SET_LEAGUE', league: SLOT1_LEAGUE });
+
+        var target = null;
+        DC.data.SEED_PLAYERS.some(function (p) {
+          var c = DC.state.adpConsensus(p);
+          if (c !== null && c >= 5 && c <= 21) {
+            target = p;
+            return true;
+          }
+          return false;
+        });
+        assert(target, 'expected at least one seed player with consensus in [5,21] for the pre-draft green band');
+        var other = DC.data.SEED_PLAYERS.filter(function (p) { return p.id !== target.id; })[0];
+
+        DC.compare.open([target.id]);
+        var root = fixture.querySelector('#compare-root');
+        var cardBefore = root.querySelector('.compare-card[data-id="' + target.id + '"] .compare-verdict');
+        assert(cardBefore.classList.contains('verdict-green'), 'pre-draft, a in 5..21 should start green');
+
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: other.id, mine: false });
+
+        var cardAfter = root.querySelector('.compare-card[data-id="' + target.id + '"] .compare-verdict');
+        assert(cardAfter.classList.contains('verdict-red'), 'after one other pick, next=24 should push a<=21 into red');
+        assert(!cardAfter.classList.contains('verdict-green'), 'must no longer be green');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('19. shape pin: buildCards is exported on templates and its card/verdict key order is exact', function () {
+      var seed = DC.state.createSeedState();
+      var id = seed.players[0].id;
+      var card = DC.compare.templates.buildCards(seed, [id])[0];
+      assertEq(JSON.stringify(Object.keys(card)), JSON.stringify(['player', 'posRank', 'pickNumber', 'marks', 'verdict']), 'card key order');
+      assertEq(JSON.stringify(Object.keys(card.verdict)), JSON.stringify(['cls', 'text']), 'verdict key order');
     });
   })();
   </script>

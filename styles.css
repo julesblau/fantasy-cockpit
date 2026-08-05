@@ -980,6 +980,11 @@ button.player-rank {
 .adp-row { display: flex; justify-content: space-between; font-size: 13px; line-height: 20px; }
 .adp-site { color: var(--text-3); }
 .adp-val { font-variant-numeric: tabular-nums; }
+.compare-verdict { margin-top: 6px; font-size: 12px; font-weight: 700; line-height: 16px; }
+.verdict-red { color: var(--accent-avoid); }
+.verdict-orange { color: var(--accent-undo); }
+.verdict-green { color: var(--accent-draft); }
+.verdict-wait, .verdict-none { color: var(--text-3); }
 .compare-card-status { margin-top: 8px; display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--text-2); }
 .compare-empty-cell { border: 1px dashed var(--hairline); border-radius: var(--radius-card); display: flex; align-items: center; justify-content: center; text-align: center; color: var(--text-3); font-size: 13px; padding: 12px; }
 

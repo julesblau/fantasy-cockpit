@@ -4,6 +4,7 @@
 
   var MIDDOT = '·';
   var EMDASH = '—';
+  var SLACK = 3; // picks of cushion on either side of a bucket boundary
 
   function esc(s) {
     return String(s === null || s === undefined ? '' : s)
@@ -25,14 +26,46 @@
   }
 
   /**
+   * @param {number|null} a consensus ADP, or null when the player has no ADP data
+   * @param {{current:number, next:(number|null), following:(number|null)}} picks
+   * @returns {{cls:string, text:string}}
+   */
+  function verdictFor(a, picks) {
+    if (a === null) {
+      return { cls: 'verdict-none', text: 'no ADP data' };
+    }
+    var adpLabel = 'ADP ' + a;
+    if (picks.next === null) {
+      if (a < picks.current) {
+        return { cls: 'verdict-green', text: adpLabel + ' ' + MIDDOT + ' ' + (picks.current - a) + ' past ADP ' + EMDASH + ' value now' };
+      }
+      return { cls: 'verdict-wait', text: adpLabel + ' ' + MIDDOT + ' market price in ' + (a - picks.current) + ' picks' };
+    }
+    if (a <= picks.next - SLACK) {
+      return { cls: 'verdict-red', text: adpLabel + ' ' + MIDDOT + ' likely gone by your #' + picks.next };
+    }
+    if (a <= picks.next + SLACK) {
+      return { cls: 'verdict-orange', text: adpLabel + ' ' + MIDDOT + ' coin flip at your #' + picks.next };
+    }
+    if (a <= picks.following - SLACK) {
+      return { cls: 'verdict-green', text: adpLabel + ' ' + MIDDOT + ' should reach #' + picks.next + ' ' + EMDASH + ' gone by #' + picks.following };
+    }
+    if (a <= picks.following + SLACK) {
+      return { cls: 'verdict-orange', text: adpLabel + ' ' + MIDDOT + ' reaches #' + picks.next + ' ' + EMDASH + ' coin flip at #' + picks.following };
+    }
+    return { cls: 'verdict-wait', text: adpLabel + ' ' + MIDDOT + ' can wait ' + EMDASH + ' likely there at #' + picks.following };
+  }
+
+  /**
    * @param {Object} state
    * @param {string[]} ids in caller order; ids missing from state.players are skipped (stale after import)
-   * @returns {Array<{player:Object, posRank:number, pickNumber:(number|null), marks:Object}>}
+   * @returns {Array<{player:Object, posRank:number, pickNumber:(number|null), marks:Object, verdict:{cls:string, text:string}}>}
    */
   function buildCards(state, ids) {
     var byId = {};
     state.players.forEach(function (p) { byId[p.id] = p; });
     var posRanks = DC.state.positionRanks(state);
+    var picks = DC.state.upcomingPicks(state);
     var cards = [];
     ids.forEach(function (id) {
       var player = byId[id];
@@ -44,7 +77,8 @@
         player: player,
         posRank: posRanks[id],
         pickNumber: marks && marks.drafted ? DC.state.pickNumber(state, id) : null,
-        marks: marks
+        marks: marks,
+        verdict: verdictFor(DC.state.adpConsensus(player), picks)
       });
     });
     return cards;
@@ -84,6 +118,7 @@
           adpRowHTML('Yahoo', yahooVal) +
           adpRowHTML('Sleeper', sleeperVal) +
         '</div>' +
+        '<div class="compare-verdict ' + card.verdict.cls + '">' + esc(card.verdict.text) + '</div>' +
         '<div class="compare-card-status">' + statusHTML + '</div>' +
       '</div>'
     );
@@ -167,5 +202,5 @@
     };
   }
 
-  DC.compare = { templates: { cardHTML: cardHTML, gridHTML: gridHTML }, mount: mount };
+  DC.compare = { templates: { buildCards: buildCards, cardHTML: cardHTML, gridHTML: gridHTML }, mount: mount };
 })();
