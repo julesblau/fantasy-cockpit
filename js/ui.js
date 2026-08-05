@@ -211,7 +211,8 @@
         return '<div class="roster-tile is-empty" data-slot="' + tile.slot + '"><div class="tile-slot">' + label + '</div><div class="tile-body"><div class="tile-empty">' + EMDASH + ' empty ' + EMDASH + '</div></div></div>';
       }
       var p = tile.player;
-      return '<div class="roster-tile" data-slot="' + tile.slot + '"><div class="tile-slot">' + label + '</div><div class="tile-body"><div class="tile-name">' + esc(p.name) + '</div><div class="tile-meta">' + esc(p.team) + '</div></div><div class="tile-bye">BYE ' + p.byeWeek + '</div><button class="btn-toggle on-mine" data-action="toggle-mine" data-id="' + esc(p.id) + '">' + icon('user') + '</button></div>';
+      // display-only: every tile is already mine, so un-mine/undraft live in the Drafted row (and Mine's no-league fallback rows)
+      return '<div class="roster-tile" data-slot="' + tile.slot + '"><div class="tile-slot">' + label + '</div><div class="tile-body"><div class="tile-name">' + esc(p.name) + '</div><div class="tile-meta">' + esc(p.team) + '</div></div><div class="tile-bye">BYE ' + p.byeWeek + '</div></div>';
     }).join('');
   }
 
@@ -347,6 +348,8 @@
   var templates = {
     playerRowHTML: playerRowHTML,
     availableRowHTML: availableRowHTML,
+    draftedRowHTML: draftedRowHTML,
+    draftedSearchRowHTML: draftedSearchRowHTML,
     signalTagsHTML: signalTagsHTML,
     trackerStripHTML: trackerStripHTML,
     chipsHTML: chipsHTML,

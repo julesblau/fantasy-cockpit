@@ -4513,6 +4513,14 @@
     'use strict';
     section('ui-templates');
 
+    t('templates: draftedRowHTML and draftedSearchRowHTML are exported and each renders a .player-row', function () {
+      assertEq(typeof DC.ui.templates.draftedRowHTML, 'function');
+      assertEq(typeof DC.ui.templates.draftedSearchRowHTML, 'function');
+      var view = { id: 'p9', rank: 3, name: 'Export Guy', team: 'SF', position: 'WR', byeWeek: 6, tier: 2, mine: true };
+      assert(DC.ui.templates.draftedRowHTML(view, { pickNumber: 1 }).indexOf('player-row') !== -1, 'draftedRowHTML should render a player-row');
+      assert(DC.ui.templates.draftedSearchRowHTML(view, {}).indexOf('player-row') !== -1, 'draftedSearchRowHTML should render a player-row');
+    });
+
     t('playerRowHTML (drafted): toggle-mine button always present; .on-mine class + .is-mine row class only when view.mine', function () {
       var base = { id: 'p10', rank: 15, name: 'Mine Guy', team: 'KC', position: 'RB', byeWeek: 9, drafted: true, target: false, avoid: false };
       var mineView = Object.assign({}, base, { mine: true });
@@ -4904,7 +4912,7 @@
       }
     });
 
-    t('Mine view (league configured): renders 16 roster-tiles in canonical order, fills on draft-mine, and the tile toggle un-mines via the real delegation', function () {
+    t('Mine view (league configured): renders 16 roster-tiles in canonical order, fills on draft-mine, and the filled tile is display-only (no action buttons)', function () {
       var fixture = buildMountFixture();
       var seed = DC.state.createSeedState();
       var store = DC.state.createStore(seed);
@@ -4931,13 +4939,32 @@
         assert(!qbTile.classList.contains('is-empty'), 'QB tile should fill: ' + qbTile.outerHTML);
         assertEq(qbTile.querySelector('.tile-name').textContent, qb.name);
         assert(qbTile.querySelector('.tile-bye').textContent.indexOf('BYE ' + qb.byeWeek) !== -1, qbTile.querySelector('.tile-bye').textContent);
-        var toggleBtn = qbTile.querySelector('[data-action="toggle-mine"][data-id="' + qb.id + '"]');
-        assert(toggleBtn, 'toggle-mine button should be present on the filled tile');
+        assert(!qbTile.querySelector('[data-action]'), 'filled roster tile should be display-only, no action buttons: ' + qbTile.outerHTML);
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
 
-        toggleBtn.click();
-        assertEq(store.getState().marks[qb.id].mine, false, 'tapping the tile toggle should un-mine the player');
-        var qbTileAfter = listEl.querySelector('.roster-tile[data-slot="QB"]');
-        assert(qbTileAfter.classList.contains('is-empty'), 'QB tile should go empty again after un-mine: ' + qbTileAfter.outerHTML);
+    t('Mine view (league configured): un-mining a player from the Drafted view empties the corresponding roster tile', function () {
+      var fixture = buildMountFixture();
+      var seed = DC.state.createSeedState();
+      var store = DC.state.createStore(seed);
+      try {
+        DC.ui.mount(store);
+        store.dispatch({ type: 'SET_LEAGUE', league: { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } } });
+        var qb = seed.players.filter(function (p) { return p.position === 'QB'; })[0];
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: qb.id, mine: true });
+
+        fixture.querySelector('[data-action="set-status"][data-status="DRAFTED"]').click();
+        var draftedRow = fixture.querySelector('.player-row[data-id="' + qb.id + '"]');
+        assert(draftedRow, 'expected a Drafted-view row for the QB');
+        draftedRow.querySelector('[data-action="toggle-mine"]').click();
+        assertEq(store.getState().marks[qb.id].mine, false, 'toggle-mine on the Drafted row should un-mine the player');
+
+        fixture.querySelector('[data-action="set-status"][data-status="MINE"]').click();
+        var qbTile = fixture.querySelector('#player-list').querySelector('.roster-tile[data-slot="QB"]');
+        assert(qbTile.classList.contains('is-empty'), 'QB tile should be empty again after un-mining from the Drafted view: ' + qbTile.outerHTML);
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
