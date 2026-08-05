@@ -1,5 +1,5 @@
 // Bump CACHE_NAME (v1 -> v2 ...) whenever any precached file changes.
-var CACHE_NAME = 'draft-cockpit-v11';
+var CACHE_NAME = 'draft-cockpit-v12';
 var PRECACHE = [
   './', './index.html', './styles.css', './manifest.webmanifest',
   './js/data.js', './js/state.js', './js/importer.js', './js/ui.js', './js/edit.js', './js/app.js', './js/compare.js',
