@@ -42,7 +42,7 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
-**Reminder for this release:** upgrading from an older version resets your league's roster template to the new QB/RB/WR/TE/FLEX/DST/K/Bench default on first load -- league size, draft slot, and snake setting are all kept, only the roster slot counts reset. If you'd customized the steppers, re-tune them in Settings -> League after upgrading. This release also bumps the service-worker cache to v9. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+**Reminder for this release:** upgrading from an older version resets your league's roster template to the new QB/RB/WR/TE/FLEX/DST/K/Bench default on first load -- league size, draft slot, and snake setting are all kept, only the roster slot counts reset. If you'd customized the steppers, re-tune them in Settings -> League after upgrading. This release also bumps the service-worker cache to v10. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
 
 ## Install on iPhone
 
@@ -130,6 +130,12 @@ Set up your league in Settings -> League: league size, your draft slot, and snak
 The tracker has no separate "record a pick" step: it derives round/pick/picks-until-you entirely from a count of how many players are marked Drafted on the board. Forgetting to mark a pick drifts the tracker out of sync with the real draft, so keep every pick logged as it happens.
 
 Tap "Clear league setup" in Settings -> League to remove your league config. The tracker card disappears, and Mine reverts to plain pick rows (plus the setup hint tile) until you set league config up again.
+
+## Compare players
+
+Long-press a player's row on the main board (Available or Drafted lists -- not the DRAFT/star/x buttons) to add him to a compare tray that appears above the bottom bar; long-press him again to remove him. The tray holds up to 4 players. Tap **Compare** once 2 or more are selected to open side-by-side cards (2 players) or a quadrant layout (3-4); each card shows the player's team/position/bye, tier chip, overall and position rank, and ADP from three sites (ESPN, Yahoo, Sleeper). The ✕ on a card or its tray chip removes that player; Done closes the compare screen and keeps whoever's left selected; Clear empties the tray entirely. Once a league is set up, Mine becomes a roster board (see Track your own roster, above) whose tiles don't long-press into compare -- use the Available/Drafted lists instead.
+
+The bundled sample players carry deterministic FAKE ADP values for ESPN, Yahoo, and Sleeper -- placeholders, not real market consensus. Anyone you import in has no ADP source yet, so those rows read "--" until a future multi-source aggregation round supplies real numbers.
 
 ## Quiet signals
 
