@@ -160,7 +160,7 @@ Re-import at any time via Settings -> Import Rankings using any of the supported
 
 ```
 draft-cockpit/
-  index.html              app shell; loads scripts in dependency order (data -> state -> importer -> ui -> edit -> app)
+  index.html              app shell; loads scripts in dependency order (data -> state -> importer -> ui -> edit -> compare -> app)
   styles.css              all styling (dark theme, safe-area insets)
   manifest.webmanifest    PWA manifest (icons, standalone display, start_url/scope "./")
   sw.js                   service worker: cache-first offline support; bump CACHE_NAME on any precached file change
@@ -171,6 +171,7 @@ draft-cockpit/
     importer.js           rankings + backup file parsing (CSV/TSV/list/parenthesized/backup JSON)
     ui.js                 all rendering and event wiring (search, filters, undo, settings sheet)
     edit.js               drag-to-reorder / tap-to-jump rankings editor (Settings -> Edit Rankings)
+    compare.js            compare screen -- side-by-side/quadrant player cards opened from the compare tray
     app.js                entry point: creates the store, mounts the UI, registers the service worker
   icons/
     icon-192.png            PWA icon, 192x192
