@@ -8347,6 +8347,87 @@
       assertEq(JSON.stringify(Object.keys(card)), JSON.stringify(['player', 'posRank', 'pickNumber', 'marks', 'verdict']), 'card key order');
       assertEq(JSON.stringify(Object.keys(card.verdict)), JSON.stringify(['cls', 'text']), 'verdict key order');
     });
+
+    t('20. drafted player card renders verdict-none "drafted" while its status row still carries the Pick n badge', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var id0 = DC.data.SEED_PLAYERS[0].id;
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: id0, mine: false });
+
+        DC.compare.open([id0]);
+
+        var root = fixture.querySelector('#compare-root');
+        var card = root.querySelector('.compare-card[data-id="' + id0 + '"]');
+        var verdict = card.querySelector('.compare-verdict');
+        assert(verdict.classList.contains('verdict-none'), 'drafted card should render verdict-none, not a future-availability verdict');
+        assertEq(verdict.textContent, 'drafted', 'exact drafted verdict text');
+
+        var status = card.querySelector('.compare-card-status');
+        assert(status.textContent.indexOf('Pick 1') !== -1, 'status row should still show Pick 1: ' + status.innerHTML);
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('21. in the same open compare, an undrafted card still gets its normal ADP verdict alongside a drafted card', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var draftedP = verdictFixturePlayer('v-mix-drafted', 50);
+        var undraftedP = verdictFixturePlayer('v-mix-undrafted', 1);
+        var players = [draftedP, undraftedP];
+        var state = buildVerdictFixtureState(players, [draftedP.id], null);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([draftedP.id, undraftedP.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var picks = DC.state.upcomingPicks(store.getState());
+        var a = DC.state.adpConsensus(undraftedP);
+        assert(a < picks.current, 'sanity: fixture should land in the no-league green branch');
+
+        var draftedVerdict = root.querySelector('.compare-card[data-id="' + draftedP.id + '"] .compare-verdict');
+        assert(draftedVerdict.classList.contains('verdict-none'), 'drafted card stays verdict-none');
+        assertEq(draftedVerdict.textContent, 'drafted', 'drafted card text is exact');
+
+        var undraftedVerdict = root.querySelector('.compare-card[data-id="' + undraftedP.id + '"] .compare-verdict');
+        assert(undraftedVerdict.classList.contains('verdict-green'), 'undrafted card should still get its own ADP verdict, proving the override is conditional');
+        assertEq(undraftedVerdict.textContent, 'ADP ' + a + ' ' + TEST_MIDDOT + ' ' + (picks.current - a) + ' past ADP ' + TEST_EMDASH + ' value now', 'exact undrafted verdict text');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('22. live: drafting a player while its own card is open in compare flips that card verdict to drafted (store subscription path)', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var id0 = DC.data.SEED_PLAYERS[0].id;
+        var id1 = DC.data.SEED_PLAYERS[1].id;
+        DC.compare.open([id0, id1]);
+
+        var root = fixture.querySelector('#compare-root');
+        var verdictBefore = root.querySelector('.compare-card[data-id="' + id0 + '"] .compare-verdict');
+        assert(!verdictBefore.classList.contains('verdict-none'), 'sanity: undrafted card should not start as verdict-none');
+
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: id0, mine: false });
+
+        var verdictAfter = root.querySelector('.compare-card[data-id="' + id0 + '"] .compare-verdict');
+        assert(verdictAfter.classList.contains('verdict-none'), 'drafting the open card should flip its verdict to verdict-none live');
+        assertEq(verdictAfter.textContent, 'drafted', 'live drafted verdict text should be exact');
+
+        var status = root.querySelector('.compare-card[data-id="' + id0 + '"] .compare-card-status');
+        assert(status.textContent.indexOf('Pick 1') !== -1, 'status row should show Pick 1 live too: ' + status.innerHTML);
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
   })();
   </script>
 

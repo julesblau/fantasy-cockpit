@@ -78,7 +78,9 @@
         posRank: posRanks[id],
         pickNumber: marks && marks.drafted ? DC.state.pickNumber(state, id) : null,
         marks: marks,
-        verdict: verdictFor(DC.state.adpConsensus(player), picks)
+        verdict: marks && marks.drafted
+          ? { cls: 'verdict-none', text: 'drafted' }
+          : verdictFor(DC.state.adpConsensus(player), picks)
       });
     });
     return cards;
