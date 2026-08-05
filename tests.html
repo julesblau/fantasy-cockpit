@@ -33,6 +33,7 @@
   <script src="./js/importer.js"></script>
   <script src="./js/ui.js"></script>
   <script src="./js/edit.js"></script>
+  <script src="./js/compare.js"></script>
 
   <!-- harness (defined before test sections) -->
   <script>
@@ -7628,6 +7629,389 @@
       } finally {
         timers.restore();
         compare.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+  })();
+  </script>
+
+  <!-- Task 4: compare.js full-screen overlay -- pure module + mount/open/close DOM-fixture
+       tests (same hidden-container pattern as the edit-fixture tests above), plus one
+       stub-free end-to-end test mounting ui.js + compare.js together. -->
+  <script>
+  (function () {
+    'use strict';
+    section('compare');
+
+    function buildCompareFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML = '<div id="compare-root" hidden></div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function buildUiCompareFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+          '<div id="compare-root" hidden></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    // duplicated from the compare-select section (tests.html ~7160) -- per-file/per-section
+    // helper duplication is the established convention here.
+    function mockTimerQueue() {
+      var original = window.setTimeout;
+      var originalClear = window.clearTimeout;
+      var nextId = 1;
+      var entries = [];
+      window.setTimeout = function (cb) {
+        var id = nextId++;
+        entries.push({ id: id, cb: cb });
+        return id;
+      };
+      window.clearTimeout = function (id) {
+        entries = entries.filter(function (e) { return e.id !== id; });
+      };
+      return {
+        flushOne: function () {
+          var e = entries.shift();
+          if (e) {
+            e.cb();
+          }
+        },
+        restore: function () {
+          window.setTimeout = original;
+          window.clearTimeout = originalClear;
+        }
+      };
+    }
+
+    t('1. open() with 2 ids -> #compare-root unhidden, .compare-grid.cols-2 with exactly 2 .compare-card in id order, no placeholder', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var ids = [DC.data.SEED_PLAYERS[0].id, DC.data.SEED_PLAYERS[1].id];
+        DC.compare.open(ids);
+
+        var root = fixture.querySelector('#compare-root');
+        assertEq(root.hidden, false, 'root should be unhidden after open()');
+        var grid = root.querySelector('.compare-grid');
+        assert(grid.classList.contains('cols-2'), 'expected cols-2 layout for 2 cards');
+        var cards = root.querySelectorAll('.compare-card');
+        assertEq(cards.length, 2, 'expected exactly 2 cards');
+        var cardIds = Array.prototype.map.call(cards, function (c) { return c.getAttribute('data-id'); });
+        assertEq(cardIds, ids, 'cards should render in the given id order');
+        assertEq(root.querySelectorAll('.compare-empty-cell').length, 0, 'no placeholder cell for exactly 2');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('2. open() with 4 ids -> .compare-grid.quad with exactly 4 cards, no placeholder', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var ids = DC.data.SEED_PLAYERS.slice(0, 4).map(function (p) { return p.id; });
+        DC.compare.open(ids);
+
+        var root = fixture.querySelector('#compare-root');
+        assert(root.querySelector('.compare-grid').classList.contains('quad'), 'expected quad layout for 4 cards');
+        assertEq(root.querySelectorAll('.compare-card').length, 4, 'expected exactly 4 cards');
+        assertEq(root.querySelectorAll('.compare-empty-cell').length, 0, 'no placeholder cell for exactly 4');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('3. open() with 3 ids -> quad with 3 cards + exactly one placeholder cell carrying hint text', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var ids = DC.data.SEED_PLAYERS.slice(0, 3).map(function (p) { return p.id; });
+        DC.compare.open(ids);
+
+        var root = fixture.querySelector('#compare-root');
+        assert(root.querySelector('.compare-grid').classList.contains('quad'), 'expected quad layout for 3 cards');
+        assertEq(root.querySelectorAll('.compare-card').length, 3, 'expected exactly 3 cards');
+        var placeholders = root.querySelectorAll('.compare-empty-cell');
+        assertEq(placeholders.length, 1, 'expected exactly one placeholder cell');
+        assert(placeholders[0].textContent.length > 0, 'placeholder should carry hint text');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('4. card content: name, BYE + byeWeek in meta, #rank and POS+posRank in ranks, tier chip class, and the three adp-vals match the seeded per-site values', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var p = DC.data.SEED_PLAYERS[0];
+        DC.compare.open([p.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var card = root.querySelector('.compare-card[data-id="' + p.id + '"]');
+        assertEq(card.querySelector('.compare-card-name').textContent, p.name, 'name should render');
+        assert(card.querySelector('.compare-card-meta').textContent.indexOf('BYE ' + p.byeWeek) !== -1, 'meta should include BYE ' + p.byeWeek);
+
+        var ranks = card.querySelector('.compare-card-ranks');
+        var posRanks = DC.state.positionRanks(store.getState());
+        assert(ranks.textContent.indexOf('#' + p.rank) !== -1, 'ranks should include #' + p.rank);
+        assert(ranks.textContent.indexOf(p.position + posRanks[p.id]) !== -1, 'ranks should include ' + p.position + posRanks[p.id]);
+
+        var expectedTierCls = DC.state.tierColorClass(p.tier);
+        var chip = card.querySelector('.tier-chip');
+        if (expectedTierCls) {
+          assert(chip && chip.classList.contains(expectedTierCls), 'tier chip should carry ' + expectedTierCls);
+        } else {
+          assert(!chip, 'no tier chip expected when tier is null');
+        }
+
+        var adpVals = card.querySelectorAll('.adp-val');
+        assertEq(adpVals.length, 3, 'expected exactly 3 adp rows');
+        assertEq(adpVals[0].textContent, String(p.adp.espn), 'ESPN adp value should match seed');
+        assertEq(adpVals[1].textContent, String(p.adp.yahoo), 'Yahoo adp value should match seed');
+        assertEq(adpVals[2].textContent, String(p.adp.sleeper), 'Sleeper adp value should match seed');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('5. ADP null fallback: a player whose adp is null renders the em-dash for all three adp-vals', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var players = [
+          { id: 'na-1', rank: 1, name: 'No ADP One', team: 'AAA', position: 'QB', byeWeek: 5, tier: null, adp: null },
+          { id: 'na-2', rank: 2, name: 'No ADP Two', team: 'BBB', position: 'RB', byeWeek: 6, tier: null, adp: null }
+        ];
+        var marks = {
+          'na-1': { drafted: false, target: false, avoid: false, mine: false },
+          'na-2': { drafted: false, target: false, avoid: false, mine: false }
+        };
+        var state = {
+          schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+          players: players,
+          marks: marks,
+          undoStack: [],
+          filters: { position: 'ALL', status: 'AVAILABLE' },
+          searchText: '',
+          manuallyEdited: false,
+          league: null
+        };
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open(['na-1', 'na-2']);
+
+        var root = fixture.querySelector('#compare-root');
+        var vals = root.querySelectorAll('.adp-val');
+        assertEq(vals.length, 6, 'expected 3 adp rows per card across 2 cards');
+        Array.prototype.forEach.call(vals, function (v) {
+          assertEq(v.textContent, '—', 'null adp should render the em-dash');
+        });
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('6. card X removes live (onRemove notified) and re-lays the grid; open() copies its ids array so a later caller mutation cannot leak in a card', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var id0 = DC.data.SEED_PLAYERS[0].id;
+        var id1 = DC.data.SEED_PLAYERS[1].id;
+        var id2 = DC.data.SEED_PLAYERS[2].id;
+        var id3 = DC.data.SEED_PLAYERS[3].id;
+        var ids = [id0, id1, id2, id3];
+        var removed = [];
+        DC.compare.open(ids, { onRemove: function (id) { removed.push(id); } });
+        ids.push(DC.data.SEED_PLAYERS[4].id); // caller mutates its own array post-open with a real, still-live id
+        store.dispatch({ type: 'TOGGLE_TARGET', playerId: id0 }); // forces a live re-render
+
+        var root = fixture.querySelector('#compare-root');
+        assertEq(root.querySelectorAll('.compare-card').length, 4, 'the mutated 5th id must not appear -- open() copied the array');
+
+        root.querySelector('.compare-card[data-id="' + id0 + '"] .compare-card-x').click();
+        assertEq(root.querySelectorAll('.compare-card').length, 3, 'one card should be gone');
+        assert(root.querySelector('.compare-grid').classList.contains('quad'), 'should still be quad at 3 cards');
+        assertEq(root.querySelectorAll('.compare-empty-cell').length, 1, 'expected placeholder cell at 3 cards');
+        assertEq(removed, [id0], 'onRemove should have been called once with the removed id');
+
+        root.querySelector('.compare-card[data-id="' + id1 + '"] .compare-card-x').click();
+        assertEq(root.querySelectorAll('.compare-card').length, 2, 'a second card should be gone');
+        assert(root.querySelector('.compare-grid').classList.contains('cols-2'), 'should become cols-2 at 2 cards');
+        assertEq(removed, [id0, id1], 'onRemove should be called for each removal in order');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('7. removing the last card closes the overlay (root hidden again)', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var id0 = DC.data.SEED_PLAYERS[0].id;
+        var id1 = DC.data.SEED_PLAYERS[1].id;
+        DC.compare.open([id0, id1]);
+        var root = fixture.querySelector('#compare-root');
+
+        root.querySelector('.compare-card[data-id="' + id0 + '"] .compare-card-x').click();
+        assertEq(root.hidden, false, 'sanity: still open with 1 card left');
+        root.querySelector('.compare-card[data-id="' + id1 + '"] .compare-card-x').click();
+
+        assertEq(root.hidden, true, 'root should be hidden once the last card is removed');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('8. Done closes the overlay without notifying onRemove for the survivors', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var ids = [DC.data.SEED_PLAYERS[0].id, DC.data.SEED_PLAYERS[1].id];
+        var removed = [];
+        DC.compare.open(ids, { onRemove: function (id) { removed.push(id); } });
+        var root = fixture.querySelector('#compare-root');
+
+        root.querySelector('[data-action="compare-done"]').click();
+
+        assertEq(root.hidden, true, 'root should be hidden after Done');
+        assertEq(removed, [], 'onRemove must not fire for players who were never removed');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('9. stale id in the open() list is dropped silently -- no throw, remaining card gets the lone-cell placeholder', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var id0 = DC.data.SEED_PLAYERS[0].id;
+        DC.compare.open([id0, 'zzz-nope']);
+
+        var root = fixture.querySelector('#compare-root');
+        assertEq(root.hidden, false, 'root should be open with one real survivor');
+        var cards = root.querySelectorAll('.compare-card');
+        assertEq(cards.length, 1, 'expected exactly 1 card, the stale id is silently skipped');
+        assertEq(cards[0].getAttribute('data-id'), id0, 'the surviving card should be the real id');
+        assert(root.querySelector('.compare-grid').classList.contains('cols-2'), 'a single survivor uses cols-2');
+        assertEq(root.querySelectorAll('.compare-empty-cell').length, 1, 'expected the lone-cell placeholder');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('10. live re-render: a mid-compare DRAFT_PLAYER dispatch updates that card with the check glyph and its pick number', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var id0 = DC.data.SEED_PLAYERS[0].id;
+        var id1 = DC.data.SEED_PLAYERS[1].id;
+        DC.compare.open([id0, id1]);
+
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: id0, mine: false });
+
+        var root = fixture.querySelector('#compare-root');
+        var status = root.querySelector('.compare-card[data-id="' + id0 + '"] .compare-card-status');
+        assert(status.textContent.indexOf('Pick 1') !== -1, 'expected Pick 1 in the status row: ' + status.innerHTML);
+        assert(status.querySelector('svg'), 'expected a check glyph to render');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('11. drafted-at-open: a player drafted (mine:true) before open() shows check + Pick 1 + person glyph', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var id0 = DC.data.SEED_PLAYERS[0].id;
+        var id1 = DC.data.SEED_PLAYERS[1].id;
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: id0, mine: true });
+
+        DC.compare.open([id0, id1]);
+
+        var root = fixture.querySelector('#compare-root');
+        var status = root.querySelector('.compare-card[data-id="' + id0 + '"] .compare-card-status');
+        assert(status.textContent.indexOf('Pick 1') !== -1, 'expected Pick 1: ' + status.innerHTML);
+        var icons = status.querySelectorAll('svg');
+        assertEq(icons.length, 2, 'expected both the check and person glyph');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('12. ui.js + compare.js integration: long-press 2 rows, open via the tray Compare button -> #compare-root shows 2 cards; removing one via its card X clears both the tray chip and the row ring', function () {
+      var fixture = buildUiCompareFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        DC.compare.mount(store);
+
+        var id0 = DC.data.SEED_PLAYERS[0].id;
+        var id1 = DC.data.SEED_PLAYERS[1].id;
+        [id0, id1].forEach(function (id, i) {
+          var row = fixture.querySelector('.player-row[data-id="' + id + '"]');
+          row.querySelector('.player-name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: i + 1, button: 0, clientX: 0, clientY: 0 }));
+          timers.flushOne();
+        });
+
+        var tray = fixture.querySelector('#compare-tray');
+        assertEq(tray.querySelectorAll('.compare-chip').length, 2, 'sanity: 2 chips selected');
+
+        var openBtn = tray.querySelector('[data-action="open-compare"]');
+        assert(!openBtn.disabled, 'Compare button should be enabled at 2 selected');
+        openBtn.click();
+
+        var compareRoot = fixture.querySelector('#compare-root');
+        assertEq(compareRoot.hidden, false, 'compare-root should be unhidden after Compare is tapped');
+        assertEq(compareRoot.querySelectorAll('.compare-card').length, 2, 'expected exactly 2 cards');
+
+        compareRoot.querySelector('.compare-card[data-id="' + id0 + '"] .compare-card-x').click();
+
+        assertEq(tray.querySelectorAll('.compare-chip').length, 1, 'the removed player chip should be gone from the tray');
+        var row0 = fixture.querySelector('.player-row[data-id="' + id0 + '"]');
+        assert(!row0.classList.contains('is-compared'), 'the removed player row should lose its ring');
+        var row1 = fixture.querySelector('.player-row[data-id="' + id1 + '"]');
+        assert(row1.classList.contains('is-compared'), 'the surviving player row should keep its ring');
+      } finally {
+        timers.restore();
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
       }
