@@ -14,6 +14,7 @@
   --accent-position: #0A84FF;
   --accent-undo: #FF9F0A;
   --accent-drafted: #636366;
+  --accent-compare: #BF5AF2;
   --tier-c1: #BF5AF2;
   --tier-c2: #5E5CE6;
   --tier-c3: #64D2FF;
@@ -107,6 +108,75 @@ button,
 
 #sheet-root {
   z-index: 6; /* must paint above #bottom-bar's raised Undo button */
+}
+
+#compare-tray:empty {
+  display: none;
+}
+
+#compare-tray {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 6px 12px 8px;
+  background: var(--surface-1);
+  border-top: 1px solid var(--hairline);
+}
+
+/* stays visible while searching (unlike #bottom-bar below) -- when searching hides
+   #bottom-bar the tray becomes the bottom-most child and needs its own safe-area inset */
+body.searching #compare-tray {
+  padding-bottom: max(env(safe-area-inset-bottom), 8px);
+}
+
+.compare-chip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 44px;
+  background: var(--surface-2);
+  border-radius: var(--radius-chip);
+  padding: 0 4px 0 10px;
+}
+
+.compare-chip .chip-name {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.compare-chip .chip-remove {
+  width: 44px;
+  height: 44px;
+  background: none;
+  border: none;
+  color: var(--text-3);
+}
+
+.compare-open-btn,
+.compare-clear-btn {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: var(--radius-button);
+  border: none;
+  font-weight: 700;
+}
+
+.compare-open-btn {
+  background: var(--accent-compare);
+  color: #fff;
+}
+
+.compare-open-btn[disabled] {
+  opacity: 0.4;
+}
+
+.compare-clear-btn {
+  background: var(--surface-2);
+  color: var(--text-2);
 }
 
 body.searching #filter-chips,
@@ -291,6 +361,9 @@ body.searching #bottom-bar {
   max-height: 80px;
   position: relative;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .player-rank {
@@ -542,6 +615,12 @@ button.player-rank {
 
 .player-row.is-mine {
   box-shadow: inset 3px 0 0 var(--accent-position);
+}
+
+/* outline (not box-shadow) so it composes with the stripes above and isn't clipped by overflow:hidden */
+.player-row.is-compared {
+  outline: 2px solid var(--accent-compare);
+  outline-offset: -2px;
 }
 
 .player-row.is-drafted-search {

@@ -106,7 +106,7 @@
     return '<div class="player-rank">' + view.rank + '</div>';
   }
 
-  /** @param {{signals:*, posRanks:*, myPick:boolean}} [ctx] */
+  /** @param {{signals:*, posRanks:*, myPick:boolean, isCompared:boolean}} [ctx] */
   function availableRowHTML(view, ctx) {
     ctx = ctx || {};
     var rowClasses = ['player-row'];
@@ -115,6 +115,9 @@
     }
     if (view.avoid) {
       rowClasses.push('is-avoid');
+    }
+    if (ctx.isCompared) {
+      rowClasses.push('is-compared');
     }
     var starClass = 'btn-toggle' + (view.target ? ' on-target' : '');
     var starIcon = view.target ? icon('star-filled') : icon('star');
@@ -135,10 +138,13 @@
     );
   }
 
-  /** @param {{posRanks:*}} [ctx] */
+  /** @param {{posRanks:*, isCompared:boolean}} [ctx] */
   function draftedSearchRowHTML(view, ctx) {
     ctx = ctx || {};
     var rowClasses = ['player-row', 'is-drafted-search'];
+    if (ctx.isCompared) {
+      rowClasses.push('is-compared');
+    }
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
         rankBadgeHTML(view, ctx.posRanks) +
@@ -151,13 +157,16 @@
     );
   }
 
-  /** @param {{pickNumber:(number|null), posRanks:*}} [ctx] */
+  /** @param {{pickNumber:(number|null), posRanks:*, isCompared:boolean}} [ctx] */
   function draftedRowHTML(view, ctx) {
     ctx = ctx || {};
     var pickText = typeof ctx.pickNumber === 'number' ? ctx.pickNumber : EMDASH;
     var rowClasses = ['player-row'];
     if (view.mine) {
       rowClasses.push('is-mine');
+    }
+    if (ctx.isCompared) {
+      rowClasses.push('is-compared');
     }
     var mineToggleClass = 'btn-toggle' + (view.mine ? ' on-mine' : '');
     return (
@@ -400,6 +409,13 @@
     var undoBannerRoot = document.getElementById('undo-banner-root');
     var bottomBarEl = document.getElementById('bottom-bar');
     var sheetRoot = document.getElementById('sheet-root');
+
+    var trayEl = document.getElementById('compare-tray');
+    if (!trayEl) {
+      trayEl = document.createElement('div');
+      trayEl.id = 'compare-tray';
+      appEl.insertBefore(trayEl, bottomBarEl);
+    }
 
     // ---- static DOM, built once ----
 
@@ -772,6 +788,118 @@
       }
     });
 
+    // ---- compare selection: long-pressing a row body (~500ms) toggles it into the compare
+    // tray (max 4). listEl-scoped (not appEl) so #edit-root -- a SIBLING of #player-list
+    // inside #app -- can never bubble through this, even mid-drag. A separate mechanism
+    // from the .btn-draft press above; never reads/writes longPressFiredId. ----
+
+    var compareIds = [];
+    var comparePressTimer = null;
+    var comparePressId = null;
+    var comparePressPointerId = null;
+    var comparePressStartX = 0;
+    var comparePressStartY = 0;
+
+    function teardownComparePress() {
+      if (comparePressTimer !== null) {
+        clearTimeout(comparePressTimer);
+        comparePressTimer = null;
+      }
+      comparePressId = null;
+      comparePressPointerId = null;
+    }
+
+    function setCompareRing(id, on) {
+      var row = listEl.querySelector('.player-row[data-id="' + attrSelector(id) + '"]');
+      if (row) {
+        row.classList.toggle('is-compared', on);
+      }
+    }
+
+    function renderCompareTray() {
+      var players = store.getState().players;
+      compareIds = compareIds.filter(function (id) {
+        return players.some(function (p) { return p.id === id; }); // IMPORT_PLAYERS/clear-all can invalidate stale ids
+      });
+      if (!compareIds.length) {
+        trayEl.innerHTML = '';
+        return;
+      }
+      var chipsHtml = compareIds.map(function (id) {
+        var p = players.filter(function (pp) { return pp.id === id; })[0];
+        return '<div class="compare-chip"><span class="chip-name">' + esc(p ? p.name : '') + '</span>' +
+          '<button class="chip-remove" data-action="compare-remove" data-id="' + esc(id) + '">✕</button></div>';
+      }).join('');
+      var disabledAttr = compareIds.length < 2 ? ' disabled' : '';
+      trayEl.innerHTML = chipsHtml +
+        '<button class="compare-open-btn" data-action="open-compare"' + disabledAttr + '>Compare</button>' +
+        '<button class="compare-clear-btn" data-action="compare-clear">Clear</button>';
+    }
+
+    function toggleCompareId(id) {
+      var idx = compareIds.indexOf(id);
+      if (idx !== -1) {
+        compareIds.splice(idx, 1);
+      } else if (compareIds.length < 4) {
+        compareIds.push(id);
+      } else {
+        return; // full, and this id isn't already selected -- no-op
+      }
+      setCompareRing(id, compareIds.indexOf(id) !== -1);
+      renderCompareTray();
+    }
+
+    // shared by the compare-remove click case AND the Compare screen's onRemove hook
+    function onCompareRemove(id) {
+      var idx = compareIds.indexOf(id);
+      if (idx !== -1) {
+        compareIds.splice(idx, 1);
+      }
+      setCompareRing(id, false);
+      renderCompareTray();
+    }
+
+    listEl.addEventListener('pointerdown', function (ev) {
+      var row = ev.target.closest('.player-row');
+      if (!row || ev.target.closest('[data-action]')) {
+        return; // every button (draft/star/x/undraft/mine/rank-jump) carries data-action
+      }
+      if (ev.button !== 0 && ev.pointerType === 'mouse') {
+        return;
+      }
+      teardownComparePress(); // a second pointerdown while armed cancels the first
+      comparePressId = row.getAttribute('data-id');
+      comparePressPointerId = ev.pointerId;
+      comparePressStartX = ev.clientX;
+      comparePressStartY = ev.clientY;
+      comparePressTimer = setTimeout(function () {
+        var id = comparePressId;
+        teardownComparePress();
+        toggleCompareId(id);
+      }, LONG_PRESS_MS);
+    });
+
+    listEl.addEventListener('pointermove', function (ev) {
+      if (ev.pointerId !== comparePressPointerId) {
+        return;
+      }
+      var dx = ev.clientX - comparePressStartX;
+      var dy = ev.clientY - comparePressStartY;
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+        teardownComparePress();
+      }
+    });
+
+    function onComparePressEnd(ev) {
+      if (ev.pointerId !== comparePressPointerId) {
+        return;
+      }
+      teardownComparePress();
+    }
+
+    listEl.addEventListener('pointerup', onComparePressEnd);
+    listEl.addEventListener('pointercancel', onComparePressEnd);
+
     function showUndoBanner(name) {
       if (undoBannerTimer) {
         clearTimeout(undoBannerTimer);
@@ -834,6 +962,19 @@
           break;
         case 'toggle-mine':
           store.dispatch({ type: 'TOGGLE_MINE', playerId: id });
+          break;
+        case 'compare-remove':
+          onCompareRemove(id);
+          break;
+        case 'compare-clear': {
+          var idsToClear = compareIds.slice();
+          idsToClear.forEach(function (cid) { setCompareRing(cid, false); });
+          compareIds = [];
+          renderCompareTray();
+          break;
+        }
+        case 'open-compare':
+          DC.compare.open(compareIds.slice(), { onRemove: onCompareRemove });
           break;
         case 'set-position': {
           var pos = target.getAttribute('data-position');
@@ -1076,7 +1217,8 @@
             pickNumber: v.drafted ? DC.state.pickNumber(state, v.id) : null,
             signals: signals,
             posRanks: posRanks,
-            myPick: myPick
+            myPick: myPick,
+            isCompared: compareIds.indexOf(v.id) !== -1
           };
           return templates.playerRowHTML(v, ctx);
         }).join('');
@@ -1088,6 +1230,7 @@
 
       bottomBarEl.innerHTML = templates.bottomBarHTML(state);
       renderLeagueSection(state);
+      renderCompareTray(); // heals the tray/prunes stale ids after every store-driven render
 
       var filtersKey = state.filters.position + '|' + state.filters.status;
       if (filtersKey !== lastFiltersKey || state.searchText !== lastSearchText) {

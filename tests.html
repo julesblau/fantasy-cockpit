@@ -7094,6 +7094,547 @@
   })();
   </script>
 
+  <!-- Round 8 Task 3: compare selection -- row long-press into a compare tray -->
+  <script>
+  (function () {
+    'use strict';
+    section('compare-select');
+
+    function buildMountFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    // mirrors the real index.html shape, INCLUDING #edit-root nested inside #app as a
+    // sibling of #player-list -- proves the listEl-scoped recognizer can't fire for
+    // edit-mode rows/drag-handles even though they share the .player-row class.
+    function buildCombinedFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+          '<div id="edit-root" hidden></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function spyDispatch(store) {
+      var calls = [];
+      var original = store.dispatch;
+      store.dispatch = function (action) {
+        calls.push(action);
+        return original(action);
+      };
+      return { calls: calls, restore: function () { store.dispatch = original; } };
+    }
+
+    // mocks setTimeout AND clearTimeout so a real cancel (pointerup / slop pointermove)
+    // truly removes its queued entry -- flushOne() after a cancel fires nothing, matching
+    // real browser semantics (the naive FIFO-only queue used elsewhere can't honor this).
+    function mockTimerQueue() {
+      var original = window.setTimeout;
+      var originalClear = window.clearTimeout;
+      var nextId = 1;
+      var entries = [];
+      window.setTimeout = function (cb) {
+        var id = nextId++;
+        entries.push({ id: id, cb: cb });
+        return id;
+      };
+      window.clearTimeout = function (id) {
+        entries = entries.filter(function (e) { return e.id !== id; });
+      };
+      return {
+        flushOne: function () {
+          var e = entries.shift();
+          if (e) {
+            e.cb();
+          }
+        },
+        restore: function () {
+          window.setTimeout = original;
+          window.clearTimeout = originalClear;
+        }
+      };
+    }
+
+    // DC.compare ships next task -- stub it per the DC-namespace pattern (tests.html ~2475).
+    function stubCompare() {
+      var real = window.DC.compare;
+      var calls = [];
+      window.DC.compare = { open: function (ids, hooks) { calls.push({ ids: ids, hooks: hooks }); } };
+      return { calls: calls, restore: function () { window.DC.compare = real; } };
+    }
+
+    t('1. long-press fires: pointerdown on .player-name, flush 500ms -> row gets is-compared, tray shows 1 chip + disabled Compare + Clear, store untouched', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        row.querySelector('.player-name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0, clientX: 0, clientY: 0 }));
+        timers.flushOne();
+
+        assert(row.classList.contains('is-compared'), 'row should carry is-compared after the long-press fires: ' + row.outerHTML);
+
+        var tray = fixture.querySelector('#compare-tray');
+        assert(tray, 'expected #compare-tray to exist');
+        assertEq(tray.querySelectorAll('.compare-chip').length, 1, 'expected exactly one chip');
+        var openBtn = tray.querySelector('[data-action="open-compare"]');
+        assert(openBtn && openBtn.disabled, 'Compare button should be disabled with only 1 selected');
+        assert(tray.querySelector('[data-action="compare-clear"]'), 'Clear button should be present');
+
+        assertEq(spy.calls.length, 0, 'a long-press toggle must not dispatch anything to the store');
+      } finally {
+        timers.restore();
+        compare.restore();
+        spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('2. slop cancel: pointerdown then pointermove >10px (same pointerId), flush -> no ring, no chip', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        var nameEl = row.querySelector('.player-name');
+
+        nameEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0, clientX: 0, clientY: 0 }));
+        nameEl.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, cancelable: true, pointerId: 1, clientX: 12, clientY: 0 }));
+        timers.flushOne();
+
+        assert(!row.classList.contains('is-compared'), 'row should not be compared after a slop-cancelled press');
+        var tray = fixture.querySelector('#compare-tray');
+        assertEq(tray.innerHTML, '', 'tray should stay empty');
+      } finally {
+        timers.restore();
+        compare.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('3. early release: pointerdown then pointerup before the 500ms timer, flush -> nothing', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        var nameEl = row.querySelector('.player-name');
+
+        nameEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+        nameEl.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1 }));
+        timers.flushOne();
+
+        assert(!row.classList.contains('is-compared'), 'row should stay uncompared after an early release');
+        var tray = fixture.querySelector('#compare-tray');
+        assertEq(tray.innerHTML, '', 'tray should stay empty');
+      } finally {
+        timers.restore();
+        compare.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('4. press on .btn-draft: the OLD long-press machinery fires through untouched and compareIds stays empty -- no ring, no chip', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var btn = fixture.querySelector('.btn-draft[data-id="' + firstId + '"]');
+
+        btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+        assert(btn.classList.contains('arming'), 'the pre-existing .btn-draft long-press machinery should still arm');
+
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        assert(!row.classList.contains('is-compared'), 'a press on the DRAFT button must not arm the compare recognizer');
+
+        timers.flushOne(); // fires the old machinery's 500ms arm timer
+        timers.flushOne(); // fires its nested 150ms flash-then-dispatch
+
+        var draftDispatches = spy.calls.filter(function (a) { return a.type === 'DRAFT_PLAYER'; });
+        assertEq(draftDispatches.length, 1, 'the old long-press should still dispatch DRAFT_PLAYER unaffected');
+
+        var tray = fixture.querySelector('#compare-tray');
+        assertEq(tray.innerHTML, '', 'compare tray should stay empty throughout');
+      } finally {
+        timers.restore();
+        compare.restore();
+        spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('5. swallowed-tap regression: a fired compare long-press + its synthetic click never pins longPressFiredId -- the next real DRAFT tap dispatches on its FIRST click', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        var nameEl = row.querySelector('.player-name');
+
+        nameEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+        timers.flushOne(); // fires the compare long-press
+        assert(row.classList.contains('is-compared'), 'sanity: the row should be compared after the long-press fires');
+
+        row.click(); // the browser's ensuing click on the row body -- no data-action there, must no-op
+
+        var btn = row.querySelector('.btn-draft');
+        btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 2, button: 0 }));
+        btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 2 }));
+        btn.click();
+        timers.flushOne(); // the real tap's 150ms flash-then-dispatch
+
+        var draftDispatches = spy.calls.filter(function (a) { return a.type === 'DRAFT_PLAYER'; });
+        assertEq(draftDispatches.length, 1, 'the real DRAFT tap should dispatch on its first click -- proves longPressFiredId was never touched');
+      } finally {
+        timers.restore();
+        compare.restore();
+        spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('6. max 4: after 4 selections, a long-press on a 5th player is a no-op -- no 5th chip, no ring on the 5th', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var ids = DC.data.SEED_PLAYERS.slice(0, 5).map(function (p) { return p.id; });
+        for (var i = 0; i < 4; i++) {
+          var row = fixture.querySelector('.player-row[data-id="' + ids[i] + '"]');
+          row.querySelector('.player-name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: i + 1, button: 0 }));
+          timers.flushOne();
+        }
+        var tray = fixture.querySelector('#compare-tray');
+        assertEq(tray.querySelectorAll('.compare-chip').length, 4, 'expected exactly 4 chips after 4 selections');
+
+        var fifthRow = fixture.querySelector('.player-row[data-id="' + ids[4] + '"]');
+        fifthRow.querySelector('.player-name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 5, button: 0 }));
+        timers.flushOne();
+
+        assert(!fifthRow.classList.contains('is-compared'), 'a 5th selection must be a no-op');
+        assertEq(tray.querySelectorAll('.compare-chip').length, 4, 'chip count should stay at 4');
+      } finally {
+        timers.restore();
+        compare.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('7. toggle-off: long-pressing a selected row again removes its ring and chip', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        var nameEl = row.querySelector('.player-name');
+
+        nameEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+        timers.flushOne();
+        assert(row.classList.contains('is-compared'), 'sanity: row should be compared after the first long-press');
+
+        nameEl.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 2, button: 0 }));
+        timers.flushOne();
+
+        assert(!row.classList.contains('is-compared'), 'a second long-press on the same row should toggle it back off');
+        var tray = fixture.querySelector('#compare-tray');
+        assertEq(tray.innerHTML, '', 'tray should be empty again');
+      } finally {
+        timers.restore();
+        compare.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('8. chip remove: clicking a chip\'s remove button clears the ring immediately (no dispatch) and removes the chip', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        row.querySelector('.player-name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+        timers.flushOne();
+
+        var tray = fixture.querySelector('#compare-tray');
+        var removeBtn = tray.querySelector('[data-action="compare-remove"][data-id="' + firstId + '"]');
+        assert(removeBtn, 'expected a remove button for the selected chip');
+
+        removeBtn.click();
+
+        assert(!row.classList.contains('is-compared'), 'ring should be gone immediately');
+        assertEq(tray.querySelectorAll('.compare-chip').length, 0, 'chip should be gone');
+        assertEq(spy.calls.length, 0, 'removing a chip must not dispatch to the store');
+      } finally {
+        timers.restore();
+        compare.restore();
+        spy.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('9. clear: wipes all rings and all chips', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var ids = DC.data.SEED_PLAYERS.slice(0, 3).map(function (p) { return p.id; });
+        var rows = ids.map(function (id) { return fixture.querySelector('.player-row[data-id="' + id + '"]'); });
+        rows.forEach(function (row, i) {
+          row.querySelector('.player-name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: i + 1, button: 0 }));
+          timers.flushOne();
+        });
+        rows.forEach(function (row) {
+          assert(row.classList.contains('is-compared'), 'sanity: all 3 rows should be compared');
+        });
+
+        var tray = fixture.querySelector('#compare-tray');
+        tray.querySelector('[data-action="compare-clear"]').click();
+
+        rows.forEach(function (row) {
+          assert(!row.classList.contains('is-compared'), 'every ring should be cleared: ' + row.outerHTML);
+        });
+        assertEq(tray.innerHTML, '', 'tray should be empty after Clear');
+      } finally {
+        timers.restore();
+        compare.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('10. ring + tray survive an unrelated dispatch: toggling target on another player re-renders the list but the compare ring and chip persist via ctx.isCompared', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var secondId = DC.data.SEED_PLAYERS[1].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        row.querySelector('.player-name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+        timers.flushOne();
+        assert(row.classList.contains('is-compared'), 'sanity: row is compared before the unrelated dispatch');
+
+        var starBtn = fixture.querySelector('.btn-toggle[data-action="toggle-target"][data-id="' + secondId + '"]');
+        assert(starBtn, 'expected a target-toggle star for the second player');
+        starBtn.click(); // real, unrelated dispatch -> triggers a full render()
+
+        var rowAfter = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        assert(rowAfter.classList.contains('is-compared'), 'the ring should survive the store-driven re-render');
+        var tray = fixture.querySelector('#compare-tray');
+        assertEq(tray.querySelectorAll('.compare-chip').length, 1, 'the chip should still be in the tray');
+      } finally {
+        timers.restore();
+        compare.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('11. Compare button: enabled at 2 selected; clicking calls DC.compare.open with a COPY of compareIds and a hooks.onRemove that drives the shared removal path', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var secondId = DC.data.SEED_PLAYERS[1].id;
+        [firstId, secondId].forEach(function (id, i) {
+          var row = fixture.querySelector('.player-row[data-id="' + id + '"]');
+          row.querySelector('.player-name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: i + 1, button: 0 }));
+          timers.flushOne();
+        });
+
+        var tray = fixture.querySelector('#compare-tray');
+        var openBtn = tray.querySelector('[data-action="open-compare"]');
+        assert(!openBtn.disabled, 'Compare button should be enabled with 2 selected');
+
+        openBtn.click();
+
+        assertEq(compare.calls.length, 1, 'expected exactly one DC.compare.open call');
+        var call = compare.calls[0];
+        assertEq(call.ids, [firstId, secondId], 'expected a copy of compareIds in selection order');
+        call.ids.push('mutated'); // mutate the array passed to DC.compare.open
+        assert(typeof call.hooks.onRemove === 'function', 'expected hooks.onRemove to be a function');
+
+        assertEq(tray.querySelectorAll('.compare-chip').length, 2, 'mutating the passed array must not affect the live selection/tray');
+
+        call.hooks.onRemove(firstId);
+        var rowAfter = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        assert(!rowAfter.classList.contains('is-compared'), 'hooks.onRemove should clear the ring');
+        assertEq(tray.querySelectorAll('.compare-chip').length, 1, 'hooks.onRemove should remove its chip');
+      } finally {
+        timers.restore();
+        compare.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('12. prune: after IMPORT_PLAYERS replaces the pool, the next render prunes stale ids and the tray empties', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var secondId = DC.data.SEED_PLAYERS[1].id;
+        [firstId, secondId].forEach(function (id, i) {
+          var row = fixture.querySelector('.player-row[data-id="' + id + '"]');
+          row.querySelector('.player-name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: i + 1, button: 0 }));
+          timers.flushOne();
+        });
+        var tray = fixture.querySelector('#compare-tray');
+        assertEq(tray.querySelectorAll('.compare-chip').length, 2, 'sanity: 2 chips selected');
+
+        var freshPlayers = [{ id: 'new1', rank: 1, name: 'Fresh One', team: 'KC', position: 'QB', byeWeek: 7 }];
+        store.dispatch({ type: 'IMPORT_PLAYERS', players: freshPlayers });
+
+        assertEq(tray.innerHTML, '', 'tray should empty once the selected ids no longer exist in the player pool');
+        assertEq(fixture.querySelectorAll('.is-compared').length, 0, 'no row anywhere should carry is-compared');
+      } finally {
+        timers.restore();
+        compare.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('13. combined-mount edit-screen regression: with #edit-root nested inside #app (as in the real index.html) and DC.edit open, edit-row body and drag-handle presses never reach the compare recognizer', function () {
+      var fixture = buildCombinedFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        DC.edit.mount(store);
+        DC.edit.open();
+
+        var editRoot = fixture.querySelector('#edit-root');
+        var editRows = editRoot.querySelectorAll('#edit-list .player-row');
+        assert(editRows.length > 1, 'expected at least 2 edit rows to render');
+
+        editRows[0].querySelector('.player-info').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+        timers.flushOne();
+
+        var handle = editRows[1].querySelector('.drag-handle');
+        handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 2, button: 0, clientY: 100 }));
+        timers.flushOne();
+
+        assertEq(fixture.querySelectorAll('.is-compared').length, 0, 'no row anywhere in the combined fixture should carry is-compared');
+        var tray = fixture.querySelector('#compare-tray');
+        assert(!tray || tray.innerHTML === '', 'compare tray should stay empty');
+
+        document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 2 })); // end the real drag cleanly
+      } finally {
+        timers.restore();
+        compare.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('14. roster-tile no-op: with a league configured and Mine view showing a filled tile, long-pressing it is a no-op -- tiles are not .player-row (accepted limitation)', function () {
+      var fixture = buildMountFixture();
+      var seed = DC.state.createSeedState();
+      var store = DC.state.createStore(seed);
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        store.dispatch({ type: 'SET_LEAGUE', league: { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } } });
+        var qb = seed.players.filter(function (p) { return p.position === 'QB'; })[0];
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: qb.id, mine: true });
+        fixture.querySelector('[data-action="set-status"][data-status="MINE"]').click();
+
+        var listElRef = fixture.querySelector('#player-list');
+        var qbTile = listElRef.querySelector('.roster-tile[data-slot="QB"]');
+        assert(!qbTile.classList.contains('is-empty'), 'sanity: QB tile should be filled');
+
+        qbTile.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0 }));
+        timers.flushOne();
+
+        assert(!qbTile.classList.contains('is-compared'), 'a roster tile must never gain is-compared');
+        var tray = fixture.querySelector('#compare-tray');
+        assert(!tray || tray.innerHTML === '', 'compare tray should stay empty');
+      } finally {
+        timers.restore();
+        compare.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+  })();
+  </script>
+
   <!-- render results (runs last, after all test-section scripts) -->
   <script>
     (function () {
