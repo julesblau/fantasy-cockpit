@@ -8428,6 +8428,107 @@
       }
     });
 
+    t('23. slot-1 league, pre-draft: exact bucket boundary values (SLACK=3) render the correct class + text at every edge', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var orangeLow = verdictFixturePlayer('v-b-pd-orange-low', 4);
+        var greenLow = verdictFixturePlayer('v-b-pd-green-low', 5);
+        var greenHigh = verdictFixturePlayer('v-b-pd-green-high', 21);
+        var orangeHigh1 = verdictFixturePlayer('v-b-pd-orange-high1', 22);
+        var orangeHigh2 = verdictFixturePlayer('v-b-pd-orange-high2', 27);
+        var waitLow = verdictFixturePlayer('v-b-pd-wait-low', 28);
+        var players = [orangeLow, greenLow, greenHigh, orangeHigh1, orangeHigh2, waitLow];
+        var state = buildVerdictFixtureState(players, [], SLOT1_LEAGUE);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open(players.map(function (p) { return p.id; }));
+
+        var root = fixture.querySelector('#compare-root');
+        var picks = DC.state.upcomingPicks(store.getState());
+        assertEq(picks.next, 1, 'sanity: pre-draft next pick');
+        assertEq(picks.following, 24, 'sanity: pre-draft following pick');
+
+        function verdictOf(p) {
+          return root.querySelector('.compare-card[data-id="' + p.id + '"] .compare-verdict');
+        }
+
+        var vOrangeLow = verdictOf(orangeLow);
+        assert(vOrangeLow.classList.contains('verdict-orange'), 'a=4 (next+SLACK) should be orange');
+        assertEq(vOrangeLow.textContent, 'ADP 4 ' + TEST_MIDDOT + ' coin flip at your #' + picks.next, 'exact a=4 text');
+
+        var vGreenLow = verdictOf(greenLow);
+        assert(vGreenLow.classList.contains('verdict-green'), 'a=5 (next+SLACK+1) should be green');
+        assertEq(vGreenLow.textContent, 'ADP 5 ' + TEST_MIDDOT + ' should reach #' + picks.next + ' ' + TEST_EMDASH + ' gone by #' + picks.following, 'exact a=5 text');
+
+        var vGreenHigh = verdictOf(greenHigh);
+        assert(vGreenHigh.classList.contains('verdict-green'), 'a=21 (following-SLACK) should be green');
+        assertEq(vGreenHigh.textContent, 'ADP 21 ' + TEST_MIDDOT + ' should reach #' + picks.next + ' ' + TEST_EMDASH + ' gone by #' + picks.following, 'exact a=21 text');
+
+        var vOrangeHigh1 = verdictOf(orangeHigh1);
+        assert(vOrangeHigh1.classList.contains('verdict-orange'), 'a=22 (following-SLACK+1) should be orange');
+        assertEq(vOrangeHigh1.textContent, 'ADP 22 ' + TEST_MIDDOT + ' reaches #' + picks.next + ' ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact a=22 text');
+
+        var vOrangeHigh2 = verdictOf(orangeHigh2);
+        assert(vOrangeHigh2.classList.contains('verdict-orange'), 'a=27 (following+SLACK) should be orange, same text as a=22');
+        assertEq(vOrangeHigh2.textContent, 'ADP 27 ' + TEST_MIDDOT + ' reaches #' + picks.next + ' ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact a=27 text');
+
+        var vWaitLow = verdictOf(waitLow);
+        assert(vWaitLow.classList.contains('verdict-wait'), 'a=28 (following+SLACK+1) should be wait');
+        assertEq(vWaitLow.textContent, 'ADP 28 ' + TEST_MIDDOT + ' can wait ' + TEST_EMDASH + ' likely there at #' + picks.following, 'exact a=28 text');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('24. slot-1 league, after ONE pick: exact bucket boundary values (SLACK=3) render the correct class + text at every edge', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var filler = verdictFixturePlayer('v-b-ap-filler', 50);
+        var redHigh = verdictFixturePlayer('v-b-ap-red-high', 21);
+        var orangeLow1 = verdictFixturePlayer('v-b-ap-orange-low1', 22);
+        var orangeHigh1 = verdictFixturePlayer('v-b-ap-orange-high1', 27);
+        var orangeLow2 = verdictFixturePlayer('v-b-ap-orange-low2', 28);
+        var waitLow = verdictFixturePlayer('v-b-ap-wait-low', 29);
+        var players = [filler, redHigh, orangeLow1, orangeHigh1, orangeLow2, waitLow];
+        var state = buildVerdictFixtureState(players, [filler.id], SLOT1_LEAGUE);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([redHigh.id, orangeLow1.id, orangeHigh1.id, orangeLow2.id, waitLow.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var picks = DC.state.upcomingPicks(store.getState());
+        assertEq(picks.next, 24, 'sanity: next pick after one pick made');
+        assertEq(picks.following, 25, 'sanity: following pick after one pick made');
+
+        function verdictOf(p) {
+          return root.querySelector('.compare-card[data-id="' + p.id + '"] .compare-verdict');
+        }
+
+        var vRedHigh = verdictOf(redHigh);
+        assert(vRedHigh.classList.contains('verdict-red'), 'a=21 (next-SLACK) should be red');
+        assertEq(vRedHigh.textContent, 'ADP 21 ' + TEST_MIDDOT + ' likely gone by your #' + picks.next, 'exact a=21 text');
+
+        var vOrangeLow1 = verdictOf(orangeLow1);
+        assert(vOrangeLow1.classList.contains('verdict-orange'), 'a=22 (next-SLACK+1) should be orange');
+        assertEq(vOrangeLow1.textContent, 'ADP 22 ' + TEST_MIDDOT + ' coin flip at your #' + picks.next, 'exact a=22 text');
+
+        var vOrangeHigh1 = verdictOf(orangeHigh1);
+        assert(vOrangeHigh1.classList.contains('verdict-orange'), 'a=27 (next+SLACK) should be orange, same text as a=22');
+        assertEq(vOrangeHigh1.textContent, 'ADP 27 ' + TEST_MIDDOT + ' coin flip at your #' + picks.next, 'exact a=27 text');
+
+        var vOrangeLow2 = verdictOf(orangeLow2);
+        assert(vOrangeLow2.classList.contains('verdict-orange'), 'a=28 (next+SLACK+1) should be orange with the reaches/coin-flip-at-following text -- previously uncovered');
+        assertEq(vOrangeLow2.textContent, 'ADP 28 ' + TEST_MIDDOT + ' reaches #' + picks.next + ' ' + TEST_EMDASH + ' coin flip at #' + picks.following, 'exact a=28 text');
+
+        var vWaitLow = verdictOf(waitLow);
+        assert(vWaitLow.classList.contains('verdict-wait'), 'a=29 (following+SLACK) should be wait');
+        assertEq(vWaitLow.textContent, 'ADP 29 ' + TEST_MIDDOT + ' can wait ' + TEST_EMDASH + ' likely there at #' + picks.following, 'exact a=29 text');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
   })();
   </script>
 
