@@ -117,7 +117,7 @@ While drafting, mark which picks are yours as you go.
 - **Tap DRAFT** to record a pick. Normally that logs someone else's pick; when the tracker says you're up, the buttons turn blue and a tap records the pick as **yours**.
 - **Long-press DRAFT** (about half a second -- the button fills while you hold) for the opposite of whatever a tap would do: normally that marks the pick as yours; while you're up it logs someone else's pick.
 - Tap the **Mine** chip to filter the board down to your picks. With a league set up (see Draft position tracker, below) it shows a roster board -- one tile per starting slot, filling in as you draft; without one it just lists your picks.
-- Made a mistake? In the Drafted view -- or in Mine without a league configured, which lists plain pick rows the same way -- tap the person icon on any pick to toggle whether it's yours, no need to undo and redraft. Once a league is configured, Mine's roster board is display-only; use the Drafted view for this instead.
+- Made a mistake? In the Drafted view -- or in Mine without a league configured, which lists plain pick rows the same way -- tap the person icon on any pick to toggle whether it's yours, no need to undo and redraft. Once a league is configured, Mine's roster board is display-only; use the Drafted view for this instead. Search results show drafted matches as compact rows with no person icon -- clear the search box to get it back.
 
 Without a league set up (see Draft position tracker, below), Mine just lists your picks in draft order, plus a hint tile telling you to set up your league in Settings to see roster slots.
 
