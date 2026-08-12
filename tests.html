@@ -4870,14 +4870,14 @@
       assert(html.indexOf('<div class="tier-strip tier-cx"><span>TIER 9</span></div>') !== -1, html);
     });
 
-    t('playerRowHTML: .player-meta-card appends " · ADP {n}" (bold) when adpConsensus resolves, omits the segment entirely (no dangling separator) when it does not; posRank renders as the bold leading token when ctx.posRanks has the id', function () {
+    t('playerRowHTML: .player-meta-card appends an .adp-badge (bare number, no "ADP" label) when adpConsensus resolves, omits it entirely (no dangling separator) when it does not; posRank renders as the bold leading token when ctx.posRanks has the id', function () {
       var real = window.DC.adpData;
       try {
         window.DC.adpData = { players: {} };
         var withAdp = { id: 'ma1', rank: 6, name: 'Meta Fixture One', team: 'KC', position: 'RB', byeWeek: 9, drafted: false, target: false, avoid: false, tier: null, adp: { espn: 4, yahoo: 6, sleeper: 5 } };
         var withAdpHtml = DC.ui.templates.playerRowHTML(withAdp, { posRanks: { ma1: 2 } });
         // 0.35*4 + 0.20*6 + 0.45*5 = 4.85 -> 5
-        assert(withAdpHtml.indexOf('<div class="player-meta player-meta-card"><b>RB2</b> · KC · Bye 9 · <b>ADP 5</b></div>') !== -1, withAdpHtml);
+        assert(withAdpHtml.indexOf('<div class="player-meta player-meta-card"><b>RB2</b> · KC · Bye 9<span class="adp-badge">5</span></div>') !== -1, withAdpHtml);
 
         var noAdp = Object.assign({}, withAdp, { id: 'ma2', name: 'Meta Fixture Two', adp: null });
         var noAdpHtml = DC.ui.templates.playerRowHTML(noAdp, {});
@@ -7322,6 +7322,7 @@
         '#player-list .player-name{font-size:15px;line-height:18px}' +
         '.player-meta{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
         '.player-meta-card{font-size:12px}' +
+        '.adp-badge{background:#3A3A3C;color:#FFFFFF;font-size:11px;font-weight:700;border-radius:5px;padding:1px 5px;margin-left:4px;font-variant-numeric:tabular-nums;vertical-align:middle}' +
         '.signal-tags{display:inline-flex;gap:4px;margin-left:4px;vertical-align:middle}' +
         '.btn-toggle{position:relative;width:32px;height:44px}' +
         '.btn-toggle::after{content:"";position:absolute;top:0;bottom:0;left:-6px;right:-6px}' +
@@ -7497,9 +7498,12 @@
       }
     });
 
-    // A 2-digit posRank AND a 2-digit ADP together (e.g. "RB12 · KC · Bye 9 · ADP 42") sits at
-    // ~0px real margin — too fragile to assert on, so one of the two stays single-digit below.
-    t('metrics-fit: a realistic long metrics line (single-digit posRank + a 2-digit ADP) fits the metrics-line budget at 12px with real margin', function () {
+    // The bare-number .adp-badge dropped the "ADP " label, so this line is now measurably
+    // roomier than the old "· ADP nn" text: measured at this fixture's exact values, single-digit
+    // posRank + a 2-digit-ADP badge leaves ~30px of real margin (was previously asserted only
+    // >=1px, back when a 2-digit posRank+ADP combo together sat near 0px). The badge alone
+    // (bare "199" vs the old "· ADP 199") measures ~22px narrower at 12px/-apple-system.
+    t('metrics-fit: a realistic long metrics line (single-digit posRank + a 2-digit ADP badge) fits the metrics-line budget at 12px with real margin', function () {
       var fixture = buildPinned390FixtureCard();
       var styleTag = injectRowGeometryCSS();
       try {
@@ -7508,7 +7512,9 @@
         var metaEl = fixture.querySelector('#player-list .player-meta-card');
         assert(metaEl, 'expected the metrics line to render');
         var text = metaEl.textContent;
-        assert(text.indexOf('RB9') !== -1 && text.indexOf('KC') !== -1 && text.indexOf('Bye 9') !== -1 && text.indexOf('ADP 99') !== -1, 'sanity: ' + text);
+        assert(text.indexOf('RB9') !== -1 && text.indexOf('KC') !== -1 && text.indexOf('Bye 9') !== -1, 'sanity: ' + text);
+        var badge = metaEl.querySelector('.adp-badge');
+        assert(badge && badge.textContent === '99', 'expected the ADP badge to render the bare number, no label: ' + (badge && badge.textContent));
         assert(metaEl.scrollWidth <= metaEl.clientWidth, 'a realistic long metrics line should fit without truncation: scrollWidth=' + metaEl.scrollWidth + ' clientWidth=' + metaEl.clientWidth);
 
         // scrollWidth/clientWidth are integers that clamp equal whenever content fits — real,
@@ -7527,7 +7533,7 @@
         var natural = clone.getBoundingClientRect().width;
         document.body.removeChild(clone);
         var margin = metaEl.getBoundingClientRect().width - natural;
-        assert(margin >= 1, 'expected >=1px of real sub-pixel margin beyond the text: margin=' + margin.toFixed(2));
+        assert(margin >= 20, 'expected a real double-digit margin now that the badge dropped the ADP label (measured ~30px): margin=' + margin.toFixed(2));
       } finally {
         document.head.removeChild(styleTag);
         document.body.removeChild(fixture);
@@ -7549,7 +7555,9 @@
         var metaEl = row.querySelector('.player-meta-card');
         assert(metaEl, 'expected the metrics line to render');
         var text = metaEl.textContent;
-        assert(text.indexOf('WR15') !== -1 && text.indexOf('SEA') !== -1 && text.indexOf('Bye 11') !== -1 && text.indexOf('ADP 199') !== -1 && text.indexOf('CLIFF') !== -1, 'sanity: this is the intended pathological string: ' + text);
+        assert(text.indexOf('WR15') !== -1 && text.indexOf('SEA') !== -1 && text.indexOf('Bye 11') !== -1 && text.indexOf('CLIFF') !== -1, 'sanity: this is the intended pathological string: ' + text);
+        var badge = metaEl.querySelector('.adp-badge');
+        assert(badge && badge.textContent === '199', 'expected the ADP badge to render the bare number, no label: ' + (badge && badge.textContent));
 
         var cs = getComputedStyle(metaEl);
         assertEq(cs.overflow, 'hidden', 'overflow must clip inside the box, never push the card wider');

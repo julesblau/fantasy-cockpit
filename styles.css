@@ -534,6 +534,20 @@ button.player-rank {
   font-weight: 700;
 }
 
+/* bare-number ADP badge on the metrics line — no "ADP" label, so it never clips on rows with a
+   2-digit bye + 2-digit ADP; margin-left is its separator, not a middot */
+.adp-badge {
+  background: var(--surface-3);
+  color: var(--text-1);
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 5px;
+  padding: 1px 5px;
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+
 /* quiet signal tags: available rows only, up to 2, priority VALUE > CLIFF — inline-flex so they
    sit at the end of the metrics line instead of on their own row */
 .signal-tags {
