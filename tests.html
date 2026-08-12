@@ -7321,7 +7321,7 @@
         '.player-row{display:flex;align-items:center;gap:4px;padding:10px 6px;min-height:64px;max-height:80px;overflow:hidden}' +
         '.player-rank{width:36px}' +
         '#player-list .player-rank.pos-rank{display:flex;flex-direction:column;align-items:flex-start;gap:1px}' +
-        '.player-avatar-box{width:28px;height:28px;flex:none}' +
+        '.player-avatar-box{width:24px;height:24px;flex:none}' +
         '.player-info{flex:1;min-width:0}' +
         '.btn-toggle{width:44px;height:44px}' +
         '.btn-draft{min-width:52px;height:44px;padding:0 6px;font-size:13px;font-weight:700;border:none}';
@@ -7333,7 +7333,10 @@
     // and .player-info costs .player-info exactly 32px of its old 148px floor -- the box's own
     // 28px width, plus one more 4px row gap (5 top-level children now, not 4, so 5 gaps not 4).
     // 148 - 32 = 116.
-    t('row geometry at a real, pinned 390px width: .btn-draft stays >=44 wide (tap floor) and <=58; .player-rank is 36px; .player-avatar-box is 28px; .player-info reclaims >=116px', function () {
+    // R13 T6 floor recompute: shrinking the avatar box 28px -> 24px recovers 4px (no margin was
+    // ever added to the box -- the row's own 4px gap already covers its spacing), so the floor
+    // moves from 116 to 120.
+    t('row geometry at a real, pinned 390px width: .btn-draft stays >=44 wide (tap floor) and <=58; .player-rank is 36px; .player-avatar-box is 24px; .player-info reclaims >=120px', function () {
       var fixture = buildPinned390FixtureRankBadge();
       var styleTag = injectRowGeometryCSS();
       try {
@@ -7351,10 +7354,10 @@
         assert(Math.abs(rankRect.width - 36) <= 0.5, '.player-rank should be 36px wide: ' + rankRect.width);
 
         var avatarRect = row.querySelector('.player-avatar-box').getBoundingClientRect();
-        assert(Math.abs(avatarRect.width - 28) <= 0.5, '.player-avatar-box should be 28px wide: ' + avatarRect.width);
+        assert(Math.abs(avatarRect.width - 24) <= 0.5, '.player-avatar-box should be 24px wide: ' + avatarRect.width);
 
         var infoRect = row.querySelector('.player-info').getBoundingClientRect();
-        assert(infoRect.width >= 116, '.player-info should reclaim >=116px of width: ' + infoRect.width);
+        assert(infoRect.width >= 120, '.player-info should reclaim >=120px of width: ' + infoRect.width);
       } finally {
         document.head.removeChild(styleTag);
         document.body.removeChild(fixture);
