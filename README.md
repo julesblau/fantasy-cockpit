@@ -42,7 +42,7 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
-**Reminder for this release:** this release bumps the service-worker cache to v13. The Mine roster board (shown once a league is configured) no longer has a per-tile button -- to toggle whether a pick is yours, or to undo it, use the person icon and UNDO button on the Drafted view instead. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+**Reminder for this release:** this release bumps the service-worker cache to v14. Real ADP from ESPN, Yahoo, and Sleeper now powers the compare cards, the compare verdict lines, and the VALUE quiet-signal tag -- see Updating ADP, below, for the refresh ritual. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
 
 ## Install on iPhone
 
@@ -133,15 +133,15 @@ Tap "Clear league setup" in Settings -> League to remove your league config. The
 
 ## Compare players
 
-Long-press a player's row on the main board (Available or Drafted lists -- not the DRAFT/star/x buttons) to add him to a compare tray that appears above the bottom bar; long-press him again to remove him. The tray holds up to 4 players. Tap **Compare** once 2 or more are selected to open side-by-side cards (2 players) or a quadrant layout (3-4); each card shows the player's team/position/bye, tier chip, overall and position rank, and ADP from three sites (ESPN, Yahoo, Sleeper). Each card also carries a color-coded verdict line: it reads that player's consensus ADP (the average of the three site numbers) against your upcoming picks, showing red when he's likely gone before your next turn, orange for a coin flip, green when he should reach your next pick but not the one after, and grey when he can wait. When it's your pick right now, the line reads "on the clock" instead and buckets the same red/orange/grey way against the pick after this one. Without a league set up it instead compares his consensus against picks made so far -- green once he's past his ADP, orange right at his ADP ("at his market price now"), grey with a picks-to-go count otherwise. The ✕ on a card or its tray chip removes that player; Done closes the compare screen and keeps whoever's left selected; Clear empties the tray entirely. Once a league is set up, Mine becomes a roster board (see Track your own roster, above) whose tiles don't long-press into compare -- use the Available/Drafted lists instead.
+Long-press a player's row on the main board (Available or Drafted lists -- not the DRAFT/star/x buttons) to add him to a compare tray that appears above the bottom bar; long-press him again to remove him. The tray holds up to 4 players. Tap **Compare** once 2 or more are selected to open side-by-side cards (2 players) or a quadrant layout (3-4); each card shows the player's team/position/bye, tier chip, overall and position rank, and ADP from three sites (ESPN, Yahoo, Sleeper). Each card also carries a color-coded verdict line: it reads that player's consensus ADP (the equal-weighted average of whichever of the three sites report a number for him) against your upcoming picks, showing red when he's likely gone before your next turn, orange for a coin flip, green when he should reach your next pick but not the one after, and grey when he can wait. When it's your pick right now, the line reads "on the clock" instead and buckets the same red/orange/grey way against the pick after this one. Without a league set up it instead compares his consensus against picks made so far -- green once he's past his ADP, orange right at his ADP ("at his market price now"), grey with a picks-to-go count otherwise. The ✕ on a card or its tray chip removes that player; Done closes the compare screen and keeps whoever's left selected; Clear empties the tray entirely. Once a league is set up, Mine becomes a roster board (see Track your own roster, above) whose tiles don't long-press into compare -- use the Available/Drafted lists instead.
 
-The bundled sample players carry deterministic FAKE ADP values for ESPN, Yahoo, and Sleeper -- placeholders, not real market consensus, so the compare verdict line is only meaningful on those bundled players too. Anyone you import in has no ADP source yet, so those rows read "--" and their verdict line reads "no ADP data", until a future multi-source aggregation round supplies real numbers and turns today's equal-weight consensus average into a source-weighted one.
+ADP is real market consensus from three sources -- ESPN, Yahoo, Sleeper -- equal-weighted and refreshed by rerunning `scripts\update-adp.ps1` (see Updating ADP, below). A source missing a number for a given player shows as a dash on his card rather than being guessed at. This covers imported players too: the ADP table is a separate sidecar joined by player name/team/position at read time, not something baked into your rankings file, so replacing your board via Import Rankings doesn't drop anyone's ADP.
 
 ## Quiet signals
 
 Small tags that can appear next to an available player's name. They're passive markers, never suggestions on who to draft; both can show at once, no league setup needed for either:
 
-- **VALUE** -- still on the board 15+ picks past his own rank (and ranked 75 or better).
+- **VALUE** -- still on the board 15+ picks past his market ADP (and that ADP is 75 or better).
 - **CLIFF** -- the last available player left in his tier at his position.
 
 ## Backup / restore
@@ -156,6 +156,19 @@ Settings -> Export Backup downloads a `draft-cockpit-backup.json` file containin
 
 Re-import at any time via Settings -> Import Rankings using any of the supported formats above. The board re-ranks instantly and your existing marks carry over for matching players.
 
+## Updating ADP
+
+ADP drifts constantly in draft season -- the numbers in this repo go stale fast. The refresh ritual:
+
+```powershell
+powershell -File scripts\update-adp.ps1
+powershell -File scripts\run-tests.ps1
+```
+
+Then bump `CACHE_NAME` in `sw.js` (v15, v16, ...), update the release reminder above, commit, and deploy. Your phone picks up the new numbers on the second online open, same as any other update (see Install on iPhone, above).
+
+Sources are equal-weighted right now; the weighting lives in one constant, `ADP_WEIGHTS` in `js/state.js`, if you ever want to tilt it toward one site.
+
 ## Project layout
 
 ```
@@ -167,6 +180,7 @@ draft-cockpit/
   tests.html              in-browser unit test harness (open directly, or run headless via scripts\run-tests.ps1)
   js/
     data.js               seed player data (276 players: QB/RB/WR/TE plus K/DST), team bye weeks, id slugging
+    adp-data.js            GENERATED -- real ADP table (espn/yahoo/sleeper); regenerate with scripts\update-adp.ps1
     state.js              state shape, reducer, localStorage load/save, schema migrations
     importer.js           rankings + backup file parsing (CSV/TSV/list/parenthesized/backup JSON)
     ui.js                 all rendering and event wiring (search, filters, undo, settings sheet)
@@ -181,6 +195,7 @@ draft-cockpit/
     serve.ps1              local dev server (HttpListener on localhost:8321, no admin needed)
     run-tests.ps1          headless-Chrome/Edge test runner (fail-closed: crash counts as failure)
     make-icons.ps1         regenerates the three icon PNGs via System.Drawing
+    update-adp.ps1         fetches ESPN/Yahoo/Sleeper ADP and regenerates js\adp-data.js
 ```
 
 ## Regenerating icons
