@@ -138,11 +138,14 @@ $espnKeyFn = {
     if (-not $adp -or [double]$adp -le 0) {
         return $null
     }
-    $teamId = [int]$pl.proTeamId
-    if (-not $espnTeamMap.ContainsKey($teamId)) {
-        Fail("espn has unmapped proTeamId '$teamId'")
+    $team = $null
+    if ($pos -eq "dst") {
+        $teamId = [int]$pl.proTeamId
+        if (-not $espnTeamMap.ContainsKey($teamId)) {
+            Fail("espn has unmapped proTeamId '$teamId'")
+        }
+        $team = Fold-TeamCode $espnTeamMap[$teamId] "espn"
     }
-    $team = Fold-TeamCode $espnTeamMap[$teamId] "espn"
     $key = Build-Key $pl.fullName $team $pos
     return @{ Key = $key; Value = $adp }
 }
