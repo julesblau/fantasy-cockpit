@@ -29,6 +29,7 @@
 
   <!-- app scripts under test (later tasks append more script tags here, before the harness) -->
   <script src="./js/data.js"></script>
+  <script src="./js/adp-data.js"></script>
   <script src="./js/state.js"></script>
   <script src="./js/importer.js"></script>
   <script src="./js/ui.js"></script>
@@ -183,6 +184,73 @@
       });
       assert(maxRun <= 7, 'max run=' + maxRun + (firstViolation ? '; ' + firstViolation : ''));
     });
+  </script>
+
+  <!-- Task 2: adp-data.js sidecar table (shape/liveness only - values are live data, never asserted) -->
+  <script>
+  (function () {
+    'use strict';
+    section('adp-data');
+
+    t('DC.adpData exists with well-shaped updatedAt/season/scoring/players', function () {
+      assert(DC.adpData && typeof DC.adpData === 'object', 'DC.adpData missing');
+      assert(/^\d{4}-\d{2}-\d{2}$/.test(DC.adpData.updatedAt), 'updatedAt shape: ' + DC.adpData.updatedAt);
+      assert(!isNaN(new Date(DC.adpData.updatedAt).getTime()), 'updatedAt not parseable as a date');
+      assert(typeof DC.adpData.season === 'number', 'season not a number');
+      assertEq(DC.adpData.scoring, 'ppr');
+      assert(DC.adpData.players && typeof DC.adpData.players === 'object' && !Array.isArray(DC.adpData.players), 'players not a plain object');
+    });
+
+    t('players table has at least 300 entries', function () {
+      var n = Object.keys(DC.adpData.players).length;
+      assert(n >= 300, 'entry count=' + n);
+    });
+
+    t('every key matches /^[a-z0-9]+|(qb|rb|wr|te|k|dst)$/', function () {
+      var keyPattern = /^[a-z0-9]+\|(qb|rb|wr|te|k|dst)$/;
+      Object.keys(DC.adpData.players).forEach(function (k) {
+        assert(keyPattern.test(k), 'bad key: ' + k);
+      });
+    });
+
+    t('every entry has >=1 source, only espn/yahoo/sleeper keys, values finite numbers in [1, 500)', function () {
+      var validSources = { espn: true, yahoo: true, sleeper: true };
+      Object.keys(DC.adpData.players).forEach(function (k) {
+        var entry = DC.adpData.players[k];
+        var sourceKeys = Object.keys(entry);
+        assert(sourceKeys.length >= 1, 'no sources for ' + k);
+        sourceKeys.forEach(function (src) {
+          assert(validSources[src], 'unexpected source "' + src + '" on ' + k);
+          var v = entry[src];
+          assert(typeof v === 'number' && isFinite(v) && v >= 1 && v < 500, 'bad value for ' + k + '.' + src + ': ' + v);
+        });
+      });
+    });
+
+    t('join-liveness: >=80 of the first 100 SEED_PLAYERS resolve via adpKey', function () {
+      var first100 = DC.data.SEED_PLAYERS.slice(0, 100);
+      var hits = 0;
+      first100.forEach(function (p) {
+        var key = DC.state.adpKey(p);
+        if (key && Object.prototype.hasOwnProperty.call(DC.adpData.players, key)) {
+          hits++;
+        }
+      });
+      assert(hits >= 80, 'hits=' + hits + '/100');
+    });
+
+    t('DST liveness: >=10 of the seed DSTs resolve via adpKey', function () {
+      var dsts = DC.data.SEED_PLAYERS.filter(function (p) { return p.position === 'DST'; });
+      var hits = 0;
+      dsts.forEach(function (p) {
+        var key = DC.state.adpKey(p);
+        if (key && Object.prototype.hasOwnProperty.call(DC.adpData.players, key)) {
+          hits++;
+        }
+      });
+      assert(hits >= 10, 'hits=' + hits + '/' + dsts.length);
+    });
+  })();
   </script>
 
   <!-- Task 3: state store tests (reducer / selectors / search / persistence) -->
