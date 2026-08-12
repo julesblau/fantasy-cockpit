@@ -27,10 +27,17 @@
     window.__DC_REAL_STATE_SNAPSHOT__ = localStorage.getItem('draft-cockpit/state');
   </script>
 
+  <!-- same rationale as the state-key snapshot above: a test visit must never corrupt a real
+       in-app ADP refresh override. Literal must match ADP_OVERRIDE_KEY in js/state.js. -->
+  <script>
+    window.__DC_REAL_ADP_OVERRIDE_SNAPSHOT__ = localStorage.getItem('draft-cockpit/adp-override');
+  </script>
+
   <!-- app scripts under test (later tasks append more script tags here, before the harness) -->
   <script src="./js/data.js"></script>
   <script src="./js/adp-data.js"></script>
   <script src="./js/state.js"></script>
+  <script src="./js/adp-refresh.js"></script>
   <script src="./js/importer.js"></script>
   <script src="./js/ui.js"></script>
   <script src="./js/edit.js"></script>
@@ -9597,6 +9604,364 @@
   })();
   </script>
 
+  <!-- Task 4: in-app Sleeper+ESPN ADP refresh. Placed after every state-section block so
+       DC.adpRefresh already exists. Async sub-tests are chained sequentially (each stage's
+       promise resolves only after its own cleanup) since they share window.fetch,
+       window.DC.adpData and the real adp-override localStorage key. -->
+  <script>
+  (function () {
+    'use strict';
+    section('adp-refresh');
+
+    var OVERRIDE_KEY = DC.state.ADP_OVERRIDE_KEY;
+
+    // ---- synthetic payload builders — fake players only, never a real player's ADP ----------
+
+    function buildSleeperRows(n, opts) {
+      opts = opts || {};
+      var rows = [];
+      for (var i = 0; i < n; i++) {
+        rows.push({ player: { first_name: 'Slp', last_name: 'Fixture' + i, position: 'RB', team: 'KC' }, stats: { adp_ppr: 5 + i * 0.25 } });
+      }
+      if (opts.includeDef) {
+        rows.push({ player: { position: 'DEF', team: 'JAC' }, stats: { adp_ppr: 130 } }); // exercises JAC -> JAX fold
+      }
+      if (opts.includeFixture) {
+        rows.push({ player: { first_name: 'Zeke', last_name: 'Testplayer', position: 'RB', team: 'KC' }, stats: { adp_ppr: 16.75 } });
+      }
+      return rows;
+    }
+
+    function buildEspnPayload(n, opts) {
+      opts = opts || {};
+      var players = [];
+      for (var i = 0; i < n; i++) {
+        players.push({ player: { fullName: 'Esp Fixture' + i, defaultPositionId: 2, ownership: { averageDraftPosition: 6 + i * 0.25 } } });
+      }
+      if (opts.includeDst) {
+        players.push({ player: { fullName: 'Some Team DST', defaultPositionId: 16, proTeamId: 2, ownership: { averageDraftPosition: 140 } } }); // proTeamId 2 -> BUF
+      }
+      if (opts.includeSkip) {
+        players.push({ player: { fullName: 'Skip Me', defaultPositionId: 99, ownership: { averageDraftPosition: 3 } } }); // unmapped positionId
+      }
+      if (opts.includeFixture) {
+        players.push({ player: { fullName: 'Zeke Testplayer', defaultPositionId: 2, ownership: { averageDraftPosition: 15.5 } } });
+      }
+      return { players: players };
+    }
+
+    function stubFetch(sleeperPayload, espnPayload) {
+      var real = window.fetch;
+      window.fetch = function (url) {
+        if (String(url).indexOf('sleeper') !== -1) {
+          return Promise.resolve({ ok: true, json: function () { return Promise.resolve(sleeperPayload); } });
+        }
+        return Promise.resolve({ ok: true, json: function () { return Promise.resolve(espnPayload); } });
+      };
+      return function () { window.fetch = real; };
+    }
+
+    // hops onto an existing promise, deep enough to run strictly after a shorter reaction chain
+    // (e.g. ui.js's own .then(res,err).then(cleanup)) that was attached to the same promise earlier
+    function bufferAfter(promise, hops) {
+      var p = promise.then(function (v) { return v; }, function (e) { return e; });
+      for (var i = 1; i < hops; i++) {
+        p = p.then(function (v) { return v; });
+      }
+      return p;
+    }
+
+    function buildMountFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    var chain = Promise.resolve();
+
+    // 1) success path ---------------------------------------------------------------------------
+    chain = chain.then(function () {
+      var goodSleeper = buildSleeperRows(155, { includeDef: true, includeFixture: true });
+      var goodEspn = buildEspnPayload(155, { includeDst: true, includeSkip: true, includeFixture: true });
+      var unstub = stubFetch(goodSleeper, goodEspn);
+      var realAdpData = window.DC.adpData;
+      window.DC.adpData = { updatedAt: '2020-05-05', players: { 'zeketestplayer|rb': { yahoo: 42 } } };
+
+      return DC.adpRefresh.run().then(function (result) {
+        t('adp-refresh success: run() resolves ok with exact per-source usable counts (skip-row excluded)', function () {
+          assertEq(result.ok, true);
+          assertEq(result.counts, { espn: 157, sleeper: 157 });
+        });
+        t('adp-refresh success: override key written with expected shape (updatedAt, sources, canonical espn/sleeper-only entries)', function () {
+          var raw = localStorage.getItem(OVERRIDE_KEY);
+          assert(raw, 'override key should be written');
+          var parsed = JSON.parse(raw);
+          assert(/^\d{4}-\d{2}-\d{2}$/.test(parsed.updatedAt), 'updatedAt shape: ' + parsed.updatedAt);
+          assertEq(parsed.sources, ['espn', 'sleeper']);
+          var entry = parsed.players['zeketestplayer|rb'];
+          assert(entry, 'fixture key should be present');
+          assertEq(Object.keys(entry), ['espn', 'sleeper'], 'canonical key order espn, sleeper — no yahoo key ever');
+        });
+        t('adp-refresh success: JAC DEF row folds to jax|dst; ESPN DST via proTeamId keys to buf|dst', function () {
+          var parsed = JSON.parse(localStorage.getItem(OVERRIDE_KEY));
+          assert(parsed.players['jax|dst'], 'JAC should fold to jax|dst');
+          assert(parsed.players['buf|dst'], 'ESPN proTeamId 2 should key to buf|dst');
+        });
+        t('adp-refresh success: adpForPlayer merges override espn/sleeper with shipped yahoo (run() already called reloadAdpOverride)', function () {
+          var merged = DC.state.adpForPlayer({ name: 'Zeke Testplayer', team: 'KC', position: 'RB' });
+          assertEq(merged, { espn: 15.5, yahoo: 42, sleeper: 16.75 });
+        });
+      }, function (err) {
+        t('adp-refresh success: run() should not have rejected', function () {
+          assert(false, 'unexpected rejection: ' + (err && err.message));
+        });
+      }).then(function () {
+        unstub();
+        window.DC.adpData = realAdpData;
+        localStorage.removeItem(OVERRIDE_KEY);
+        DC.state.reloadAdpOverride();
+      });
+    });
+
+    // 2) gate failure -----------------------------------------------------------------------------
+    chain = chain.then(function () {
+      var okSleeper = buildSleeperRows(155);
+      var thinEspn = buildEspnPayload(40);
+      var unstub = stubFetch(okSleeper, thinEspn);
+      localStorage.removeItem(OVERRIDE_KEY);
+      DC.state.reloadAdpOverride();
+
+      return DC.adpRefresh.run().then(function () {
+        t('adp-refresh gate failure: run() should have rejected', function () {
+          assert(false, 'run() unexpectedly resolved');
+        });
+      }, function (err) {
+        t('adp-refresh gate failure: rejects naming the under-gate source (ESPN)', function () {
+          assert(err && /espn/i.test(err.message), 'error should name ESPN: ' + (err && err.message));
+        });
+        t('adp-refresh gate failure: override key NOT written; adpForPlayer unaffected', function () {
+          assertEq(localStorage.getItem(OVERRIDE_KEY), null, 'override key should not exist');
+          assertEq(DC.state.adpForPlayer({ name: 'Zeke Testplayer', team: 'KC', position: 'RB' }), null, 'no shipped/override/player.adp -> null');
+        });
+      }).then(function () {
+        unstub();
+        localStorage.removeItem(OVERRIDE_KEY);
+        DC.state.reloadAdpOverride();
+      });
+    });
+
+    // 3) malformed stored override (synchronous) ---------------------------------------------------
+    chain = chain.then(function () {
+      t('adp-refresh: malformed stored override is cleared by reloadAdpOverride(); lookups fall through to shipped', function () {
+        var real = window.DC.adpData;
+        try {
+          localStorage.setItem(OVERRIDE_KEY, '{"not":"the right shape"}');
+          var result = DC.state.reloadAdpOverride();
+          assertEq(result, null, 'bad shape should reload to null');
+          assertEq(localStorage.getItem(OVERRIDE_KEY), null, 'bad-shape key should be removed');
+
+          window.DC.adpData = { players: { 'malformedfallback|wr': { espn: 11, yahoo: 12, sleeper: 13 } } };
+          assertEq(DC.state.adpForPlayer({ name: 'Malformed Fallback', team: 'KC', position: 'WR' }), { espn: 11, yahoo: 12, sleeper: 13 }, 'falls through to shipped');
+        } finally {
+          localStorage.removeItem(OVERRIDE_KEY);
+          DC.state.reloadAdpOverride();
+          window.DC.adpData = real;
+        }
+      });
+    });
+
+    // 3b) an override entry with no valid numeric source, and no shipped/player.adp, must fall
+    // through to null — never the truthy-but-empty {espn:undefined,yahoo:undefined,sleeper:undefined}
+    chain = chain.then(function () {
+      t('adp-refresh: override entry with zero valid numeric sources and no shipped data falls through to null, not a truthy empty object', function () {
+        var real = window.DC.adpData;
+        try {
+          localStorage.setItem(OVERRIDE_KEY, JSON.stringify({ updatedAt: '2026-01-01', players: { 'novalidsource|rb': { espn: 'not-a-number' } } }));
+          DC.state.reloadAdpOverride();
+          window.DC.adpData = { players: {} };
+          assertEq(DC.state.adpForPlayer({ name: 'No Valid Source', team: 'KC', position: 'RB' }), null, 'must be null, not a truthy all-undefined object');
+        } finally {
+          localStorage.removeItem(OVERRIDE_KEY);
+          DC.state.reloadAdpOverride();
+          window.DC.adpData = real;
+        }
+      });
+    });
+
+    // 4) adpUpdatedAt precedence (synchronous) -----------------------------------------------------
+    chain = chain.then(function () {
+      t('adp-refresh: adpUpdatedAt() precedence — override wins, else DC.adpData, else null', function () {
+        var real = window.DC.adpData;
+        try {
+          localStorage.setItem(OVERRIDE_KEY, JSON.stringify({ updatedAt: '2026-04-04', players: {} }));
+          DC.state.reloadAdpOverride();
+          window.DC.adpData = { updatedAt: '2020-01-01', players: {} };
+          assertEq(DC.state.adpUpdatedAt(), '2026-04-04', 'override wins over DC.adpData');
+
+          localStorage.removeItem(OVERRIDE_KEY);
+          DC.state.reloadAdpOverride();
+          assertEq(DC.state.adpUpdatedAt(), '2020-01-01', 'falls to DC.adpData once override absent');
+
+          window.DC.adpData = undefined;
+          assertEq(DC.state.adpUpdatedAt(), null, 'null when both absent');
+        } finally {
+          localStorage.removeItem(OVERRIDE_KEY);
+          DC.state.reloadAdpOverride();
+          window.DC.adpData = real;
+        }
+      });
+    });
+
+    // 5) Clear All Data clears the override (mount fixture, two-tap confirm) -----------------------
+    chain = chain.then(function () {
+      t('adp-refresh: Clear All Data removes the override and re-renders the note slot from the shipped date', function () {
+        var fixture = buildMountFixture();
+        var real = window.DC.adpData;
+        try {
+          localStorage.setItem(OVERRIDE_KEY, JSON.stringify({ updatedAt: '2026-06-06', players: {} }));
+          DC.state.reloadAdpOverride();
+          window.DC.adpData = { updatedAt: '2020-09-09', players: {} };
+
+          var store = DC.state.createStore(DC.state.createSeedState());
+          DC.ui.mount(store);
+
+          fixture.querySelector('[data-action="open-settings"]').click();
+          var clearBtn = fixture.querySelector('[data-action="clear-all-data"]');
+          clearBtn.click(); // arm
+          clearBtn.click(); // confirm
+
+          assertEq(localStorage.getItem(OVERRIDE_KEY), null, 'override key should be gone');
+          var note = fixture.querySelector('.adp-note-slot .sheet-note');
+          assert(note, 'note slot should still render after clear');
+          assertEq(note.textContent, 'ADP updated Sep 9', 'note re-rendered from the shipped date, not the cleared override');
+        } finally {
+          document.body.removeChild(fixture);
+          localStorage.removeItem(DC.state.STORAGE_KEY);
+          localStorage.removeItem(OVERRIDE_KEY);
+          DC.state.reloadAdpOverride();
+          window.DC.adpData = real;
+        }
+      });
+    });
+
+    // 6) Refresh ADP button flow (mount fixture, controlled promise) -------------------------------
+    chain = chain.then(function () {
+      var fixture = buildMountFixture();
+      var real = window.DC.adpData;
+      var realFetch = window.fetch;
+      var realRun = DC.adpRefresh.run;
+      var pending = [];
+      var capturedPromise = null;
+
+      function cleanup() {
+        window.fetch = realFetch;
+        DC.adpRefresh.run = realRun;
+        window.DC.adpData = real;
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+        localStorage.removeItem(OVERRIDE_KEY);
+        DC.state.reloadAdpOverride();
+      }
+
+      window.fetch = function (url) {
+        return new Promise(function (resolve, reject) {
+          pending.push({ url: String(url), resolve: resolve, reject: reject });
+        });
+      };
+      DC.adpRefresh.run = function () {
+        capturedPromise = realRun.apply(DC.adpRefresh, arguments);
+        return capturedPromise;
+      };
+      window.DC.adpData = { updatedAt: '2020-10-10', players: {} };
+
+      var store = DC.state.createStore(DC.state.createSeedState());
+      DC.ui.mount(store);
+      fixture.querySelector('[data-action="open-settings"]').click();
+      var refreshBtn = fixture.querySelector('[data-action="adp-refresh"]');
+      var statusEl = fixture.querySelector('.adp-refresh-status');
+
+      refreshBtn.click();
+
+      t('adp-refresh button: tap disables the button and shows "Refreshing…"', function () {
+        assert(refreshBtn.disabled, 'button should be disabled while in flight');
+        assertEq(refreshBtn.textContent, 'Refreshing…');
+      });
+
+      var firstPromise = capturedPromise;
+
+      t('adp-refresh button: a second tap while in flight is ignored (guarded) — checked with disabled forced off, so the in-flight flag itself (not the disabled attribute) is what is exercised', function () {
+        refreshBtn.disabled = false; // bypass the native disabled-blocks-click behavior to isolate the JS guard
+        refreshBtn.click();
+        refreshBtn.disabled = true;
+        assertEq(pending.length, 2, 'exactly one fetch pair (sleeper+espn) from the single accepted tap');
+        assertEq(capturedPromise, firstPromise, 'DC.adpRefresh.run should not be invoked again while guarded');
+      });
+
+      var goodSleeper = buildSleeperRows(155);
+      var goodEspn = buildEspnPayload(155);
+      pending.forEach(function (p) {
+        if (p.url.indexOf('sleeper') !== -1) {
+          p.resolve({ ok: true, json: function () { return Promise.resolve(goodSleeper); } });
+        } else {
+          p.resolve({ ok: true, json: function () { return Promise.resolve(goodEspn); } });
+        }
+      });
+
+      return bufferAfter(firstPromise, 6).then(function () {
+        t('adp-refresh button: resolve restores the button and shows the success note', function () {
+          assert(!refreshBtn.disabled, 'button should be re-enabled');
+          assertEq(refreshBtn.textContent, 'Refresh ADP');
+          assertEq(statusEl.textContent, 'Sleeper + ESPN refreshed (Yahoo updates with deploys)');
+        });
+
+        pending = [];
+        refreshBtn.click();
+
+        t('adp-refresh button: tapping again after restore starts a fresh in-flight refresh', function () {
+          assert(refreshBtn.disabled, 'button should be disabled again for the new tap');
+          assertEq(pending.length, 2, 'a fresh fetch pair should have been issued');
+        });
+
+        var secondPromise = capturedPromise;
+        var rejectErr = new Error('network down');
+        pending.forEach(function (p) { p.reject(rejectErr); });
+
+        return bufferAfter(secondPromise, 6).then(function () {
+          t('adp-refresh button: reject restores the button and shows the error note', function () {
+            assert(!refreshBtn.disabled, 'button should be re-enabled after a rejection');
+            assertEq(refreshBtn.textContent, 'Refresh ADP');
+            assertEq(statusEl.textContent, 'network down');
+          });
+        });
+      }).then(cleanup, function (err) {
+        cleanup();
+        t('adp-refresh button flow: unexpected error during orchestration', function () {
+          assert(false, String(err && err.message || err));
+        });
+      });
+    });
+
+    chain.catch(function (err) {
+      t('adp-refresh: unexpected top-level chain failure', function () {
+        assert(false, String(err && err.message || err));
+      });
+    });
+  })();
+  </script>
+
   <!-- render results (runs last, after all test-section scripts) -->
   <script>
     (function () {
@@ -9666,6 +10031,14 @@
         localStorage.removeItem('draft-cockpit/state');
       } else {
         localStorage.setItem('draft-cockpit/state', __realSnapshot);
+      }
+
+      // same rationale, for the ADP override key (see the snapshot script at the top of this file)
+      var __realAdpOverrideSnapshot = window.__DC_REAL_ADP_OVERRIDE_SNAPSHOT__;
+      if (__realAdpOverrideSnapshot === null || typeof __realAdpOverrideSnapshot === 'undefined') {
+        localStorage.removeItem('draft-cockpit/adp-override');
+      } else {
+        localStorage.setItem('draft-cockpit/adp-override', __realAdpOverrideSnapshot);
       }
     })();
   </script>

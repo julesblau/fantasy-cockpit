@@ -48,6 +48,12 @@
     return MONTH_ABBR[month - 1] + ' ' + parseInt(m[3], 10);
   }
 
+  /** @returns {string} live-read from DC.state.adpUpdatedAt() so it can be re-rendered after a refresh or a clear */
+  function adpNoteInnerHTML() {
+    var updated = shortAdpDate(DC.state.adpUpdatedAt());
+    return updated ? '<div class="sheet-note">ADP updated ' + esc(updated) + '</div>' : '';
+  }
+
   // ---- icons ---------------------------------------------------------------
 
   var ICON_BODIES = {
@@ -448,9 +454,6 @@
     var searchInput = searchContainer.querySelector('.search-input');
     var searchClearBtn = searchContainer.querySelector('.search-clear');
 
-    var adpUpdated = DC.adpData ? shortAdpDate(DC.adpData.updatedAt) : null;
-    var adpNoteHTML = adpUpdated ? '<div class="sheet-note">ADP updated ' + esc(adpUpdated) + '</div>' : '';
-
     sheetRoot.innerHTML =
       '<div class="scrim" data-action="close-settings" hidden></div>' +
       '<div class="sheet" hidden>' +
@@ -466,7 +469,9 @@
           '<button class="sheet-row" data-action="import-parse">Parse</button>' +
           '<div class="import-preview"></div>' +
         '</div>' +
-        adpNoteHTML +
+        '<div class="adp-note-slot">' + adpNoteInnerHTML() + '</div>' +
+        '<button class="sheet-row" data-action="adp-refresh">Refresh ADP</button>' +
+        '<div class="adp-refresh-status"></div>' +
         '<button class="sheet-row" data-action="export">Export Backup</button>' +
         '<div class="sheet-note">Save this file somewhere safe ' + EMDASH + ' it restores via Import.</div>' +
         '<h3 class="sheet-section-title">League</h3>' +
@@ -480,11 +485,15 @@
     var importFile = sheetRoot.querySelector('.import-file');
     var importPreviewEl = sheetRoot.querySelector('.import-preview');
     var leagueSectionEl = sheetRoot.querySelector('.league-section');
+    var adpNoteSlot = sheetRoot.querySelector('.adp-note-slot');
+    var adpRefreshBtn = sheetRoot.querySelector('[data-action="adp-refresh"]');
+    var adpRefreshStatusEl = sheetRoot.querySelector('.adp-refresh-status');
 
     var importPreviewState = null; // {kind:'rankings'|'backup', result} — lives here, not in the store
     var leagueSetupOpen = false; // UI-only: true while "Set up draft tracker" editors are expanded pre-Apply
     var leagueDraft = null; // League|null — uncommitted defaults being edited before Apply; never touches the store
     var leagueFoldOpen = false; // UI-only: configured-league editors expanded in Settings
+    var adpRefreshInFlight = false; // guards double-taps on Refresh ADP
     var undoBannerTimer = null;
     var lastFiltersKey = null;
     var lastSearchText = null;
@@ -517,6 +526,10 @@
 
     function toggleImportArea() {
       importArea.hidden = !importArea.hidden;
+    }
+
+    function setAdpRefreshStatus(message) {
+      adpRefreshStatusEl.innerHTML = message ? '<div class="sheet-note">' + esc(message) + '</div>' : '';
     }
 
     // ---- league settings section (imperative; league-section is fully rebuilt every render()) ----
@@ -1055,7 +1068,28 @@
         case 'clear-all-data':
           confirmAction(target, function () {
             store.dispatch({ type: 'CLEAR_ALL_DATA' });
+            localStorage.removeItem(DC.state.ADP_OVERRIDE_KEY);
+            DC.state.reloadAdpOverride();
+            adpNoteSlot.innerHTML = adpNoteInnerHTML();
             closeSettings();
+          });
+          break;
+        case 'adp-refresh':
+          if (adpRefreshInFlight) {
+            break;
+          }
+          adpRefreshInFlight = true;
+          adpRefreshBtn.disabled = true;
+          adpRefreshBtn.textContent = 'Refreshing…';
+          DC.adpRefresh.run().then(function () {
+            adpNoteSlot.innerHTML = adpNoteInnerHTML();
+            setAdpRefreshStatus('Sleeper + ESPN refreshed (Yahoo updates with deploys)');
+          }, function (err) {
+            setAdpRefreshStatus(err && err.message ? err.message : String(err));
+          }).then(function () {
+            adpRefreshInFlight = false;
+            adpRefreshBtn.disabled = false;
+            adpRefreshBtn.textContent = 'Refresh ADP';
           });
           break;
         case 'import-parse':

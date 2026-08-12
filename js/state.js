@@ -24,6 +24,7 @@
 
   var CURRENT_SCHEMA_VERSION = 7;
   var STORAGE_KEY = 'draft-cockpit/state';
+  var ADP_OVERRIDE_KEY = 'draft-cockpit/adp-override';
   var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true, DST: true, K: true };
   var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true };
   var ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K', 'BENCH'];
@@ -925,12 +926,66 @@
     return normalizeAdpName(player.name) + '|' + player.position.toLowerCase();
   }
 
-  /** @param {*} player @returns {Object|null} sidecar first; player.adp fallback is the fixture/legacy seam */
+  var adpOverride = null; // in-app Sleeper+ESPN refresh overlay; live-read like DC.adpData, reloaded via reloadAdpOverride()
+
+  /** @returns {{updatedAt:string, players:Object}|null} parses ADP_OVERRIDE_KEY; any parse/shape failure clears the key and returns null */
+  function readAdpOverride() {
+    var raw;
+    try {
+      raw = localStorage.getItem(ADP_OVERRIDE_KEY);
+    } catch (e) {
+      return null;
+    }
+    if (raw === null) {
+      return null;
+    }
+    try {
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) ||
+          typeof parsed.updatedAt !== 'string' ||
+          !parsed.players || typeof parsed.players !== 'object' || Array.isArray(parsed.players)) {
+        throw new Error('bad shape');
+      }
+      return parsed;
+    } catch (e) {
+      try { localStorage.removeItem(ADP_OVERRIDE_KEY); } catch (e2) { /* ignore */ }
+      return null;
+    }
+  }
+
+  adpOverride = readAdpOverride();
+
+  /** @returns {{updatedAt:string, players:Object}|null} re-reads ADP_OVERRIDE_KEY into module state; call after writing/clearing the override */
+  function reloadAdpOverride() {
+    adpOverride = readAdpOverride();
+    return adpOverride;
+  }
+
+  /** @param {*} player @returns {Object|null} sidecar+override merge first; player.adp fallback is the fixture/legacy seam */
   function adpForPlayer(player) {
     var table = window.DC && DC.adpData && DC.adpData.players;
     var key = adpKey(player);
-    var hit = table && key ? table[key] : undefined;
+    var shipped = table && key ? table[key] : undefined;
+    var over = adpOverride && adpOverride.players && key ? adpOverride.players[key] : undefined;
+    var merged = over || shipped ? {
+      espn: over && isAdpNum(over.espn) ? over.espn : (shipped ? shipped.espn : undefined),
+      yahoo: shipped ? shipped.yahoo : undefined,
+      sleeper: over && isAdpNum(over.sleeper) ? over.sleeper : (shipped ? shipped.sleeper : undefined)
+    } : undefined;
+    var hit;
+    if (merged) {
+      hit = {};
+      if (isAdpNum(merged.espn)) { hit.espn = merged.espn; }
+      if (isAdpNum(merged.yahoo)) { hit.yahoo = merged.yahoo; }
+      if (isAdpNum(merged.sleeper)) { hit.sleeper = merged.sleeper; }
+      if (Object.keys(hit).length === 0) { hit = undefined; }
+    }
     return hit || (player && player.adp) || null;
+  }
+
+  /** @returns {string|null} live read: override date wins when present, else DC.adpData's, else null */
+  function adpUpdatedAt() {
+    return adpOverride ? adpOverride.updatedAt : (DC.adpData ? DC.adpData.updatedAt : null);
   }
 
   var ADP_WEIGHTS = { espn: 0.35, yahoo: 0.20, sleeper: 0.45 }; // market-sharpness weighting; sleeper heaviest
@@ -1172,6 +1227,9 @@
     adpConsensus: adpConsensus,
     normalizeAdpName: normalizeAdpName,
     adpKey: adpKey,
-    adpForPlayer: adpForPlayer
+    adpForPlayer: adpForPlayer,
+    reloadAdpOverride: reloadAdpOverride,
+    adpUpdatedAt: adpUpdatedAt,
+    ADP_OVERRIDE_KEY: ADP_OVERRIDE_KEY
   };
 })();
