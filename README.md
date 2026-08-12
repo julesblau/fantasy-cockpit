@@ -135,7 +135,7 @@ Tap "Clear league setup" in Settings -> League to remove your league config. The
 
 Long-press a player's row on the main board (Available or Drafted lists -- not the DRAFT/star/x buttons) to add him to a compare tray that appears above the bottom bar; long-press him again to remove him. The tray holds up to 4 players. Tap **Compare** once 2 or more are selected to open side-by-side cards (2 players) or a quadrant layout (3-4); each card shows the player's team/position/bye, tier chip, overall and position rank, and ADP from three sites (ESPN, Yahoo, Sleeper). Each card also carries a color-coded verdict line: it reads that player's consensus ADP (the equal-weighted average of whichever of the three sites report a number for him) against your upcoming picks, showing red when he's likely gone before your next turn, orange for a coin flip, green when he should reach your next pick but not the one after, and grey when he can wait. When it's your pick right now, the line reads "on the clock" instead and buckets the same red/orange/grey way against the pick after this one. Without a league set up it instead compares his consensus against picks made so far -- green once he's past his ADP, orange right at his ADP ("at his market price now"), grey with a picks-to-go count otherwise. The ✕ on a card or its tray chip removes that player; Done closes the compare screen and keeps whoever's left selected; Clear empties the tray entirely. Once a league is set up, Mine becomes a roster board (see Track your own roster, above) whose tiles don't long-press into compare -- use the Available/Drafted lists instead.
 
-ADP is real market consensus from three sources -- ESPN, Yahoo, Sleeper -- equal-weighted and refreshed by rerunning `scripts\update-adp.ps1` (see Updating ADP, below). A source missing a number for a given player shows as a dash on his card rather than being guessed at. This covers imported players too: the ADP table is a separate sidecar joined by player name/team/position at read time, not something baked into your rankings file, so replacing your board via Import Rankings doesn't drop anyone's ADP.
+ADP is real market consensus from three sources -- ESPN, Yahoo, Sleeper -- equal-weighted and refreshed by rerunning `scripts\update-adp.ps1` (see Updating ADP, below). A source missing a number for a given player shows as a dash on his card rather than being guessed at. This covers imported players too: the ADP table is a separate sidecar joined at read time by player name and position (team alone for defenses), not something baked into your rankings file, so replacing your board via Import Rankings doesn't drop anyone's ADP.
 
 ## Quiet signals
 
@@ -180,7 +180,7 @@ draft-cockpit/
   tests.html              in-browser unit test harness (open directly, or run headless via scripts\run-tests.ps1)
   js/
     data.js               seed player data (276 players: QB/RB/WR/TE plus K/DST), team bye weeks, id slugging
-    adp-data.js            GENERATED -- real ADP table (espn/yahoo/sleeper); regenerate with scripts\update-adp.ps1
+    adp-data.js           GENERATED -- real ADP table (espn/yahoo/sleeper); regenerate with scripts\update-adp.ps1
     state.js              state shape, reducer, localStorage load/save, schema migrations
     importer.js           rankings + backup file parsing (CSV/TSV/list/parenthesized/backup JSON)
     ui.js                 all rendering and event wiring (search, filters, undo, settings sheet)
