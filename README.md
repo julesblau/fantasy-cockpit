@@ -42,7 +42,7 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
-**Reminder for this release:** this release bumps the service-worker cache to v14. Real ADP from ESPN, Yahoo, and Sleeper now powers the compare cards, the compare verdict lines, and the VALUE quiet-signal tag -- see Updating ADP, below, for the refresh ritual. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+**Reminder for this release:** this release bumps the service-worker cache to v15. ADP consensus is now weighted by source (Sleeper 45%, ESPN 35%, Yahoo 20%) instead of a simple average -- see Updating ADP, below. The board itself now ships pre-sorted in weighted-market-ADP order; an already-installed board reorders itself once, the first time it loads after this update (your marks carry over, and a board you've imported or manually edited is left untouched -- only the untouched pristine seed board gets reordered). Settings now has a Refresh ADP button that pulls fresh Sleeper + ESPN numbers right on your phone. Compare cards and board rows show player headshots, and tiers have new chip colors. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
 
 ## Install on iPhone
 
@@ -56,6 +56,8 @@ Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it work
 **Updates:** redeploying requires bumping `CACHE_NAME` in `sw.js` (see the comment at the top of that file). An installed app picks up a new version on the *second* online open after a redeploy, not the first. This is expected iOS service-worker behavior, not a bug.
 
 ## Import your real rankings
+
+Out of the box, the board is pre-sorted in weighted market ADP order (see Updating ADP, below, for the weighting), not the bundled sample rankings' original order. A board already installed before that sort shipped reorders itself once, automatically, the next time it loads -- your marks carry over -- and this reorder is skipped entirely on any board you've already imported or manually edited; it only ever touches the untouched, pristine seed board. Importing your own rankings replaces the board order outright, same as always, and once you've imported nothing reorders it again.
 
 Open Settings -> Import Rankings, then paste text into the box or choose a file (`.csv`, `.txt`, `.tsv`, `.json` are accepted), and tap Parse. Review the preview, then tap "Replace rankings" to apply it.
 
@@ -133,9 +135,11 @@ Tap "Clear league setup" in Settings -> League to remove your league config. The
 
 ## Compare players
 
-Long-press a player's row on the main board (Available or Drafted lists -- not the DRAFT/star/x buttons) to add him to a compare tray that appears above the bottom bar; long-press him again to remove him. The tray holds up to 4 players. Tap **Compare** once 2 or more are selected to open side-by-side cards (2 players) or a quadrant layout (3-4); each card shows the player's team/position/bye, tier chip, overall and position rank, and ADP from three sites (ESPN, Yahoo, Sleeper). Each card also carries a color-coded verdict line: it reads that player's consensus ADP (the equal-weighted average of whichever of the three sites report a number for him) against your upcoming picks, showing red when he's likely gone before your next turn, orange for a coin flip, green when he should reach your next pick but not the one after, and grey when he can wait. When it's your pick right now, the line reads "on the clock" instead and buckets the same red/orange/grey way against the pick after this one. Without a league set up it instead compares his consensus against picks made so far -- green once he's past his ADP, orange right at his ADP ("at his market price now"), grey with a picks-to-go count otherwise. The ✕ on a card or its tray chip removes that player; Done closes the compare screen and keeps whoever's left selected; Clear empties the tray entirely. Once a league is set up, Mine becomes a roster board (see Track your own roster, above) whose tiles don't long-press into compare -- use the Available/Drafted lists instead.
+Long-press a player's row on the main board (Available or Drafted lists -- not the DRAFT/star/x buttons) to add him to a compare tray that appears above the bottom bar; long-press him again to remove him. The tray holds up to 4 players. Tap **Compare** once 2 or more are selected to open side-by-side cards (2 players) or a quadrant layout (3-4); each card shows the player's headshot, team/position/bye, tier chip, overall and position rank, ADP from three sites (ESPN, Yahoo, Sleeper), and a Weighted row with the blended consensus. Each card also carries a color-coded verdict line: it reads that player's weighted consensus ADP against your upcoming picks, showing red when he's likely gone before your next turn, orange for a coin flip, green when he should reach your next pick but not the one after, and grey when he can wait. When it's your pick right now, the line reads "on the clock" instead and buckets the same red/orange/grey way against the pick after this one. Without a league set up it instead compares his consensus against picks made so far -- green once he's past his ADP, orange right at his ADP ("at his market price now"), grey with a picks-to-go count otherwise. The ✕ on a card or its tray chip removes that player; Done closes the compare screen and keeps whoever's left selected; Clear empties the tray entirely. Once a league is set up, Mine becomes a roster board (see Track your own roster, above) whose tiles don't long-press into compare -- use the Available/Drafted lists instead.
 
-ADP is real market consensus from three sources -- ESPN, Yahoo, Sleeper -- equal-weighted and refreshed by rerunning `scripts\update-adp.ps1` (see Updating ADP, below). A source missing a number for a given player shows as a dash on his card rather than being guessed at. This covers imported players too: the ADP table is a separate sidecar joined at read time by player name and position (team alone for defenses), not something baked into your rankings file, so replacing your board via Import Rankings doesn't drop anyone's ADP.
+Player headshots (a Sleeper team logo for DST) also show on the main board itself, next to the rank badge on every row. The board's meta line -- team, position, bye -- appends `· ADP n` with the weighted consensus whenever a player has one.
+
+ADP is real market consensus from three sources -- ESPN, Yahoo, Sleeper -- blended into one weighted consensus number and refreshed by rerunning `scripts\update-adp.ps1` (see Updating ADP, below). A source missing a number for a given player shows as a dash on his card rather than being guessed at. This covers imported players too: the ADP table is a separate sidecar joined at read time by player name and position (team alone for defenses), not something baked into your rankings file, so replacing your board via Import Rankings doesn't drop anyone's ADP.
 
 ## Quiet signals
 
@@ -158,22 +162,26 @@ Re-import at any time via Settings -> Import Rankings using any of the supported
 
 ## Updating ADP
 
-ADP drifts constantly in draft season -- the numbers in this repo go stale fast. The refresh ritual:
+ADP drifts constantly in draft season -- the numbers in this repo go stale fast. Two ways to refresh it:
+
+**On the phone, right now:** Settings -> Refresh ADP pulls fresh Sleeper + ESPN numbers directly from the device and stores them as a localStorage override -- no script, no redeploy needed. Yahoo's numbers only move via the full script below.
+
+**The full script, for a complete refresh (including Yahoo):**
 
 ```powershell
 powershell -File scripts\update-adp.ps1
 powershell -File scripts\run-tests.ps1
 ```
 
-Then bump `CACHE_NAME` in `sw.js` (v15, v16, ...), update the release reminder above, commit, and deploy. Your phone picks up the new numbers on the second online open, same as any other update (see Install on iPhone, above).
+Then bump `CACHE_NAME` in `sw.js` (v16, v17, ...), update the release reminder above, commit, and deploy. Your phone picks up the new numbers on the second online open, same as any other update (see Install on iPhone, above).
 
-Sources are equal-weighted right now; the weighting lives in one constant, `ADP_WEIGHTS` in `js/state.js`, if you ever want to tilt it toward one site.
+Sources are weighted, not averaged equally -- Sleeper 45%, ESPN 35%, Yahoo 20%. The weighting lives in one constant, `ADP_WEIGHTS` in `js/state.js`, if you ever want to tilt it further toward one site.
 
 ## Project layout
 
 ```
 draft-cockpit/
-  index.html              app shell; loads scripts in dependency order (data -> state -> importer -> ui -> edit -> compare -> app)
+  index.html              app shell; loads scripts in dependency order (data -> adp-data -> state -> adp-refresh -> importer -> ui -> edit -> compare -> app)
   styles.css              all styling (dark theme, safe-area insets)
   manifest.webmanifest    PWA manifest (icons, standalone display, start_url/scope "./")
   sw.js                   service worker: cache-first offline support; bump CACHE_NAME on any precached file change
@@ -182,6 +190,7 @@ draft-cockpit/
     data.js               seed player data (276 players: QB/RB/WR/TE plus K/DST), team bye weeks, id slugging
     adp-data.js           GENERATED -- real ADP table (espn/yahoo/sleeper); regenerate with scripts\update-adp.ps1
     state.js              state shape, reducer, localStorage load/save, schema migrations
+    adp-refresh.js        in-app ADP refresh (Settings -> Refresh ADP) -- pulls fresh Sleeper + ESPN numbers on the device; Yahoo still only updates via update-adp.ps1
     importer.js           rankings + backup file parsing (CSV/TSV/list/parenthesized/backup JSON)
     ui.js                 all rendering and event wiring (search, filters, undo, settings sheet)
     edit.js               drag-to-reorder / tap-to-jump rankings editor (Settings -> Edit Rankings)
