@@ -707,7 +707,7 @@
 
   /**
    * @param {State} state
-   * @returns {Object<string, boolean>} league-free: available ids drifting >= VALUE_DRIFT_MIN past current pick, ranked <= VALUE_RANK_CEILING
+   * @returns {Object<string, boolean>} league-free: available ids drifting >= VALUE_DRIFT_MIN past current pick, consensus ADP <= VALUE_RANK_CEILING
    */
   function valueFlagIds(state) {
     var picksMade = draftedCount(state);
@@ -719,7 +719,11 @@
       if (m && m.drafted) {
         return;
       }
-      if ((currentPick - p.rank) >= VALUE_DRIFT_MIN && p.rank <= VALUE_RANK_CEILING) {
+      var consensus = adpConsensus(p);
+      if (consensus === null) {
+        return;
+      }
+      if ((currentPick - consensus) >= VALUE_DRIFT_MIN && consensus <= VALUE_RANK_CEILING) {
         result[p.id] = true;
       }
     });

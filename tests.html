@@ -2638,6 +2638,41 @@
       }
     });
 
+    t('sheet: ADP freshness note renders the stubbed updatedAt as a short date near the import area; omitted entirely when DC.adpData is absent', function () {
+      var real = window.DC.adpData;
+      function adpNoteIn(fixture) {
+        var notes = Array.prototype.slice.call(fixture.querySelectorAll('.sheet-note'));
+        return notes.filter(function (n) { return n.textContent.indexOf('ADP updated') === 0; })[0];
+      }
+      try {
+        window.DC.adpData = { updatedAt: '2026-03-07', players: {} };
+        var fixture = buildMountFixture();
+        try {
+          DC.ui.mount(DC.state.createStore(DC.state.createSeedState()));
+          fixture.querySelector('[data-action="open-settings"]').click();
+          var note = adpNoteIn(fixture);
+          assert(note, 'expected an ADP freshness sheet-note when DC.adpData is present');
+          assertEq(note.textContent, 'ADP updated Mar 7', 'short human date, no leading zero on the day');
+        } finally {
+          document.body.removeChild(fixture);
+          localStorage.removeItem(DC.state.STORAGE_KEY);
+        }
+
+        window.DC.adpData = undefined;
+        var fixture2 = buildMountFixture();
+        try {
+          DC.ui.mount(DC.state.createStore(DC.state.createSeedState()));
+          fixture2.querySelector('[data-action="open-settings"]').click();
+          assertEq(adpNoteIn(fixture2), undefined, 'ADP freshness note should be omitted entirely when DC.adpData is absent');
+        } finally {
+          document.body.removeChild(fixture2);
+          localStorage.removeItem(DC.state.STORAGE_KEY);
+        }
+      } finally {
+        window.DC.adpData = real;
+      }
+    });
+
     t('applyRankings: manuallyEdited true auto-backs-up (createObjectURL) BEFORE the single IMPORT_PLAYERS dispatch', function () {
       var fixture = buildMountFixture();
       var seed = DC.state.createSeedState();
@@ -5747,8 +5782,10 @@
     function makeValuePlayers() {
       var arr = [];
       for (var i = 1; i <= 250; i++) {
-        arr.push({ id: 'v' + i, rank: i, name: 'V ' + i, team: 'KC', position: 'RB', byeWeek: 9, tier: null });
+        // adp consensus == i via three equal-valued sites, so the drift/ceiling arithmetic below reads the same as the old rank-based version
+        arr.push({ id: 'v' + i, rank: i, name: 'V ' + i, team: 'KC', position: 'RB', byeWeek: 9, tier: null, adp: { espn: i, yahoo: i, sleeper: i } });
       }
+      arr.push({ id: 'vnoadp', rank: 5, name: 'V NoADP', team: 'KC', position: 'RB', byeWeek: 9, tier: null }); // no adp field -> consensus null
       return arr;
     }
 
@@ -5764,22 +5801,31 @@
       return { schemaVersion: 4, players: players, marks: marks, undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null };
     }
 
-    t('valueFlagIds: drift boundary — exactly VALUE_DRIFT_MIN (15) flags, one less does not; works with league null', function () {
+    t('valueFlagIds: drift boundary — exactly VALUE_DRIFT_MIN (15) consensus drift flags, one less does not; works with league null', function () {
       var draftedRanks = [];
       for (var r = 21; r <= 39; r++) { draftedRanks.push(r); }
       var state = makeValueState(draftedRanks);
       var ids = DC.state.valueFlagIds(state);
-      assertEq(!!ids.v5, true, 'drift exactly VALUE_DRIFT_MIN (20-5=15) flags');
-      assertEq(!!ids.v6, false, 'drift VALUE_DRIFT_MIN-1 (20-6=14) does not flag');
+      assertEq(!!ids.v5, true, 'consensus drift exactly VALUE_DRIFT_MIN (20-5=15) flags');
+      assertEq(!!ids.v6, false, 'consensus drift VALUE_DRIFT_MIN-1 (20-6=14) does not flag');
     });
 
-    t('valueFlagIds: rank ceiling boundary — rank at VALUE_RANK_CEILING (75) is eligible, one past it is excluded even with sufficient drift', function () {
+    t('valueFlagIds: consensus ceiling boundary — consensus at VALUE_RANK_CEILING (75) is eligible, one past it is excluded even with sufficient drift', function () {
       var draftedRanks = [];
       for (var r = 111; r <= 220; r++) { draftedRanks.push(r); }
       var state = makeValueState(draftedRanks);
       var ids = DC.state.valueFlagIds(state);
-      assertEq(!!ids.v75, true, 'rank 75 at the ceiling with drift 36 -> flagged');
-      assertEq(!!ids.v76, false, 'rank 76 exceeds the ceiling despite sufficient drift (35)');
+      assertEq(!!ids.v75, true, 'consensus 75 at the ceiling with drift 36 -> flagged');
+      assertEq(!!ids.v76, false, 'consensus 76 exceeds the ceiling despite sufficient drift (35)');
+    });
+
+    t('valueFlagIds: a player with no resolvable ADP (consensus null) never flags, even with drift that would otherwise qualify', function () {
+      var draftedRanks = [];
+      for (var r = 21; r <= 39; r++) { draftedRanks.push(r); }
+      var state = makeValueState(draftedRanks);
+      var ids = DC.state.valueFlagIds(state);
+      assertEq(DC.state.adpConsensus(state.players.filter(function (p) { return p.id === 'vnoadp'; })[0]), null, 'fixture sanity: vnoadp must have no resolvable consensus');
+      assertEq(!!ids.vnoadp, false, 'currentPick 20 minus rank 5 would be drift 15 under the old rank rule, but consensus null must never flag');
     });
 
     function makeRosterPlayers() {
@@ -6294,13 +6340,13 @@
 
     function buildSignalBoard() {
       var players = [];
-      function addPlayer(id, position, tier) {
-        players.push({ id: id, rank: players.length + 1, name: id, team: 'KC', position: position, byeWeek: 9, tier: tier === undefined ? null : tier });
+      function addPlayer(id, position, tier, adp) {
+        players.push({ id: id, rank: players.length + 1, name: id, team: 'KC', position: position, byeWeek: 9, tier: tier === undefined ? null : tier, adp: adp });
       }
-      addPlayer('valDrift1', 'RB'); // rank1 — stays available, drift-eligible -> VALUE only
-      addPlayer('val1', 'RB'); // rank2 — stays available, drift-eligible -> VALUE only
-      addPlayer('wrA', 'WR', 1); // rank3 — gets drafted, leaving wrB as the sole tier-1 WR
-      addPlayer('wrB', 'WR', 1); // rank4 — stays available -> CLIFF only (not drift-eligible)
+      addPlayer('valDrift1', 'RB', null, { espn: 1, yahoo: 1, sleeper: 1 }); // rank1, consensus 1 — stays available, drift-eligible -> VALUE only
+      addPlayer('val1', 'RB', null, { espn: 2, yahoo: 2, sleeper: 2 }); // rank2, consensus 2 — stays available, drift-eligible -> VALUE only
+      addPlayer('wrA', 'WR', 1); // rank3, no adp -> consensus null — gets drafted, leaving wrB as the sole tier-1 WR
+      addPlayer('wrB', 'WR', 1); // rank4, no adp -> consensus null — stays available -> CLIFF only (not drift-eligible)
       for (var i = 1; i <= 17; i++) {
         addPlayer('filler' + i, i % 2 === 0 ? 'TE' : 'QB'); // rank5..21; filler1-15 get drafted as drift filler (VALUE_DRIFT_MIN=15 needs the extra depth), 16-17 stay available with no signals
       }

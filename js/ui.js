@@ -8,6 +8,7 @@
   var STAR_GLYPH = '★';
   var NDASH_BYE = '—';
   var LONG_PRESS_MS = 500;
+  var MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   var STATUS_LABELS = { AVAILABLE: 'Available', TARGETS: 'Targets', AVOID: 'Avoid', DRAFTED: 'Drafted' };
 
@@ -32,6 +33,19 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#39;');
+  }
+
+  /** @param {*} iso YYYY-MM-DD @returns {string|null} short human date e.g. 'Aug 12'; string-parsed, no Date object -- duplicated from compare.js's shortAdpDate (module-private there), same esc() precedent */
+  function shortAdpDate(iso) {
+    var m = typeof iso === 'string' ? iso.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+    if (!m) {
+      return null;
+    }
+    var month = parseInt(m[2], 10);
+    if (month < 1 || month > 12) {
+      return null;
+    }
+    return MONTH_ABBR[month - 1] + ' ' + parseInt(m[3], 10);
   }
 
   // ---- icons ---------------------------------------------------------------
@@ -432,6 +446,9 @@
     var searchInput = searchContainer.querySelector('.search-input');
     var searchClearBtn = searchContainer.querySelector('.search-clear');
 
+    var adpUpdated = DC.adpData ? shortAdpDate(DC.adpData.updatedAt) : null;
+    var adpNoteHTML = adpUpdated ? '<div class="sheet-note">ADP updated ' + esc(adpUpdated) + '</div>' : '';
+
     sheetRoot.innerHTML =
       '<div class="scrim" data-action="close-settings" hidden></div>' +
       '<div class="sheet" hidden>' +
@@ -447,6 +464,7 @@
           '<button class="sheet-row" data-action="import-parse">Parse</button>' +
           '<div class="import-preview"></div>' +
         '</div>' +
+        adpNoteHTML +
         '<button class="sheet-row" data-action="export">Export Backup</button>' +
         '<div class="sheet-note">Save this file somewhere safe ' + EMDASH + ' it restores via Import.</div>' +
         '<h3 class="sheet-section-title">League</h3>' +
