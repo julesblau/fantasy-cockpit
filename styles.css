@@ -16,9 +16,9 @@
   --accent-drafted: #636366;
   --accent-compare: #BF5AF2;
   --tier-c1: #BF5AF2;
-  --tier-c2: #5E5CE6;
-  --tier-c3: #64D2FF;
-  --tier-c4: #40C8E0;
+  --tier-c2: #64D2FF;
+  --tier-c3: #FFB340;
+  --tier-c4: #5E5CE6;
   --tier-c5: #66D4CF;
   --tier-c6: #8E8E93;
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
@@ -459,9 +459,9 @@ button.player-rank {
 }
 
 .tier-c1 { color: var(--tier-c1); background: rgba(191, 90, 242, 0.18); }
-.tier-c2 { color: var(--tier-c2); background: rgba(94, 92, 230, 0.18); }
-.tier-c3 { color: var(--tier-c3); background: rgba(100, 210, 255, 0.18); }
-.tier-c4 { color: var(--tier-c4); background: rgba(64, 200, 224, 0.18); }
+.tier-c2 { color: var(--tier-c2); background: rgba(100, 210, 255, 0.18); }
+.tier-c3 { color: var(--tier-c3); background: rgba(255, 179, 64, 0.18); }
+.tier-c4 { color: var(--tier-c4); background: rgba(94, 92, 230, 0.18); }
 .tier-c5 { color: var(--tier-c5); background: rgba(102, 212, 207, 0.18); }
 .tier-c6 { color: var(--tier-c6); background: rgba(142, 142, 147, 0.18); }
 .tier-cx { color: var(--accent-drafted); background: rgba(99, 99, 102, 0.18); }
