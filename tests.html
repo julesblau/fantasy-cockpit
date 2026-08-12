@@ -8391,6 +8391,8 @@
     // verdict-text assembly must match compare.js's own MIDDOT/EMDASH constants exactly
     var TEST_MIDDOT = '·';
     var TEST_EMDASH = '—';
+    // compare-card-head meta separator only -- must match compare.js's own THINSPACE constant
+    var TEST_THINSPACE = ' ';
 
     // slot-1 league: next=1/following=24 pre-draft, 24/25 (back-to-back) after one pick
     var SLOT1_LEAGUE = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
@@ -8493,7 +8495,7 @@
       }
     });
 
-    t('4. card content: name, BYE + byeWeek in meta, #rank and POS+posRank in ranks, tier chip class, the three adp-vals match the seeded per-site values, and Weighted is the weighted consensus', function () {
+    t('4. card content: name, abbreviated B + byeWeek in meta, #rank and POS+posRank in ranks, tier chip class, the three adp-vals match the seeded per-site values, and Weighted is the weighted consensus', function () {
       var fixture = buildCompareFixture();
       try {
         var players = [
@@ -8518,7 +8520,8 @@
         var root = fixture.querySelector('#compare-root');
         var card = root.querySelector('.compare-card[data-id="' + p.id + '"]');
         assertEq(card.querySelector('.compare-card-name').textContent, p.name, 'name should render');
-        assert(card.querySelector('.compare-card-meta').textContent.indexOf('BYE ' + p.byeWeek) !== -1, 'meta should include BYE ' + p.byeWeek);
+        // thin-space separators (no middot), 12px -- widest real combo measured ~8.4px real margin
+        assertEq(card.querySelector('.compare-card-meta').textContent, p.team + TEST_THINSPACE + p.position + TEST_THINSPACE + 'B' + p.byeWeek, 'meta should be TEAM/POS/B-bye joined by thin spaces, no middot');
 
         var ranks = card.querySelector('.compare-card-ranks');
         var posRanks = DC.state.positionRanks(store.getState());

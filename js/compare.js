@@ -4,6 +4,7 @@
 
   var MIDDOT = '·';
   var EMDASH = '—';
+  var THINSPACE = ' '; // U+2009 thin space -- compare-card-head meta separator only, replaces MIDDOT there for width
   var SLACK = 3; // picks of cushion on either side of a bucket boundary
   var BACK_TO_BACK_MAX_GAP = 1; // following - current this small means no one else picks in between -- his own next pick, not a rival's
   var MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -171,7 +172,7 @@
         '<button class="compare-card-x" data-action="compare-remove-card" data-id="' + esc(player.id) + '" aria-label="Remove from compare">' + DC.ui.icon('x') + '</button>' +
         '<div class="compare-card-head">' +
           avatarHTML(player) +
-          '<div class="compare-card-meta">' + esc(player.team) + ' ' + MIDDOT + ' ' + esc(player.position) + ' ' + MIDDOT + ' BYE ' + player.byeWeek + '</div>' +
+          '<div class="compare-card-meta">' + esc(player.team) + THINSPACE + esc(player.position) + THINSPACE + 'B' + player.byeWeek + '</div>' +
         '</div>' +
         '<div class="compare-card-name">' + esc(player.name) + '</div>' +
         '<div class="compare-card-ranks">#' + player.rank + ' ' + MIDDOT + ' ' + esc(player.position) + card.posRank + tierChipHTML(player.tier) + '</div>' +
