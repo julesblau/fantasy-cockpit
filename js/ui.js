@@ -83,11 +83,29 @@
 
   // ---- pure templates --------------------------------------------------------
 
-  function metaLine(view) {
+  /**
+   * @param {Object} view
+   * @param {{posRanks:*}} [ctx] posRanks id->positionRank map, computed once per render (see
+   *   render()'s comment) — always has every id in real usage; templates exercised standalone
+   *   without ctx simply omit the bold leading token, same graceful-fallback precedent as the
+   *   old rankBadgeHTML.
+   * @returns {string} '<b>POSn</b> · TEAM · Bye N[ · <b>ADP n</b>]' — posRank bold leading token,
+   *   ADP bold trailing token only when adpConsensus resolves (no dangling separators either way)
+   */
+  function metricsLineHTML(view, ctx) {
+    var posRank = ctx && ctx.posRanks && ctx.posRanks[view.id];
+    var parts = [];
+    if (posRank) {
+      parts.push('<b>' + esc(view.position) + posRank + '</b>');
+    }
+    parts.push(esc(view.team));
     var bye = view.byeWeek === 0 ? NDASH_BYE : String(view.byeWeek);
+    parts.push('Bye ' + bye);
     var consensus = DC.state.adpConsensus(view);
-    var adpPart = typeof consensus === 'number' ? ' ' + MIDDOT + ' ADP ' + consensus : '';
-    return esc(view.team) + ' ' + MIDDOT + ' ' + esc(view.position) + ' ' + MIDDOT + ' Bye ' + bye + adpPart;
+    if (typeof consensus === 'number') {
+      parts.push('<b>ADP ' + consensus + '</b>');
+    }
+    return parts.join(' ' + MIDDOT + ' ');
   }
 
   /**
@@ -112,10 +130,15 @@
     return tags.length ? '<div class="signal-tags">' + tags.join('') + '</div>' : '';
   }
 
-  // duplicated per the esc() precedent — not exported from state, not shared with edit.js
-  function tierChipHTML(tier) {
+  /**
+   * @param {number|null} tier
+   * @returns {string} full-card-width band above the row body; '' when tier is null (card starts
+   *   at the body, no strip at all) — replaces the old main-board .tier-chip (edit.js/compare.js
+   *   keep their own tierChipHTML copies, untouched)
+   */
+  function tierStripHTML(tier) {
     var cls = DC.state.tierColorClass(tier);
-    return cls ? '<span class="tier-chip ' + cls + '">T' + tier + '</span>' : '';
+    return cls ? '<div class="tier-strip ' + cls + '"><span>TIER ' + tier + '</span></div>' : '';
   }
 
   /**
@@ -143,13 +166,10 @@
     return '<span class="player-avatar-box">' + inner + '</span>';
   }
 
-  // shared by all three main-board row templates — same visual pattern as edit.js editRowHTML's
-  // ALL view: .rank-position/.rank-overall are primary/secondary layout slots, overall rank primary.
-  function rankBadgeHTML(view, posRanks) {
-    var posRank = posRanks && posRanks[view.id];
-    if (posRank) {
-      return '<div class="player-rank pos-rank"><span class="rank-position">' + view.rank + '</span><span class="rank-overall">' + esc(view.position) + posRank + '</span></div>';
-    }
+  // shared by all three main-board row templates — the two-line pos-rank badge is gone here
+  // (posRank moved to metricsLineHTML's bold leading token); edit.js keeps its own two-line
+  // rank-position/rank-overall badge in editRowHTML, untouched.
+  function cardRankHTML(view) {
     return '<div class="player-rank">' + view.rank + '</div>';
   }
 
@@ -172,16 +192,18 @@
     var draftClass = 'btn-draft' + (ctx.myPick ? ' my-pick' : '');
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
-        rankBadgeHTML(view, ctx.posRanks) +
-        avatarHTML(view) +
-        '<div class="player-info">' +
-          '<div class="player-name">' + esc(view.name) + '</div>' +
-          '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
-          signalTagsHTML(view.id, ctx.signals) +
+        tierStripHTML(view.tier) +
+        '<div class="player-row-body">' +
+          cardRankHTML(view) +
+          avatarHTML(view) +
+          '<div class="player-info">' +
+            '<div class="player-name">' + esc(view.name) + '</div>' +
+            '<div class="player-meta player-meta-card">' + metricsLineHTML(view, ctx) + signalTagsHTML(view.id, ctx.signals) + '</div>' +
+          '</div>' +
+          '<button class="' + starClass + '" data-action="toggle-target" data-id="' + esc(view.id) + '">' + starIcon + '</button>' +
+          '<button class="' + xClass + '" data-action="toggle-avoid" data-id="' + esc(view.id) + '">' + icon('x') + '</button>' +
+          '<button class="' + draftClass + '" data-action="draft" data-id="' + esc(view.id) + '">DRAFT</button>' +
         '</div>' +
-        '<button class="' + starClass + '" data-action="toggle-target" data-id="' + esc(view.id) + '">' + starIcon + '</button>' +
-        '<button class="' + xClass + '" data-action="toggle-avoid" data-id="' + esc(view.id) + '">' + icon('x') + '</button>' +
-        '<button class="' + draftClass + '" data-action="draft" data-id="' + esc(view.id) + '">DRAFT</button>' +
       '</div>'
     );
   }
@@ -196,14 +218,17 @@
     var mineToggleClass = 'btn-toggle' + (view.mine ? ' on-mine' : '');
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
-        rankBadgeHTML(view, ctx.posRanks) +
-        avatarHTML(view) +
-        '<div class="player-info">' +
-          '<div class="player-name">' + esc(view.name) + '</div>' +
-          '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
+        tierStripHTML(view.tier) +
+        '<div class="player-row-body">' +
+          cardRankHTML(view) +
+          avatarHTML(view) +
+          '<div class="player-info">' +
+            '<div class="player-name">' + esc(view.name) + '</div>' +
+            '<div class="player-meta player-meta-card">' + metricsLineHTML(view, ctx) + '</div>' +
+          '</div>' +
+          '<span class="drafted-pill">DRAFTED</span>' +
+          '<button class="' + mineToggleClass + '" data-action="toggle-mine" data-id="' + esc(view.id) + '" aria-label="Toggle whether this pick is yours">' + icon('user') + '</button>' +
         '</div>' +
-        '<span class="drafted-pill">DRAFTED</span>' +
-        '<button class="' + mineToggleClass + '" data-action="toggle-mine" data-id="' + esc(view.id) + '" aria-label="Toggle whether this pick is yours">' + icon('user') + '</button>' +
       '</div>'
     );
   }
@@ -222,18 +247,21 @@
     var mineToggleClass = 'btn-toggle' + (view.mine ? ' on-mine' : '');
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
-        rankBadgeHTML(view, ctx.posRanks) +
-        avatarHTML(view) +
-        '<div class="player-info">' +
-          '<div class="player-name">' +
-            '<span style="display:inline-flex;width:16px;height:16px;vertical-align:-3px;color:var(--accent-draft);margin-right:4px">' + icon('check', 16) + '</span>' +
-            esc(view.name) +
+        tierStripHTML(view.tier) +
+        '<div class="player-row-body">' +
+          cardRankHTML(view) +
+          avatarHTML(view) +
+          '<div class="player-info">' +
+            '<div class="player-name">' +
+              '<span style="display:inline-flex;width:16px;height:16px;vertical-align:-3px;color:var(--accent-draft);margin-right:4px">' + icon('check', 16) + '</span>' +
+              esc(view.name) +
+            '</div>' +
+            '<div class="player-meta player-meta-card">' + metricsLineHTML(view, ctx) + '</div>' +
           '</div>' +
-          '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
+          '<span class="pick-badge">Pick ' + pickText + '</span>' +
+          '<button class="' + mineToggleClass + '" data-action="toggle-mine" data-id="' + esc(view.id) + '" aria-label="Toggle whether this pick is yours">' + icon('user') + '</button>' +
+          '<button class="btn-undraft" data-action="undraft" data-id="' + esc(view.id) + '">UNDO</button>' +
         '</div>' +
-        '<span class="pick-badge">Pick ' + pickText + '</span>' +
-        '<button class="' + mineToggleClass + '" data-action="toggle-mine" data-id="' + esc(view.id) + '" aria-label="Toggle whether this pick is yours">' + icon('user') + '</button>' +
-        '<button class="btn-undraft" data-action="undraft" data-id="' + esc(view.id) + '">UNDO</button>' +
       '</div>'
     );
   }

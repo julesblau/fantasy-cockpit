@@ -366,12 +366,57 @@ body.searching #bottom-bar {
   -webkit-touch-callout: none;
 }
 
+/* main-board card layout: strip + body stacked, overriding the flat edit-screen row above */
+#player-list .player-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  min-height: 0;
+  max-height: none;
+}
+
+.tier-strip {
+  flex: none;
+  height: 13px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+}
+
+.tier-strip span {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.tier-strip.tier-c1 { background: var(--tier-c1); }
+.tier-strip.tier-c2 { background: var(--tier-c2); }
+.tier-strip.tier-c3 { background: var(--tier-c3); }
+.tier-strip.tier-c4 { background: var(--tier-c4); }
+.tier-strip.tier-c5 { background: var(--tier-c5); }
+.tier-strip.tier-c6 { background: var(--tier-c6); }
+.tier-strip.tier-cx { background: var(--accent-drafted); }
+
+.player-row-body {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 8px 8px;
+}
+
 .player-rank {
   width: 36px;
   font-size: 15px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: rgba(255, 255, 255, 0.45);
+}
+
+#player-list .player-rank {
+  width: 26px;
+  text-align: center;
 }
 
 button.player-rank {
@@ -395,13 +440,6 @@ button.player-rank {
   gap: 1px;
 }
 
-#player-list .player-rank.pos-rank {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-}
-
 .rank-position {
   font-size: 15px;
   font-weight: 700;
@@ -414,8 +452,8 @@ button.player-rank {
 }
 
 .player-avatar-box {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: var(--surface-3);
   flex: none;
@@ -445,6 +483,11 @@ button.player-rank {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+#player-list .player-name {
+  font-size: 15px;
+  line-height: 18px;
 }
 
 .tier-chip {
@@ -480,11 +523,24 @@ button.player-rank {
   vertical-align: middle;
 }
 
-/* quiet signal tags: available rows only, up to 2, priority VALUE > CLIFF */
+/* card metrics line modifier: posRank/ADP bold tokens, smaller than the shared .player-meta size
+   (edit screen keeps the 13px base) */
+.player-meta-card {
+  font-size: 12px;
+}
+
+.player-meta-card b {
+  color: var(--text-1);
+  font-weight: 700;
+}
+
+/* quiet signal tags: available rows only, up to 2, priority VALUE > CLIFF — inline-flex so they
+   sit at the end of the metrics line instead of on their own row */
 .signal-tags {
-  display: flex;
+  display: inline-flex;
   gap: 4px;
-  margin-top: 3px;
+  margin-left: 4px;
+  vertical-align: middle;
 }
 
 .sig-tag {
@@ -561,8 +617,11 @@ button.player-rank {
   color: var(--text-3);
 }
 
+/* 32px visual box; ::after pads the real hit area out to the 44px tap floor without growing
+   the visible circle (so the on-target/on-avoid highlight stays honestly sized) */
 .btn-toggle {
-  width: 44px;
+  position: relative;
+  width: 32px;
   height: 44px;
   border-radius: 50%;
   background: transparent;
@@ -571,6 +630,15 @@ button.player-rank {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.btn-toggle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -6px;
+  right: -6px;
 }
 
 .btn-toggle.on-target {
