@@ -186,9 +186,9 @@
     if (ctx.isCompared) {
       rowClasses.push('is-compared');
     }
-    var starClass = 'btn-toggle' + (view.target ? ' on-target' : '');
+    var starClass = 'btn-toggle btn-toggle-star' + (view.target ? ' on-target' : '');
     var starIcon = view.target ? icon('star-filled') : icon('star');
-    var xClass = 'btn-toggle' + (view.avoid ? ' on-avoid' : '');
+    var xClass = 'btn-toggle btn-toggle-x' + (view.avoid ? ' on-avoid' : '');
     var draftClass = 'btn-draft' + (ctx.myPick ? ' my-pick' : '');
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +

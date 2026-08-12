@@ -617,8 +617,7 @@ button.player-rank {
   color: var(--text-3);
 }
 
-/* 32px visual box; ::after pads the real hit area out to the 44px tap floor without growing
-   the visible circle (so the on-target/on-avoid highlight stays honestly sized) */
+/* 32px visual box; ::after pads the hit area without crossing into a neighbor control's box */
 .btn-toggle {
   position: relative;
   width: 32px;
@@ -639,6 +638,19 @@ button.player-rank {
   bottom: 0;
   left: -6px;
   right: -6px;
+}
+
+/* star/x share a 5px gap: each stops at its midpoint (2.5px), never crossing into the other's
+   visible circle; the free side fills its whole 5px gap. 39.5px effective each -- under 44,
+   accepted (zero tap-stealing beats a bigger honest-looking box). */
+.btn-toggle-star::after {
+  left: -5px;
+  right: -2.5px;
+}
+
+.btn-toggle-x::after {
+  left: -2.5px;
+  right: -5px;
 }
 
 .btn-toggle.on-target {
@@ -692,17 +704,35 @@ button.player-rank {
   }
 }
 
-.player-row.is-target {
-  box-shadow: inset 3px 0 0 var(--accent-target);
+/* ::before (not box-shadow) so the stripe sits above the opaque .tier-strip and spans the
+   whole card, not just the body band; pointer-events:none keeps it out of hit-testing */
+.player-row.is-target::before,
+.player-row.is-avoid::before,
+.player-row.is-mine::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.player-row.is-target::before {
+  background: var(--accent-target);
+}
+
+.player-row.is-avoid::before {
+  background: var(--accent-avoid);
 }
 
 .player-row.is-avoid {
-  box-shadow: inset 3px 0 0 var(--accent-avoid);
   opacity: 0.55;
 }
 
-.player-row.is-mine {
-  box-shadow: inset 3px 0 0 var(--accent-position);
+.player-row.is-mine::before {
+  background: var(--accent-position);
 }
 
 /* outline (not box-shadow) so it composes with the stripes above and isn't clipped by overflow:hidden */
