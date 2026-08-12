@@ -6,6 +6,7 @@
   var EMDASH = '—';
   var SLACK = 3; // picks of cushion on either side of a bucket boundary
   var BACK_TO_BACK_MAX_GAP = 1; // following - current this small means no one else picks in between -- his own next pick, not a rival's
+  var MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function esc(s) {
     return String(s === null || s === undefined ? '' : s)
@@ -24,6 +25,24 @@
 
   function adpRowHTML(label, value) {
     return '<div class="adp-row"><span class="adp-site">' + esc(label) + '</span><span class="adp-val">' + esc(value) + '</span></div>';
+  }
+
+  // isAdpNum semantics duplicated from state.js -- not exported, same esc()/tierChipHTML precedent
+  function isAdpNum(n) {
+    return typeof n === 'number' && isFinite(n) && n >= 1;
+  }
+
+  /** @param {*} iso YYYY-MM-DD @returns {string|null} short human date e.g. 'Aug 12'; string-parsed, no Date object */
+  function shortAdpDate(iso) {
+    var m = typeof iso === 'string' ? iso.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+    if (!m) {
+      return null;
+    }
+    var month = parseInt(m[2], 10);
+    if (month < 1 || month > 12) {
+      return null;
+    }
+    return MONTH_ABBR[month - 1] + ' ' + parseInt(m[3], 10);
   }
 
   /**
@@ -75,7 +94,7 @@
   /**
    * @param {Object} state
    * @param {string[]} ids in caller order; ids missing from state.players are skipped (stale after import)
-   * @returns {Array<{player:Object, posRank:number, pickNumber:(number|null), marks:Object, verdict:{cls:string, text:string}}>}
+   * @returns {Array<{player:Object, adp:(Object|null), posRank:number, pickNumber:(number|null), marks:Object, verdict:{cls:string, text:string}}>}
    */
   function buildCards(state, ids) {
     var byId = {};
@@ -91,6 +110,7 @@
       var marks = state.marks[id];
       cards.push({
         player: player,
+        adp: DC.state.adpForPlayer(player),
         posRank: posRanks[id],
         pickNumber: marks && marks.drafted ? DC.state.pickNumber(state, id) : null,
         marks: marks,
@@ -105,10 +125,10 @@
   function cardHTML(card) {
     var player = card.player;
     var marks = card.marks || {};
-    var adp = player.adp;
-    var espnVal = adp ? adp.espn : EMDASH;
-    var yahooVal = adp ? adp.yahoo : EMDASH;
-    var sleeperVal = adp ? adp.sleeper : EMDASH;
+    var adp = card.adp;
+    var espnVal = adp && isAdpNum(adp.espn) ? adp.espn : EMDASH;
+    var yahooVal = adp && isAdpNum(adp.yahoo) ? adp.yahoo : EMDASH;
+    var sleeperVal = adp && isAdpNum(adp.sleeper) ? adp.sleeper : EMDASH;
 
     var statusHTML = '';
     if (marks.target) {
@@ -152,7 +172,16 @@
     return '<div class="compare-grid ' + (isQuad ? 'quad' : 'cols-2') + '">' + html + '</div>';
   }
 
-  var HEADER_HTML = '<div class="compare-header"><div class="compare-title">Compare</div><button class="compare-done" data-action="compare-done">Done</button></div>';
+  function headerHTML() {
+    var updated = DC.adpData ? shortAdpDate(DC.adpData.updatedAt) : null;
+    var updatedHTML = updated ? '<div class="compare-adp-updated">ADP as of ' + esc(updated) + '</div>' : '';
+    return (
+      '<div class="compare-header">' +
+        '<div><div class="compare-title">Compare</div>' + updatedHTML + '</div>' +
+        '<button class="compare-done" data-action="compare-done">Done</button>' +
+      '</div>'
+    );
+  }
 
   function mount(store) {
     var rootEl = document.getElementById('compare-root');
@@ -170,7 +199,7 @@
         DC.compare.close();
         return;
       }
-      rootEl.innerHTML = HEADER_HTML + gridHTML(buildCards(state, workingIds));
+      rootEl.innerHTML = headerHTML() + gridHTML(buildCards(state, workingIds));
     }
 
     function removeCard(id) {

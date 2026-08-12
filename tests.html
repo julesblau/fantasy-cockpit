@@ -8612,7 +8612,7 @@
       var seed = DC.state.createSeedState();
       var id = seed.players[0].id;
       var card = DC.compare.templates.buildCards(seed, [id])[0];
-      assertEq(JSON.stringify(Object.keys(card)), JSON.stringify(['player', 'posRank', 'pickNumber', 'marks', 'verdict']), 'card key order');
+      assertEq(JSON.stringify(Object.keys(card)), JSON.stringify(['player', 'adp', 'posRank', 'pickNumber', 'marks', 'verdict']), 'card key order');
       assertEq(JSON.stringify(Object.keys(card.verdict)), JSON.stringify(['cls', 'text']), 'verdict key order');
     });
 
@@ -9019,6 +9019,82 @@
         assert(vWait.classList.contains('verdict-wait'), 'a=23 should be wait');
         assertEq(vWait.textContent, 'ADP 23 ' + TEST_MIDDOT + ' on the clock ' + TEST_EMDASH + ' likely there at #' + picks.following, 'exact on-the-clock wait text');
       } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('31. partial sidecar entry: espn+sleeper present, yahoo absent -> two numeric cells, one em-dash cell', function () {
+      var fixture = buildCompareFixture();
+      var real = window.DC.adpData;
+      try {
+        var player = verdictFixturePlayer('v-partial-adp', null);
+        window.DC.adpData = { players: { 'vpartialadp|rb': { espn: 12, sleeper: 34 } } };
+        var state = buildVerdictFixtureState([player], [], null);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([player.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var vals = root.querySelectorAll('.compare-card[data-id="' + player.id + '"] .adp-val');
+        assertEq(vals.length, 3, 'expected exactly 3 adp rows');
+        assertEq(vals[0].textContent, '12', 'espn cell should render the sidecar value');
+        assertEq(vals[1].textContent, '—', 'yahoo cell should render the em-dash when the source key is absent');
+        assertEq(vals[2].textContent, '34', 'sleeper cell should render the sidecar value');
+      } finally {
+        window.DC.adpData = real;
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('32. sidecar-resolved card: a stubbed table entry beats a different player.adp on the same fixture', function () {
+      var fixture = buildCompareFixture();
+      var real = window.DC.adpData;
+      try {
+        var player = {
+          id: 'v-sidecar-wins', rank: 1, name: 'V Sidecar Wins', team: 'AAA', position: 'WR', byeWeek: 5, tier: null,
+          adp: { espn: 999, yahoo: 999, sleeper: 999 }
+        };
+        window.DC.adpData = { players: { 'vsidecarwins|wr': { espn: 5, yahoo: 6, sleeper: 7 } } };
+        var state = buildVerdictFixtureState([player], [], null);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([player.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var vals = root.querySelectorAll('.compare-card[data-id="' + player.id + '"] .adp-val');
+        assertEq(vals[0].textContent, '5', 'espn cell should show the sidecar value, not the stale player.adp value');
+        assertEq(vals[1].textContent, '6', 'yahoo cell should show the sidecar value, not the stale player.adp value');
+        assertEq(vals[2].textContent, '7', 'sleeper cell should show the sidecar value, not the stale player.adp value');
+      } finally {
+        window.DC.adpData = real;
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('33. "ADP as of" line: renders the stubbed updatedAt formatted as a short date; absent when DC.adpData is stubbed to undefined', function () {
+      var fixture = buildCompareFixture();
+      var real = window.DC.adpData;
+      try {
+        var player = verdictFixturePlayer('v-adp-asof', 50);
+        var state = buildVerdictFixtureState([player], [], null);
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+
+        window.DC.adpData = { updatedAt: '2026-03-07', players: {} };
+        DC.compare.open([player.id]);
+        var root = fixture.querySelector('#compare-root');
+        var line = root.querySelector('.compare-adp-updated');
+        assert(line, 'expected an ADP-as-of line when DC.adpData is present');
+        assertEq(line.textContent, 'ADP as of Mar 7', 'short human date, no leading zero on the day');
+
+        window.DC.adpData = undefined;
+        DC.compare.open([player.id]);
+        assertEq(root.querySelector('.compare-adp-updated'), null, 'ADP-as-of line should be omitted entirely when DC.adpData is absent');
+      } finally {
+        window.DC.adpData = real;
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
       }

@@ -967,6 +967,7 @@ button.player-rank {
 #compare-root[hidden] { display: none; }
 .compare-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; }
 .compare-title { font-size: 20px; font-weight: 700; }
+.compare-adp-updated { font-size: 12px; color: var(--text-3); margin-top: 2px; }
 .compare-done { height: 44px; min-width: 64px; border: none; border-radius: var(--radius-button); background: var(--surface-3); color: var(--text-1); font-size: 15px; font-weight: 600; }
 .compare-grid { flex: 1; display: grid; gap: 8px; padding: 0 12px 12px; min-height: 0; }
 .compare-grid.cols-2 { grid-template-columns: 1fr 1fr; }
