@@ -147,9 +147,22 @@ $espnKeyFn = {
         $team = Fold-TeamCode $espnTeamMap[$teamId] "espn"
     }
     $key = Build-Key $pl.fullName $team $pos
-    return @{ Key = $key; Value = $adp }
+    return @{ Key = $key; Value = $adp; ImageId = [int]$pl.id }
 }
 $espnTable = Build-SourceTable $espnJson.players "espn" $espnKeyFn
+
+# parallel key -> espn player id map for app headshots; DSTs excluded, team logos cover those
+$espnImages = @{}
+foreach ($row in $espnJson.players) {
+    $parsed = & $espnKeyFn $row
+    if ($null -eq $parsed) {
+        continue
+    }
+    if ($parsed.Key.EndsWith("|dst")) {
+        continue
+    }
+    $espnImages[$parsed.Key] = $parsed.ImageId
+}
 
 # ---- Sleeper -------------------------------------------------------------------------------
 
@@ -345,6 +358,19 @@ for ($i = 0; $i -lt $allKeys.Count; $i++) {
     [void]$lines.Add("      '" + $k + "': { " + ($parts -join ", ") + " }" + $comma)
 }
 
+[void]$lines.Add("    },")
+[void]$lines.Add("    images: {")
+
+$imageKeys = [string[]]@($allKeys | Where-Object { $espnImages.ContainsKey($_) })
+for ($i = 0; $i -lt $imageKeys.Count; $i++) {
+    $k = $imageKeys[$i]
+    $comma = ","
+    if ($i -eq ($imageKeys.Count - 1)) {
+        $comma = ""
+    }
+    [void]$lines.Add("      '" + $k + "': " + $espnImages[$k].ToString([System.Globalization.CultureInfo]::InvariantCulture) + $comma)
+}
+
 [void]$lines.Add("    }")
 [void]$lines.Add("  };")
 [void]$lines.Add("})();")
@@ -432,6 +458,7 @@ Write-Host "espn: $($espnTable.Count) usable players"
 Write-Host "yahoo: $($yahooTable.Count) usable players"
 Write-Host "sleeper: $($sleeperTable.Count) usable players"
 Write-Host "joined: $($joined.Count) entries"
+Write-Host "images: $($espnImages.Count) entries"
 Write-Host ""
 Write-Host "Seed coverage report:"
 $top100Pct = [Math]::Round(100.0 * $top100Hits / $top100Total, 1)
