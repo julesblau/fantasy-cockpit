@@ -22,7 +22,7 @@
    * }} State
    */
 
-  var CURRENT_SCHEMA_VERSION = 6;
+  var CURRENT_SCHEMA_VERSION = 7;
   var STORAGE_KEY = 'draft-cockpit/state';
   var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true, DST: true, K: true };
   var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true };
@@ -34,6 +34,20 @@
   var FLEX_ELIGIBLE = { RB: true, WR: true, TE: true };
   var VALUE_DRIFT_MIN = 15;
   var VALUE_RANK_CEILING = 75;
+
+  // pre-market-order seed fingerprint: length + djb2 of the joined id list, for the one-time v7 reorder guard
+  var LEGACY_SEED_IDS_LENGTH = 4888;
+  var LEGACY_SEED_IDS_HASH = -698724641;
+
+  /** @param {Player[]} players @returns {number} djb2 of players.map(id).join(',') */
+  function hashIdList(players) {
+    var str = players.map(function (p) { return p.id; }).join(',');
+    var h = 5381;
+    for (var i = 0; i < str.length; i++) {
+      h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+    }
+    return h;
+  }
 
   /** @type {Object<number, function(*): State>} old-version-number -> upgrader to next version */
   var migrations = {};
@@ -67,6 +81,30 @@
                return { id: p.id, rank: p.rank, name: p.name, team: p.team, position: p.position, byeWeek: p.byeWeek, tier: p.tier, adp: null };
              }), marks: v5.marks, undoStack: v5.undoStack,
              filters: v5.filters, searchText: v5.searchText, manuallyEdited: v5.manuallyEdited, league: v5.league };
+  };
+
+  // one-time board reorder: only a payload whose id sequence fingerprint-matches the pristine
+  // pre-market-order legacy seed gets resorted by weighted consensus ADP; anything else (edited,
+  // imported, already-reordered) is stamped through unchanged — never reorder a real user's board.
+  migrations[6] = function (v6) {
+    var joined = v6.players.map(function (p) { return p.id; }).join(',');
+    var isLegacySeed = joined.length === LEGACY_SEED_IDS_LENGTH && hashIdList(v6.players) === LEGACY_SEED_IDS_HASH;
+    var players = v6.players;
+    if (isLegacySeed) {
+      players = v6.players.slice().sort(function (a, b) {
+        var ca = adpConsensus(a);
+        var cb = adpConsensus(b);
+        if (ca === null && cb === null) { return a.rank - b.rank; }
+        if (ca === null) { return 1; }
+        if (cb === null) { return -1; }
+        if (ca !== cb) { return ca - cb; }
+        return a.rank - b.rank;
+      }).map(function (p, idx) {
+        return { id: p.id, rank: idx + 1, name: p.name, team: p.team, position: p.position, byeWeek: p.byeWeek, tier: p.tier, adp: p.adp };
+      });
+    }
+    return { schemaVersion: 7, players: players, marks: v6.marks, undoStack: v6.undoStack,
+             filters: v6.filters, searchText: v6.searchText, manuallyEdited: v6.manuallyEdited, league: v6.league };
   };
 
   /** @returns {State} */
