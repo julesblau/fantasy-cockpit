@@ -1002,7 +1002,7 @@
     for (var i = 0; i < sites.length; i++) {
       if (isAdpNum(adp[sites[i]])) { sum += ADP_WEIGHTS[sites[i]] * adp[sites[i]]; wsum += ADP_WEIGHTS[sites[i]]; }
     }
-    return wsum > 0 ? Math.round(sum / wsum) : null;
+    return wsum > 0 ? Math.round((sum / wsum) * 10) / 10 : null;
   }
 
   function isValidState(obj) {

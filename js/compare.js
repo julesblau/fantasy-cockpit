@@ -76,12 +76,12 @@
     var adpLabel = 'ADP ' + a;
     if (picks.next === null) {
       if (a < picks.current) {
-        return { cls: 'verdict-green', text: adpLabel + ' ' + MIDDOT + ' ' + (picks.current - a) + ' past ADP ' + EMDASH + ' value now' };
+        return { cls: 'verdict-green', text: adpLabel + ' ' + MIDDOT + ' ' + Math.round(picks.current - a) + ' past ADP ' + EMDASH + ' value now' };
       }
       if (a === picks.current) {
         return { cls: 'verdict-orange', text: adpLabel + ' ' + MIDDOT + ' at his market price now' };
       }
-      return { cls: 'verdict-wait', text: adpLabel + ' ' + MIDDOT + ' market price in ' + (a - picks.current) + ' picks' };
+      return { cls: 'verdict-wait', text: adpLabel + ' ' + MIDDOT + ' market price in ' + Math.round(a - picks.current) + ' picks' };
     }
     if (picks.next === picks.current) {
       if (picks.following - picks.current <= BACK_TO_BACK_MAX_GAP) {
@@ -171,9 +171,9 @@
         '<button class="compare-card-x" data-action="compare-remove-card" data-id="' + esc(player.id) + '" aria-label="Remove from compare">' + DC.ui.icon('x') + '</button>' +
         '<div class="compare-card-head">' +
           avatarHTML(player) +
-          '<div class="compare-card-name">' + esc(player.name) + '</div>' +
+          '<div class="compare-card-meta">' + esc(player.team) + ' ' + MIDDOT + ' ' + esc(player.position) + ' ' + MIDDOT + ' BYE ' + player.byeWeek + '</div>' +
         '</div>' +
-        '<div class="compare-card-meta">' + esc(player.team) + ' ' + MIDDOT + ' ' + esc(player.position) + ' ' + MIDDOT + ' BYE ' + player.byeWeek + '</div>' +
+        '<div class="compare-card-name">' + esc(player.name) + '</div>' +
         '<div class="compare-card-ranks">#' + player.rank + ' ' + MIDDOT + ' ' + esc(player.position) + card.posRank + tierChipHTML(player.tier) + '</div>' +
         '<div class="compare-card-adp">' +
           adpRowHTML('ESPN', espnVal) +
