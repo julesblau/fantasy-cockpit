@@ -250,6 +250,31 @@
       });
       assert(hits >= 10, 'hits=' + hits + '/' + dsts.length);
     });
+
+    t('DC.adpData.images exists, is a plain object, >=200 entries', function () {
+      assert(DC.adpData.images && typeof DC.adpData.images === 'object' && !Array.isArray(DC.adpData.images), 'images not a plain object');
+      var n = Object.keys(DC.adpData.images).length;
+      assert(n >= 200, 'entry count=' + n);
+    });
+
+    t('every images key also exists in DC.adpData.players', function () {
+      Object.keys(DC.adpData.images).forEach(function (k) {
+        assert(Object.prototype.hasOwnProperty.call(DC.adpData.players, k), 'images key not in players: ' + k);
+      });
+    });
+
+    t('every images value is a positive integer', function () {
+      Object.keys(DC.adpData.images).forEach(function (k) {
+        var v = DC.adpData.images[k];
+        assert(Number.isInteger(v) && v > 0, 'bad image id for ' + k + ': ' + v);
+      });
+    });
+
+    t('no images key ends in |dst', function () {
+      Object.keys(DC.adpData.images).forEach(function (k) {
+        assert(!/\|dst$/.test(k), 'dst key found in images: ' + k);
+      });
+    });
   })();
   </script>
 
