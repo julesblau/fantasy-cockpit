@@ -895,7 +895,7 @@
     return hit || (player && player.adp) || null;
   }
 
-  var ADP_WEIGHTS = { espn: 1, yahoo: 1, sleeper: 1 }; // offline draft - no host room to overweight
+  var ADP_WEIGHTS = { espn: 0.35, yahoo: 0.20, sleeper: 0.45 }; // market-sharpness weighting; sleeper heaviest
 
   /**
    * @param {Player} player

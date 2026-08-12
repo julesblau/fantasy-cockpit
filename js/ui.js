@@ -79,7 +79,9 @@
 
   function metaLine(view) {
     var bye = view.byeWeek === 0 ? NDASH_BYE : String(view.byeWeek);
-    return esc(view.team) + ' ' + MIDDOT + ' ' + esc(view.position) + ' ' + MIDDOT + ' Bye ' + bye;
+    var consensus = DC.state.adpConsensus(view);
+    var adpPart = typeof consensus === 'number' ? ' ' + MIDDOT + ' ADP ' + consensus : '';
+    return esc(view.team) + ' ' + MIDDOT + ' ' + esc(view.position) + ' ' + MIDDOT + ' Bye ' + bye + adpPart;
   }
 
   /**

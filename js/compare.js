@@ -129,6 +129,8 @@
     var espnVal = adp && isAdpNum(adp.espn) ? adp.espn : EMDASH;
     var yahooVal = adp && isAdpNum(adp.yahoo) ? adp.yahoo : EMDASH;
     var sleeperVal = adp && isAdpNum(adp.sleeper) ? adp.sleeper : EMDASH;
+    var weightedConsensus = DC.state.adpConsensus(player);
+    var weightedVal = typeof weightedConsensus === 'number' ? weightedConsensus : EMDASH;
 
     var statusHTML = '';
     if (marks.target) {
@@ -155,6 +157,7 @@
           adpRowHTML('ESPN', espnVal) +
           adpRowHTML('Yahoo', yahooVal) +
           adpRowHTML('Sleeper', sleeperVal) +
+          adpRowHTML('Weighted', weightedVal) +
         '</div>' +
         '<div class="compare-verdict ' + card.verdict.cls + '">' + esc(card.verdict.text) + '</div>' +
         '<div class="compare-card-status">' + statusHTML + '</div>' +
