@@ -272,6 +272,78 @@
       assertEq(DC.state.lastInTierIds(DC.state.createSeedState()), {});
     });
 
+    // ---- adp sidecar lookup + weighted consensus ----
+
+    t('normalizeAdpName: lowercase, diacritic-free, punctuation-stripped, trailing generational suffix dropped', function () {
+      assertEq(DC.state.normalizeAdpName("Ja'Marr Chase"), 'jamarrchase');
+      assertEq(DC.state.normalizeAdpName('A.J. Brown'), 'ajbrown');
+      assertEq(DC.state.normalizeAdpName('Kenneth Walker III'), 'kennethwalker');
+      assertEq(DC.state.normalizeAdpName('Amon-Ra St. Brown'), 'amonrastbrown');
+      assertEq(DC.state.normalizeAdpName('Brian Thomas Jr'), 'brianthomas');
+      assertEq(DC.state.normalizeAdpName('José'), 'jose', 'diacritic stripped');
+      assertEq(DC.state.normalizeAdpName('Vernon Jr Smith'), 'vernonjrsmith', 'suffix only stripped at the end, not mid-name');
+    });
+
+    t('adpKey: normal player keys on normalized name + position, lowercase', function () {
+      assertEq(DC.state.adpKey({ name: "Ja'Marr Chase", team: 'CIN', position: 'WR' }), 'jamarrchase|wr');
+    });
+
+    t('adpKey: DST player keys on team, not name -> team|dst', function () {
+      assertEq(DC.state.adpKey({ name: '49ers D/ST', team: 'SF', position: 'DST' }), 'sf|dst');
+    });
+
+    t('adpKey: missing or non-string name/team/position -> null', function () {
+      assertEq(DC.state.adpKey({ team: 'CIN', position: 'WR' }), null, 'missing name');
+      assertEq(DC.state.adpKey({ name: 'X', position: 'WR' }), null, 'missing team');
+      assertEq(DC.state.adpKey({ name: 'X', team: 'CIN' }), null, 'missing position');
+      assertEq(DC.state.adpKey({ name: 5, team: 'CIN', position: 'WR' }), null, 'non-string name');
+      assertEq(DC.state.adpKey(null), null, 'null player');
+    });
+
+    t('adpForPlayer: sidecar hit wins over player.adp', function () {
+      var real = window.DC.adpData;
+      try {
+        window.DC.adpData = { players: { 'testhit|wr': { espn: 5, yahoo: 6, sleeper: 7 } } };
+        var player = { name: 'Test Hit', team: 'AAA', position: 'WR', adp: { espn: 90, yahoo: 90, sleeper: 90 } };
+        assertEq(DC.state.adpForPlayer(player), { espn: 5, yahoo: 6, sleeper: 7 });
+      } finally {
+        window.DC.adpData = real;
+      }
+    });
+
+    t('adpForPlayer: sidecar miss falls back to player.adp', function () {
+      var real = window.DC.adpData;
+      try {
+        window.DC.adpData = { players: {} };
+        var player = { name: 'Test Miss', team: 'AAA', position: 'WR', adp: { espn: 1, yahoo: 2, sleeper: 3 } };
+        assertEq(DC.state.adpForPlayer(player), { espn: 1, yahoo: 2, sleeper: 3 });
+      } finally {
+        window.DC.adpData = real;
+      }
+    });
+
+    t('adpForPlayer: DC.adpData undefined falls back to player.adp', function () {
+      var real = window.DC.adpData;
+      try {
+        window.DC.adpData = undefined;
+        var player = { name: 'Test Undef', team: 'AAA', position: 'WR', adp: { espn: 8, yahoo: 8, sleeper: 8 } };
+        assertEq(DC.state.adpForPlayer(player), { espn: 8, yahoo: 8, sleeper: 8 });
+      } finally {
+        window.DC.adpData = real;
+      }
+    });
+
+    t('adpForPlayer: sidecar and player.adp both absent -> null', function () {
+      var real = window.DC.adpData;
+      try {
+        window.DC.adpData = undefined;
+        var player = { name: 'Test None', team: 'AAA', position: 'WR' };
+        assertEq(DC.state.adpForPlayer(player), null);
+      } finally {
+        window.DC.adpData = real;
+      }
+    });
+
     // ---- Round 8 Task 2: deterministic fake ADP seeding ----
 
     t('seed ADP: every player has an adp object with espn/yahoo/sleeper all numbers >= 1, in canonical key order', function () {
@@ -5550,6 +5622,21 @@
 
     t('adpConsensus: null when player has no adp key', function () {
       assertEq(DC.state.adpConsensus({}), null);
+    });
+
+    t('adpConsensus: partial-source math via stubbed sidecar — espn 10 + sleeper 20, yahoo absent -> 15', function () {
+      var real = window.DC.adpData;
+      try {
+        window.DC.adpData = { players: { 'partialkey|rb': { espn: 10, sleeper: 20 } } };
+        var player = { name: 'Partial Key', team: 'KC', position: 'RB' };
+        assertEq(DC.state.adpConsensus(player), 15);
+      } finally {
+        window.DC.adpData = real;
+      }
+    });
+
+    t('adpConsensus: adp object present but zero valid sources -> null', function () {
+      assertEq(DC.state.adpConsensus({ adp: { espn: 0, yahoo: -3, sleeper: NaN } }), null);
     });
 
     function makeTierGroupPlayers() {

@@ -857,17 +857,47 @@
     return { current: current, next: next, following: following };
   }
 
+  /** @param {*} s @returns {string} lowercase, diacritic-free, no punctuation, one trailing generational suffix dropped */
+  function normalizeAdpName(s) {
+    var n = String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    n = n.replace(/\s+(jr|sr|ii|iii|iv|v)\.?\s*$/, '');
+    return n.replace(/[^a-z0-9]+/g, '');
+  }
+
+  /** @param {*} player @returns {string|null} sidecar join key; null when the player can't be keyed */
+  function adpKey(player) {
+    if (!player || typeof player.name !== 'string' || typeof player.team !== 'string' || typeof player.position !== 'string') {
+      return null;
+    }
+    if (player.position === 'DST') {
+      return player.team.toLowerCase() + '|dst';
+    }
+    return normalizeAdpName(player.name) + '|' + player.position.toLowerCase();
+  }
+
+  /** @param {*} player @returns {Object|null} sidecar first; player.adp fallback is the fixture/legacy seam */
+  function adpForPlayer(player) {
+    var table = window.DC && DC.adpData && DC.adpData.players;
+    var key = adpKey(player);
+    var hit = table && key ? table[key] : undefined;
+    return hit || (player && player.adp) || null;
+  }
+
+  var ADP_WEIGHTS = { espn: 1, yahoo: 1, sleeper: 1 }; // offline draft - no host room to overweight
+
   /**
    * @param {Player} player
    * @returns {number|null}
    */
   function adpConsensus(player) {
-    if (!player || !player.adp) {
-      return null;
+    var adp = adpForPlayer(player);
+    if (!adp) { return null; }
+    var sum = 0, wsum = 0;
+    var sites = ['espn', 'yahoo', 'sleeper'];
+    for (var i = 0; i < sites.length; i++) {
+      if (isAdpNum(adp[sites[i]])) { sum += ADP_WEIGHTS[sites[i]] * adp[sites[i]]; wsum += ADP_WEIGHTS[sites[i]]; }
     }
-    var adp = player.adp;
-    // equal weights until the aggregation round introduces per-source weighting
-    return Math.round((adp.espn + adp.yahoo + adp.sleeper) / 3);
+    return wsum > 0 ? Math.round(sum / wsum) : null;
   }
 
   function isValidState(obj) {
@@ -1089,6 +1119,9 @@
     fillAssignments: fillAssignments,
     rosterBoard: rosterBoard,
     upcomingPicks: upcomingPicks,
-    adpConsensus: adpConsensus
+    adpConsensus: adpConsensus,
+    normalizeAdpName: normalizeAdpName,
+    adpKey: adpKey,
+    adpForPlayer: adpForPlayer
   };
 })();
