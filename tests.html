@@ -2,6 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <!-- Task 5: row/compare avatars carry real a.espncdn.com/sleepercdn.com src strings -- this
+       CSP is the structural guarantee that NONE of them ever reach the network from this test
+       page (existing mount()-based tests included), regardless of which fixture/real player
+       data happens to render. Blocked img requests fail fast (onerror), never hang. -->
+  <meta http-equiv="Content-Security-Policy" content="img-src 'self' data:;">
   <title>Draft Cockpit Tests</title>
   <style>
     body { background: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; padding: 16px; }
@@ -7316,6 +7321,7 @@
         '.player-row{display:flex;align-items:center;gap:4px;padding:10px 6px;min-height:64px;max-height:80px;overflow:hidden}' +
         '.player-rank{width:36px}' +
         '#player-list .player-rank.pos-rank{display:flex;flex-direction:column;align-items:flex-start;gap:1px}' +
+        '.player-avatar-box{width:28px;height:28px;flex:none}' +
         '.player-info{flex:1;min-width:0}' +
         '.btn-toggle{width:44px;height:44px}' +
         '.btn-draft{min-width:52px;height:44px;padding:0 6px;font-size:13px;font-weight:700;border:none}';
@@ -7323,7 +7329,11 @@
       return style;
     }
 
-    t('row geometry at a real, pinned 390px width: .btn-draft stays >=44 wide (tap floor) and <=58; .player-rank is 36px; .player-info reclaims >=148px', function () {
+    // Task 5 floor recompute: adding the avatar box as a new flex sibling between .player-rank
+    // and .player-info costs .player-info exactly 32px of its old 148px floor -- the box's own
+    // 28px width, plus one more 4px row gap (5 top-level children now, not 4, so 5 gaps not 4).
+    // 148 - 32 = 116.
+    t('row geometry at a real, pinned 390px width: .btn-draft stays >=44 wide (tap floor) and <=58; .player-rank is 36px; .player-avatar-box is 28px; .player-info reclaims >=116px', function () {
       var fixture = buildPinned390FixtureRankBadge();
       var styleTag = injectRowGeometryCSS();
       try {
@@ -7340,8 +7350,11 @@
         var rankRect = row.querySelector('.player-rank').getBoundingClientRect();
         assert(Math.abs(rankRect.width - 36) <= 0.5, '.player-rank should be 36px wide: ' + rankRect.width);
 
+        var avatarRect = row.querySelector('.player-avatar-box').getBoundingClientRect();
+        assert(Math.abs(avatarRect.width - 28) <= 0.5, '.player-avatar-box should be 28px wide: ' + avatarRect.width);
+
         var infoRect = row.querySelector('.player-info').getBoundingClientRect();
-        assert(infoRect.width >= 148, '.player-info should reclaim >=148px of width: ' + infoRect.width);
+        assert(infoRect.width >= 116, '.player-info should reclaim >=116px of width: ' + infoRect.width);
       } finally {
         document.head.removeChild(styleTag);
         document.body.removeChild(fixture);
@@ -9958,6 +9971,143 @@
       t('adp-refresh: unexpected top-level chain failure', function () {
         assert(false, String(err && err.message || err));
       });
+    });
+  })();
+  </script>
+
+  <!-- Round 13 Task 5: player headshots on board rows + compare cards -->
+  <script>
+  (function () {
+    'use strict';
+    section('avatars');
+
+    // Fixture-only player, never drawn from SEED_PLAYERS/adp-data.js -- keeps every assertion
+    // below off of any real player's ADP value or image id (binding constraint).
+    function avatarFixturePlayer(overrides) {
+      return Object.assign({
+        id: 'avatar-fixture', rank: 1, name: 'Avatar Fixture Player', team: 'AAA', position: 'WR',
+        byeWeek: 5, tier: null, target: false, avoid: false, drafted: false, mine: false
+      }, overrides || {});
+    }
+
+    // adpKey('Avatar Fixture Player','WR') -> 'avatarfixtureplayer|wr'
+    var ESPN_KEY = 'avatarfixtureplayer|wr';
+    var ESPN_SRC_ESCAPED = 'https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/9999001.png&amp;w=64&amp;h=47';
+
+    [
+      ['availableRowHTML', function (view) { return DC.ui.templates.availableRowHTML(view, {}); }],
+      ['draftedRowHTML', function (view) { return DC.ui.templates.draftedRowHTML(view, { pickNumber: 1 }); }],
+      ['draftedSearchRowHTML', function (view) { return DC.ui.templates.draftedSearchRowHTML(view, {}); }]
+    ].forEach(function (pair) {
+      var label = pair[0];
+      var render = pair[1];
+
+      t(label + ': renders the ESPN combiner src when the stubbed images map has the key', function () {
+        var real = window.DC.adpData;
+        try {
+          window.DC.adpData = { players: {}, images: {} };
+          window.DC.adpData.images[ESPN_KEY] = 9999001;
+          var html = render(avatarFixturePlayer());
+          assert(html.indexOf('player-avatar-box') !== -1, label + ' should render .player-avatar-box: ' + html);
+          assert(html.indexOf('src="' + ESPN_SRC_ESCAPED + '"') !== -1, label + ' should carry the ESPN combiner src: ' + html);
+          assert(html.indexOf('alt=""') !== -1, label + ' avatar img should have alt="": ' + html);
+        } finally {
+          window.DC.adpData = real;
+        }
+      });
+
+      t(label + ': renders the sleepercdn team-logo src for a DST fixture, regardless of the images map', function () {
+        var real = window.DC.adpData;
+        try {
+          window.DC.adpData = { players: {}, images: {} };
+          var view = avatarFixturePlayer({ id: 'avatar-dst', name: 'Avatar Dst Fixture', team: 'ZZZ', position: 'DST' });
+          var html = render(view);
+          assert(html.indexOf('src="https://sleepercdn.com/images/team_logos/nfl/zzz.png"') !== -1, label + ' DST avatar should carry the team logo src: ' + html);
+        } finally {
+          window.DC.adpData = real;
+        }
+      });
+
+      t(label + ': renders the empty-avatar span when no images entry exists for the key', function () {
+        var real = window.DC.adpData;
+        try {
+          window.DC.adpData = { players: {}, images: {} };
+          var html = render(avatarFixturePlayer());
+          assert(html.indexOf('avatar-empty') !== -1, label + ' should render the empty avatar span: ' + html);
+          assert(html.indexOf('<img') === -1, label + ' should not render an <img> element when there is no image match: ' + html);
+        } finally {
+          window.DC.adpData = real;
+        }
+      });
+    });
+
+    t('availableRowHTML: avatar sits between the rank badge and .player-info', function () {
+      var real = window.DC.adpData;
+      try {
+        window.DC.adpData = { players: {}, images: {} };
+        window.DC.adpData.images[ESPN_KEY] = 9999001;
+        var html = DC.ui.templates.availableRowHTML(avatarFixturePlayer(), {});
+        var rankIdx = html.indexOf('player-rank');
+        var avatarIdx = html.indexOf('player-avatar-box');
+        var infoIdx = html.indexOf('player-info');
+        assert(rankIdx !== -1 && avatarIdx !== -1 && infoIdx !== -1, 'expected all three markers present: ' + html);
+        assert(rankIdx < avatarIdx && avatarIdx < infoIdx, 'expected rank -> avatar -> info order: ' + html);
+      } finally {
+        window.DC.adpData = real;
+      }
+    });
+
+    t('rosterBoardHTML tiles render no avatar', function () {
+      var tiles = [{ slot: 'QB', player: avatarFixturePlayer({ position: 'QB' }) }];
+      var html = DC.ui.templates.rosterBoardHTML(tiles);
+      assert(html.indexOf('player-avatar-box') === -1, 'roster tiles should not render an avatar: ' + html);
+    });
+
+    t('compare card: avatar present with the larger (avatar-lg) box and the 2x (w=96&h=70) combiner src', function () {
+      var real = window.DC.adpData;
+      var fixtureRoot = document.createElement('div');
+      fixtureRoot.style.display = 'none';
+      fixtureRoot.innerHTML = '<div id="compare-root" hidden></div>';
+      document.body.appendChild(fixtureRoot);
+      try {
+        window.DC.adpData = { players: {}, images: {} };
+        window.DC.adpData.images[ESPN_KEY] = 9999001;
+        var players = [avatarFixturePlayer()];
+        var marks = {};
+        marks[players[0].id] = { drafted: false, target: false, avoid: false, mine: false };
+        var state = {
+          schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+          players: players,
+          marks: marks,
+          undoStack: [],
+          filters: { position: 'ALL', status: 'AVAILABLE' },
+          searchText: '',
+          manuallyEdited: false,
+          league: null
+        };
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([players[0].id]);
+
+        var card = fixtureRoot.querySelector('.compare-card[data-id="' + players[0].id + '"]');
+        assert(card, 'expected the compare card to render');
+        var box = card.querySelector('.player-avatar-box');
+        assert(box, 'expected .player-avatar-box in the compare card: ' + card.innerHTML);
+        assert(box.classList.contains('avatar-lg'), 'expected the compare card avatar to carry avatar-lg: ' + card.innerHTML);
+        var img = box.querySelector('img.player-avatar');
+        assert(img, 'expected an <img class="player-avatar"> inside the box: ' + card.innerHTML);
+        assertEq(img.getAttribute('src'), 'https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/9999001.png&w=96&h=70', 'compare avatar should use the 2x (w=96&h=70) combiner params');
+      } finally {
+        document.body.removeChild(fixtureRoot);
+        window.DC.adpData = real;
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('tests.html restricts img-src via CSP so no avatar <img> can reach a real network host', function () {
+      var meta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+      assert(meta, 'expected a CSP meta tag restricting img-src');
+      assert(/img-src[^;]*'self'/.test(meta.getAttribute('content')), 'expected img-src to be restricted: ' + meta.getAttribute('content'));
     });
   })();
   </script>

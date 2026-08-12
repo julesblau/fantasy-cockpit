@@ -118,6 +118,31 @@
     return cls ? '<span class="tier-chip ' + cls + '">T' + tier + '</span>' : '';
   }
 
+  /**
+   * @param {*} player
+   * @returns {string} one .player-avatar-box, always the same wrapper regardless of branch so
+   *   the box's 28px geometry never varies with data availability. DST -> sleeper team logo
+   *   (unconditional); else an ESPN headshot when DC.adpData.images has the join key; else a
+   *   bare empty span. onerror hides a broken <img> behind the box's own circle background —
+   *   duplicated (larger, w=96&h=70) in compare.js per the esc()/tierChipHTML precedent.
+   */
+  function avatarHTML(player) {
+    var src = null;
+    if (player && player.position === 'DST') {
+      src = 'https://sleepercdn.com/images/team_logos/nfl/' + String(player.team).toLowerCase() + '.png';
+    } else {
+      var key = DC.state.adpKey(player);
+      var imageId = key && DC.adpData && DC.adpData.images && DC.adpData.images[key];
+      if (imageId) {
+        src = 'https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/' + imageId + '.png&w=64&h=47';
+      }
+    }
+    var inner = src
+      ? '<img class="player-avatar" src="' + esc(src) + '" alt="" loading="lazy" onerror="this.classList.add(\'avatar-error\')">'
+      : '<span class="player-avatar avatar-empty"></span>';
+    return '<span class="player-avatar-box">' + inner + '</span>';
+  }
+
   // shared by all three main-board row templates — same visual pattern as edit.js editRowHTML's
   // ALL view: .rank-position/.rank-overall are primary/secondary layout slots, overall rank primary.
   function rankBadgeHTML(view, posRanks) {
@@ -148,6 +173,7 @@
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
         rankBadgeHTML(view, ctx.posRanks) +
+        avatarHTML(view) +
         '<div class="player-info">' +
           '<div class="player-name">' + esc(view.name) + '</div>' +
           '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
@@ -171,6 +197,7 @@
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
         rankBadgeHTML(view, ctx.posRanks) +
+        avatarHTML(view) +
         '<div class="player-info">' +
           '<div class="player-name">' + esc(view.name) + '</div>' +
           '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
@@ -196,6 +223,7 @@
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
         rankBadgeHTML(view, ctx.posRanks) +
+        avatarHTML(view) +
         '<div class="player-info">' +
           '<div class="player-name">' +
             '<span style="display:inline-flex;width:16px;height:16px;vertical-align:-3px;color:var(--accent-draft);margin-right:4px">' + icon('check', 16) + '</span>' +

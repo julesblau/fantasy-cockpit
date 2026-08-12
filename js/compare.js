@@ -23,6 +23,25 @@
     return cls ? '<span class="tier-chip ' + cls + '">T' + tier + '</span>' : '';
   }
 
+  // avatarHTML duplicated from ui.js (44px box via .avatar-lg, ESPN combiner at w=96&h=70 for
+  // 2x) — same esc()/tierChipHTML precedent, not exported/shared
+  function avatarHTML(player) {
+    var src = null;
+    if (player && player.position === 'DST') {
+      src = 'https://sleepercdn.com/images/team_logos/nfl/' + String(player.team).toLowerCase() + '.png';
+    } else {
+      var key = DC.state.adpKey(player);
+      var imageId = key && DC.adpData && DC.adpData.images && DC.adpData.images[key];
+      if (imageId) {
+        src = 'https://a.espncdn.com/combiner/i?img=/i/headshots/nfl/players/full/' + imageId + '.png&w=96&h=70';
+      }
+    }
+    var inner = src
+      ? '<img class="player-avatar" src="' + esc(src) + '" alt="" loading="lazy" onerror="this.classList.add(\'avatar-error\')">'
+      : '<span class="player-avatar avatar-empty"></span>';
+    return '<span class="player-avatar-box avatar-lg">' + inner + '</span>';
+  }
+
   function adpRowHTML(label, value) {
     return '<div class="adp-row"><span class="adp-site">' + esc(label) + '</span><span class="adp-val">' + esc(value) + '</span></div>';
   }
@@ -150,7 +169,10 @@
     return (
       '<div class="compare-card" data-id="' + esc(player.id) + '">' +
         '<button class="compare-card-x" data-action="compare-remove-card" data-id="' + esc(player.id) + '" aria-label="Remove from compare">' + DC.ui.icon('x') + '</button>' +
-        '<div class="compare-card-name">' + esc(player.name) + '</div>' +
+        '<div class="compare-card-head">' +
+          avatarHTML(player) +
+          '<div class="compare-card-name">' + esc(player.name) + '</div>' +
+        '</div>' +
         '<div class="compare-card-meta">' + esc(player.team) + ' ' + MIDDOT + ' ' + esc(player.position) + ' ' + MIDDOT + ' BYE ' + player.byeWeek + '</div>' +
         '<div class="compare-card-ranks">#' + player.rank + ' ' + MIDDOT + ' ' + esc(player.position) + card.posRank + tierChipHTML(player.tier) + '</div>' +
         '<div class="compare-card-adp">' +

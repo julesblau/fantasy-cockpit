@@ -413,6 +413,26 @@ button.player-rank {
   color: var(--text-3);
 }
 
+.player-avatar-box {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  flex: none;
+  overflow: hidden;
+}
+
+.player-avatar {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.player-avatar.avatar-error {
+  visibility: hidden;
+}
+
 .player-info {
   flex: 1;
   min-width: 0;
@@ -974,7 +994,9 @@ button.player-rank {
 .compare-grid.quad { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
 .compare-card { position: relative; background: var(--surface-2); border-radius: var(--radius-card); padding: 12px 10px; min-width: 0; overflow: hidden; }
 .compare-card-x { position: absolute; top: 0; right: 0; width: 44px; height: 44px; background: none; border: none; color: var(--text-3); display: flex; align-items: center; justify-content: center; }
-.compare-card-name { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 40px; }
+.compare-card-head { display: flex; align-items: center; gap: 8px; padding-right: 40px; }
+.player-avatar-box.avatar-lg { width: 44px; height: 44px; }
+.compare-card-name { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .compare-card-meta { font-size: 13px; color: var(--text-2); margin-top: 2px; }
 .compare-card-ranks { font-size: 15px; font-weight: 700; margin-top: 8px; font-variant-numeric: tabular-nums; }
 .compare-card-adp { margin-top: 8px; }
