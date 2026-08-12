@@ -223,7 +223,7 @@
 
     t('createSeedState: correct shape from DC.data.SEED_PLAYERS', function () {
       var s = DC.state.createSeedState();
-      assertEq(s.schemaVersion, 5);
+      assertEq(s.schemaVersion, 6);
       s.players.forEach(function (p, i) {
         var seed = DC.data.SEED_PLAYERS[i];
         assertEq(p, { id: seed.id, rank: seed.rank, name: seed.name, team: seed.team, position: seed.position, byeWeek: seed.byeWeek, tier: seed.tier, adp: seed.adp }, 'seed player ' + i);
@@ -344,31 +344,26 @@
       }
     });
 
-    // ---- Round 8 Task 2: deterministic fake ADP seeding ----
-
-    t('seed ADP: every player has an adp object with espn/yahoo/sleeper all numbers >= 1, in canonical key order', function () {
-      DC.data.SEED_PLAYERS.forEach(function (p) {
-        assert(p.adp && typeof p.adp === 'object', 'adp should be an object for ' + p.id);
-        assert(typeof p.adp.espn === 'number' && p.adp.espn >= 1, 'espn adp for ' + p.id);
-        assert(typeof p.adp.yahoo === 'number' && p.adp.yahoo >= 1, 'yahoo adp for ' + p.id);
-        assert(typeof p.adp.sleeper === 'number' && p.adp.sleeper >= 1, 'sleeper adp for ' + p.id);
-        assert(JSON.stringify(p.adp).indexOf('{"espn":') === 0, 'canonical key order (espn first) for ' + p.id);
+    t('load(): a v5 payload with real adp objects migrates to schemaVersion 6 with every player.adp forced null', function () {
+      var payload = {
+        schemaVersion: 5,
+        players: [
+          { id: 'mv1', rank: 1, name: 'MV One', team: 'KC', position: 'QB', byeWeek: 9, tier: null, adp: { espn: 5, yahoo: 6, sleeper: 4 } },
+          { id: 'mv2', rank: 2, name: 'MV Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1, adp: { espn: 40, yahoo: 38, sleeper: 42 } }
+        ],
+        marks: {
+          mv1: { drafted: false, target: false, avoid: false, mine: false },
+          mv2: { drafted: false, target: false, avoid: false, mine: false }
+        },
+        undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.schemaVersion, 6);
+      loaded.players.forEach(function (p) {
+        assertEq(p.adp, null, 'adp for ' + p.id + ' must be forced null by the v6 migration');
       });
-    });
-
-    t('seed ADP: determinism pin — exact hand-computed values for players 1 and 100 (any future jitter change must edit this test deliberately)', function () {
-      var p1 = DC.data.SEED_PLAYERS[0];
-      assertEq(p1.id, 'ja-marr-chase-cin', 'precondition: player 1 is Ja\'Marr Chase');
-      assertEq(p1.adp, { espn: 4, yahoo: 10, sleeper: 1 }, 'player 1 exact fakeAdp values');
-
-      var p100 = DC.data.SEED_PLAYERS[99];
-      assertEq(p100.id, 'keon-coleman-buf', 'precondition: player 100 is Keon Coleman');
-      assertEq(p100.adp, { espn: 97, yahoo: 103, sleeper: 111 }, 'player 100 exact fakeAdp values');
-    });
-
-    t('seed ADP: site variance sanity — at least one player has espn !== sleeper (jitter actually varies by site)', function () {
-      var varies = DC.data.SEED_PLAYERS.some(function (p) { return p.adp.espn !== p.adp.sleeper; });
-      assert(varies, 'expected at least one seed player with differing espn/sleeper adp');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
     t('reduce is pure: DRAFT_PLAYER does not mutate the original state', function () {
@@ -869,7 +864,7 @@
 
     t('STORAGE_KEY and CURRENT_SCHEMA_VERSION constants', function () {
       assertEq(DC.state.STORAGE_KEY, 'draft-cockpit/state');
-      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 5);
+      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 6);
     });
 
     t('load(): missing key falls back to a fresh seed state', function () {
@@ -1059,6 +1054,9 @@
       trickyPlayers.forEach = function () {
         throw new TypeError('simulated crash inside normalize');
       };
+      trickyPlayers.map = function () {
+        throw new TypeError('simulated crash inside normalize'); // migrations[5] rebuilds players via map()
+      };
       var payload = {
         schemaVersion: 1,
         players: trickyPlayers,
@@ -1098,7 +1096,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 5);
+      assertEq(loaded.schemaVersion, 6);
       assertEq(loaded.manuallyEdited, false);
       assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null, adp: null }); }), 'players preserved, tier and adp healed null onto each');
       assertEq(loaded.marks, {
@@ -1236,7 +1234,7 @@
       // state, then rely on load()'s migrate/heal pipeline on the next boot.
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(v1Payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 5, 'migrated to current schema version');
+      assertEq(loaded.schemaVersion, 6, 'migrated to current schema version');
       assertEq(loaded.manuallyEdited, false, 'v1 payload had no flag; migration defaults it to false');
       assertEq(loaded.players, v1Payload.players, 'players preserved exactly');
       assertEq(loaded.marks, v1Payload.marks, 'marks preserved exactly');
@@ -1249,7 +1247,7 @@
     t('load(): healAdp matrix — valid object heals with canonical key order regardless of input order; array/string/partial/NaN-member/zero/negative/missing all heal to null', function () {
       function loadWithAdp(adp) {
         var payload = {
-          schemaVersion: 5,
+          schemaVersion: 6,
           players: [{ id: 'ad1', rank: 1, name: 'AD One', team: 'KC', position: 'QB', byeWeek: 9, tier: null, adp: adp }],
           marks: { ad1: { drafted: false, target: false, avoid: false, mine: false } },
           undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null
@@ -1302,7 +1300,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 5);
+      assertEq(loaded.schemaVersion, 6);
       assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { adp: null }); }), 'players preserved, adp healed null onto each');
       assertEq(loaded.marks, payload.marks);
       assertEq(loaded.undoStack, payload.undoStack);
@@ -1312,7 +1310,7 @@
 
     t('load(): non-monotone tiers AND a valid adp on the clamped player — heal and tier-clamp compose; adp survives the clamp', function () {
       var payload = {
-        schemaVersion: 5,
+        schemaVersion: 6,
         players: [
           { id: 'cp1', rank: 1, name: 'CP One', team: 'KC', position: 'RB', byeWeek: 9, tier: 3, adp: { espn: 5, yahoo: 6, sleeper: 4 } },
           { id: 'cp2', rank: 2, name: 'CP Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1, adp: { espn: 40, yahoo: 38, sleeper: 42 } }
@@ -1565,7 +1563,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 5);
+      assertEq(loaded.schemaVersion, 6);
       assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null, adp: null }); }));
       assertEq(loaded.marks, {
         y1: { drafted: false, target: true, avoid: false, mine: false },
@@ -1593,7 +1591,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 5);
+      assertEq(loaded.schemaVersion, 6);
       assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null, adp: null }); }));
       assertEq(loaded.marks, {
         y1: { drafted: true, target: false, avoid: false, mine: false },
@@ -1673,7 +1671,7 @@
       var loaded = DC.state.load();
 
       var storedAfter = JSON.parse(localStorage.getItem(DC.state.STORAGE_KEY));
-      assertEq(storedAfter.schemaVersion, 5, 'storage holds the migrated v5 shape immediately, before any dispatch');
+      assertEq(storedAfter.schemaVersion, 6, 'storage holds the migrated v5 shape immediately, before any dispatch');
       assertEq(storedAfter, loaded, 'the exact returned state is what got persisted');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
@@ -1695,7 +1693,7 @@
       var loaded = DC.state.load();
 
       var storedAfter = JSON.parse(localStorage.getItem(DC.state.STORAGE_KEY));
-      assertEq(storedAfter.schemaVersion, 5, 'storage holds the migrated v5 shape immediately, before any dispatch');
+      assertEq(storedAfter.schemaVersion, 6, 'storage holds the migrated v5 shape immediately, before any dispatch');
       assertEq(storedAfter, loaded, 'the exact returned state is what got persisted');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
@@ -5606,8 +5604,8 @@
       assert(result.following > result.next, 'following (' + result.following + ') must exceed next (' + result.next + ')');
     });
 
-    t('adpConsensus: seed player — equals rounded mean of its own adp.espn/yahoo/sleeper', function () {
-      var player = DC.data.SEED_PLAYERS[0];
+    t('adpConsensus: fixture player — equals rounded mean of its own adp.espn/yahoo/sleeper', function () {
+      var player = { adp: { espn: 4, yahoo: 10, sleeper: 7 } };
       var expected = Math.round((player.adp.espn + player.adp.yahoo + player.adp.sleeper) / 3);
       assertEq(DC.state.adpConsensus(player), expected);
     });
@@ -5806,7 +5804,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 5);
+      assertEq(loaded.schemaVersion, 6);
       assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null, adp: null }); }));
       assertEq(loaded.marks, payload.marks);
       assertEq(loaded.undoStack, payload.undoStack);
@@ -8108,9 +8106,23 @@
     t('4. card content: name, BYE + byeWeek in meta, #rank and POS+posRank in ranks, tier chip class, and the three adp-vals match the seeded per-site values', function () {
       var fixture = buildCompareFixture();
       try {
-        var store = DC.state.createStore(DC.state.createSeedState());
+        var players = [
+          { id: 'cc-1', rank: 3, name: 'Card Content One', team: 'AAA', position: 'RB', byeWeek: 5, tier: 2, adp: { espn: 4, yahoo: 6, sleeper: 5 } }
+        ];
+        var marks = { 'cc-1': { drafted: false, target: false, avoid: false, mine: false } };
+        var state = {
+          schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+          players: players,
+          marks: marks,
+          undoStack: [],
+          filters: { position: 'ALL', status: 'AVAILABLE' },
+          searchText: '',
+          manuallyEdited: false,
+          league: null
+        };
+        var store = DC.state.createStore(state);
         DC.compare.mount(store);
-        var p = DC.data.SEED_PLAYERS[0];
+        var p = players[0];
         DC.compare.open([p.id]);
 
         var root = fixture.querySelector('#compare-root');
@@ -8133,9 +8145,9 @@
 
         var adpVals = card.querySelectorAll('.adp-val');
         assertEq(adpVals.length, 3, 'expected exactly 3 adp rows');
-        assertEq(adpVals[0].textContent, String(p.adp.espn), 'ESPN adp value should match seed');
-        assertEq(adpVals[1].textContent, String(p.adp.yahoo), 'Yahoo adp value should match seed');
-        assertEq(adpVals[2].textContent, String(p.adp.sleeper), 'Sleeper adp value should match seed');
+        assertEq(adpVals[0].textContent, String(p.adp.espn), 'ESPN adp value should match fixture');
+        assertEq(adpVals[1].textContent, String(p.adp.yahoo), 'Yahoo adp value should match fixture');
+        assertEq(adpVals[2].textContent, String(p.adp.sleeper), 'Sleeper adp value should match fixture');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
@@ -8361,18 +8373,19 @@
       }
     });
 
-    t('13. no league: a seed player (a >= current) renders verdict-wait with exact market-price text', function () {
+    t('13. no league: a fixture player (a >= current) renders verdict-wait with exact market-price text', function () {
       var fixture = buildCompareFixture();
       try {
-        var store = DC.state.createStore(DC.state.createSeedState());
+        var player = verdictFixturePlayer('v-wait-13', 20);
+        var state = buildVerdictFixtureState([player], [], null);
+        var store = DC.state.createStore(state);
         DC.compare.mount(store);
-        var seedPlayer = DC.data.SEED_PLAYERS[0];
-        DC.compare.open([seedPlayer.id]);
+        DC.compare.open([player.id]);
 
         var root = fixture.querySelector('#compare-root');
         var picks = DC.state.upcomingPicks(store.getState());
-        var a = DC.state.adpConsensus(seedPlayer);
-        var verdict = root.querySelector('.compare-card[data-id="' + seedPlayer.id + '"] .compare-verdict');
+        var a = DC.state.adpConsensus(player);
+        var verdict = root.querySelector('.compare-card[data-id="' + player.id + '"] .compare-verdict');
         assert(verdict.classList.contains('verdict-wait'), 'no-league, a>=current should be wait');
         assertEq(verdict.textContent, 'ADP ' + a + ' ' + TEST_MIDDOT + ' market price in ' + (a - picks.current) + ' picks', 'exact wait text');
       } finally {
@@ -8500,21 +8513,13 @@
     t('18. live transition: slot-6 league, pre-draft green card flips to red after SIX other players are drafted, without reopening the overlay', function () {
       var fixture = buildCompareFixture();
       try {
-        var store = DC.state.createStore(DC.state.createSeedState());
+        var target = verdictFixturePlayer('v-live-target', 12);
+        var others = verdictFixtureFillers('v-live-f', 6);
+        var players = [target].concat(others);
+        var state = buildVerdictFixtureState(players, [], SLOT6_LEAGUE);
+        var store = DC.state.createStore(state);
         DC.compare.mount(store);
-        store.dispatch({ type: 'SET_LEAGUE', league: SLOT6_LEAGUE });
 
-        var target = null;
-        DC.data.SEED_PLAYERS.some(function (p) {
-          var c = DC.state.adpConsensus(p);
-          if (c !== null && c >= 10 && c <= 16) {
-            target = p;
-            return true;
-          }
-          return false;
-        });
-        assert(target, 'expected at least one seed player with consensus in [10,16] for the pre-draft green band');
-        var others = DC.data.SEED_PLAYERS.filter(function (p) { return p.id !== target.id; }).slice(0, 6);
         assertEq(others.length, 6, 'sanity: six filler players available');
 
         DC.compare.open([target.id]);
@@ -8599,23 +8604,24 @@
     t('22. live: drafting a player while its own card is open in compare flips that card verdict to drafted (store subscription path)', function () {
       var fixture = buildCompareFixture();
       try {
-        var store = DC.state.createStore(DC.state.createSeedState());
+        var p0 = verdictFixturePlayer('v-live22-0', 20);
+        var p1 = verdictFixturePlayer('v-live22-1', 25);
+        var state = buildVerdictFixtureState([p0, p1], [], null);
+        var store = DC.state.createStore(state);
         DC.compare.mount(store);
-        var id0 = DC.data.SEED_PLAYERS[0].id;
-        var id1 = DC.data.SEED_PLAYERS[1].id;
-        DC.compare.open([id0, id1]);
+        DC.compare.open([p0.id, p1.id]);
 
         var root = fixture.querySelector('#compare-root');
-        var verdictBefore = root.querySelector('.compare-card[data-id="' + id0 + '"] .compare-verdict');
+        var verdictBefore = root.querySelector('.compare-card[data-id="' + p0.id + '"] .compare-verdict');
         assert(!verdictBefore.classList.contains('verdict-none'), 'sanity: undrafted card should not start as verdict-none');
 
-        store.dispatch({ type: 'DRAFT_PLAYER', playerId: id0, mine: false });
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: p0.id, mine: false });
 
-        var verdictAfter = root.querySelector('.compare-card[data-id="' + id0 + '"] .compare-verdict');
+        var verdictAfter = root.querySelector('.compare-card[data-id="' + p0.id + '"] .compare-verdict');
         assert(verdictAfter.classList.contains('verdict-none'), 'drafting the open card should flip its verdict to verdict-none live');
         assertEq(verdictAfter.textContent, 'drafted', 'live drafted verdict text should be exact');
 
-        var status = root.querySelector('.compare-card[data-id="' + id0 + '"] .compare-card-status');
+        var status = root.querySelector('.compare-card[data-id="' + p0.id + '"] .compare-card-status');
         assert(status.textContent.indexOf('Pick 1') !== -1, 'status row should show Pick 1 live too: ' + status.innerHTML);
       } finally {
         document.body.removeChild(fixture);

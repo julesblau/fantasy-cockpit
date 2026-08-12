@@ -22,7 +22,7 @@
    * }} State
    */
 
-  var CURRENT_SCHEMA_VERSION = 5;
+  var CURRENT_SCHEMA_VERSION = 6;
   var STORAGE_KEY = 'draft-cockpit/state';
   var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true, DST: true, K: true };
   var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true };
@@ -59,6 +59,14 @@
   migrations[4] = function (v4) {
     return { schemaVersion: 5, players: v4.players, marks: v4.marks, undoStack: v4.undoStack,
              filters: v4.filters, searchText: v4.searchText, manuallyEdited: v4.manuallyEdited, league: v4.league };
+  };
+
+  // purges pre-v6 fake seed adp: rebuilds each player with adp forced null (tier/adp healing stays normalize's job)
+  migrations[5] = function (v5) {
+    return { schemaVersion: 6, players: v5.players.map(function (p) {
+               return { id: p.id, rank: p.rank, name: p.name, team: p.team, position: p.position, byeWeek: p.byeWeek, tier: p.tier, adp: null };
+             }), marks: v5.marks, undoStack: v5.undoStack,
+             filters: v5.filters, searchText: v5.searchText, manuallyEdited: v5.manuallyEdited, league: v5.league };
   };
 
   /** @returns {State} */
