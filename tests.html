@@ -8391,8 +8391,6 @@
     // verdict-text assembly must match compare.js's own MIDDOT/EMDASH constants exactly
     var TEST_MIDDOT = '·';
     var TEST_EMDASH = '—';
-    // compare-card-head meta separator only -- must match compare.js's own THINSPACE constant
-    var TEST_THINSPACE = ' ';
 
     // slot-1 league: next=1/following=24 pre-draft, 24/25 (back-to-back) after one pick
     var SLOT1_LEAGUE = { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } };
@@ -8520,8 +8518,9 @@
         var root = fixture.querySelector('#compare-root');
         var card = root.querySelector('.compare-card[data-id="' + p.id + '"]');
         assertEq(card.querySelector('.compare-card-name').textContent, p.name, 'name should render');
-        // thin-space separators (no middot), 12px -- widest real combo measured ~8.4px real margin
-        assertEq(card.querySelector('.compare-card-meta').textContent, p.team + TEST_THINSPACE + p.position + TEST_THINSPACE + 'B' + p.byeWeek, 'meta should be TEAM/POS/B-bye joined by thin spaces, no middot');
+        // dots are element children (.meta-dot) now, not text -- textContent has no spaces around them
+        assertEq(card.querySelector('.compare-card-meta').textContent, p.team + TEST_MIDDOT + p.position + TEST_MIDDOT + 'B' + p.byeWeek, 'meta should be TEAM/POS/B-bye joined by dot separators, no spaces in textContent');
+        assertEq(card.querySelectorAll('.compare-card-meta .meta-dot').length, 2, 'expected exactly 2 dot separators');
 
         var ranks = card.querySelector('.compare-card-ranks');
         var posRanks = DC.state.positionRanks(store.getState());
@@ -8529,11 +8528,12 @@
         assert(ranks.textContent.indexOf(p.position + posRanks[p.id]) !== -1, 'ranks should include ' + p.position + posRanks[p.id]);
 
         var expectedTierCls = DC.state.tierColorClass(p.tier);
-        var chip = card.querySelector('.tier-chip');
+        var strip = card.querySelector('.tier-strip');
+        assert(!card.querySelector('.tier-chip'), 'the old inline tier chip must be gone from the ranks line');
         if (expectedTierCls) {
-          assert(chip && chip.classList.contains(expectedTierCls), 'tier chip should carry ' + expectedTierCls);
+          assert(strip && strip.classList.contains(expectedTierCls), 'tier strip should carry ' + expectedTierCls);
         } else {
-          assert(!chip, 'no tier chip expected when tier is null');
+          assert(!strip, 'no tier strip expected when tier is null');
         }
 
         var adpVals = card.querySelectorAll('.adp-val');
@@ -8543,6 +8543,18 @@
         assertEq(adpVals[2].textContent, String(p.adp.sleeper), 'Sleeper adp value should match fixture');
         // 0.35*4 + 0.20*6 + 0.45*5 = 4.85 -> 4.9
         assertEq(adpVals[3].textContent, '4.9', 'Weighted adp value should equal the weighted consensus');
+
+        var weightedRow = card.querySelectorAll('.compare-card-adp .adp-row')[3];
+        assert(weightedRow.classList.contains('adp-row-weighted'), 'the Weighted row should carry adp-row-weighted');
+
+        var inner = card.querySelector('.compare-card-inner');
+        assert(inner, 'expected .compare-card-inner to wrap the post-strip content');
+        ['compare-card-head', 'compare-card-name', 'compare-card-ranks', 'compare-card-adp', 'compare-card-status', 'compare-verdict'].forEach(function (cls) {
+          assert(inner.querySelector('.' + cls), 'expected .' + cls + ' inside .compare-card-inner');
+        });
+        var innerKids = inner.children;
+        assert(innerKids[innerKids.length - 1].classList.contains('compare-verdict'), 'verdict should be the LAST element child of .compare-card-inner');
+        assert(innerKids[innerKids.length - 2].classList.contains('compare-card-status'), 'status row should sit immediately before the verdict');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
@@ -8719,7 +8731,8 @@
         var root = fixture.querySelector('#compare-root');
         var status = root.querySelector('.compare-card[data-id="' + id0 + '"] .compare-card-status');
         assert(status.textContent.indexOf('Pick 1') !== -1, 'expected Pick 1: ' + status.innerHTML);
-        var icons = status.querySelectorAll('svg');
+        // scoped to the icons wrapper, not the whole status row -- the row also carries the X-link's own svg now
+        var icons = status.querySelector('.compare-card-status-icons').querySelectorAll('svg');
         assertEq(icons.length, 2, 'expected both the check and person glyph');
       } finally {
         document.body.removeChild(fixture);
@@ -9424,6 +9437,297 @@
         assertEq(root.querySelector('.compare-adp-updated'), null, 'ADP-as-of line should be omitted entirely when DC.adpData is absent');
       } finally {
         window.DC.adpData = real;
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('34. X link href: exact encodeURIComponent output for a name with a space and one with an apostrophe, and a DST fixture strips the " D/ST" suffix from the query only', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var spacePlayer = { id: 'x-space', rank: 1, name: 'Fixture Space', team: 'AAA', position: 'RB', byeWeek: 5, tier: null, adp: null };
+        var apostrophePlayer = { id: 'x-apo', rank: 2, name: "Fixture O'Test", team: 'AAA', position: 'RB', byeWeek: 5, tier: null, adp: null };
+        var dstPlayer = { id: 'x-dst', rank: 3, name: 'Testers D/ST', team: 'AAA', position: 'DST', byeWeek: 5, tier: null, adp: null };
+        var players = [spacePlayer, apostrophePlayer, dstPlayer];
+        var marks = {};
+        players.forEach(function (p) { marks[p.id] = { drafted: false, target: false, avoid: false, mine: false }; });
+        var state = {
+          schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+          players: players,
+          marks: marks,
+          undoStack: [],
+          filters: { position: 'ALL', status: 'AVAILABLE' },
+          searchText: '',
+          manuallyEdited: false,
+          league: null
+        };
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open(players.map(function (p) { return p.id; }));
+
+        var root = fixture.querySelector('#compare-root');
+        function xLinkFor(p) {
+          return root.querySelector('.compare-card[data-id="' + p.id + '"] .compare-x-link');
+        }
+
+        assertEq(xLinkFor(spacePlayer).getAttribute('href'), 'https://x.com/search?q=Fixture%20Space&f=top', 'space in name should encode to %20');
+        assertEq(xLinkFor(apostrophePlayer).getAttribute('href'), "https://x.com/search?q=Fixture%20O'Test&f=top", 'apostrophe should survive encodeURIComponent unescaped');
+        assertEq(xLinkFor(dstPlayer).getAttribute('href'), 'https://x.com/search?q=Testers&f=top', 'DST query should strip the trailing " D/ST" suffix');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('35. X link: target/rel/aria-label are present, and the aria-label uses the full player name (not the DST-stripped search query)', function () {
+      var fixture = buildCompareFixture();
+      try {
+        var player = { id: 'x-attrs', rank: 1, name: 'Testers D/ST', team: 'AAA', position: 'DST', byeWeek: 5, tier: null, adp: null };
+        var marks = { 'x-attrs': { drafted: false, target: false, avoid: false, mine: false } };
+        var state = {
+          schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+          players: [player],
+          marks: marks,
+          undoStack: [],
+          filters: { position: 'ALL', status: 'AVAILABLE' },
+          searchText: '',
+          manuallyEdited: false,
+          league: null
+        };
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([player.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var link = root.querySelector('.compare-x-link');
+        assertEq(link.getAttribute('target'), '_blank', 'expected target=_blank');
+        assertEq(link.getAttribute('rel'), 'noopener', 'expected rel=noopener');
+        assertEq(link.getAttribute('aria-label'), 'Search X for Testers D/ST', 'aria-label should use the full player name');
+        assert(link.querySelector('svg'), 'expected an inline svg glyph inside the link');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('36. cardHTML opts.xAria overrides the ✕ button aria-label; default is unchanged when opts is omitted', function () {
+      var seed = DC.state.createSeedState();
+      var id = seed.players[0].id;
+      var card = DC.compare.templates.buildCards(seed, [id])[0];
+
+      var defaultHtml = DC.compare.templates.cardHTML(card);
+      var defaultWrap = document.createElement('div');
+      defaultWrap.innerHTML = defaultHtml;
+      assertEq(defaultWrap.querySelector('.compare-card-x').getAttribute('aria-label'), 'Remove from compare', 'default aria-label unchanged');
+
+      var closeHtml = DC.compare.templates.cardHTML(card, { xAria: 'Close' });
+      var closeWrap = document.createElement('div');
+      closeWrap.innerHTML = closeHtml;
+      assertEq(closeWrap.querySelector('.compare-card-x').getAttribute('aria-label'), 'Close', 'opts.xAria should override the aria-label');
+    });
+
+    // ---- real-layout compare geometry gates: meta census + quad no-clip ----
+    // tests.html loads no stylesheet (by design — other fixtures here rely only on UA defaults),
+    // so every layout-bearing compare rule this task lands in styles.css is hand-mirrored into a
+    // scoped <style> below, removed in each test's finally — safe because every t() here runs
+    // synchronously to completion before the next starts. Same pattern as
+    // buildPinned390FixtureCard/injectRowGeometryCSS above for the main board.
+
+    function buildCompareGeometryFixture() {
+      var root = document.createElement('div');
+      root.style.position = 'fixed';
+      root.style.top = '0';
+      root.style.left = '0';
+      root.style.width = '390px';
+      root.style.height = '844px'; // real layout, not display:none -- descendants resolve widths/heights against this
+      root.style.visibility = 'hidden';
+      root.innerHTML = '<div id="compare-root" hidden></div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function injectCompareGeometryCSS() {
+      var style = document.createElement('style');
+      style.textContent =
+        '*{box-sizing:border-box}' +
+        '#compare-root{position:relative;width:390px;height:844px;display:flex;flex-direction:column}' +
+        '.compare-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px}' +
+        '.compare-title{font-size:20px;font-weight:700}' +
+        '.compare-adp-updated{font-size:12px;margin-top:2px}' +
+        '.compare-done{height:44px;min-width:64px;border:none;font-size:15px;font-weight:600}' +
+        '.compare-grid{flex:1;display:grid;gap:8px;padding:0 12px 12px;min-height:0}' +
+        '.compare-grid.cols-2{grid-template-columns:1fr 1fr}' +
+        '.compare-grid.quad{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}' +
+        '.compare-card{position:relative;border-radius:12px;padding:0;min-width:0;overflow:hidden}' +
+        '.compare-card-inner{padding:12px 10px}' +
+        '.compare-card-x{position:absolute;top:0;right:0;width:44px;height:44px;display:flex;align-items:center;justify-content:center}' +
+        '.tier-strip{flex:none;height:13px;display:flex;align-items:center;padding:0 8px}' +
+        '.tier-strip span{font-size:9px;font-weight:800;letter-spacing:0.8px}' +
+        '.compare-card-head{display:flex;align-items:center;gap:8px;padding-right:28px}' +
+        '.player-avatar-box{width:28px;height:28px;border-radius:50%;flex:none;overflow:hidden}' +
+        '.player-avatar-box.avatar-lg{width:44px;height:44px}' +
+        '.compare-card-meta{font-size:12px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+        '.meta-dot{font-size:10px;margin:0 1px}' +
+        '.compare-card-name{font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}' +
+        '.compare-card-ranks{font-size:15px;font-weight:700;margin-top:8px}' +
+        '.compare-card-adp{margin-top:8px}' +
+        '.adp-row{display:flex;justify-content:space-between;font-size:13px;line-height:20px}' +
+        '.adp-row-weighted{border-top:1px solid rgba(255,255,255,0.12);margin-top:3px;padding-top:3px}' +
+        '.adp-row-weighted .adp-val{font-weight:800;font-size:15px}' +
+        '.compare-card-status{margin-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:13px}' +
+        '.compare-card-status-icons{display:flex;gap:8px;align-items:center}' +
+        '.compare-x-link{display:inline-flex;align-items:center;justify-content:center;box-sizing:content-box;width:18px;height:18px;padding:13px;margin:-13px}' +
+        '.compare-verdict{margin-top:8px;font-size:13px;font-weight:700;line-height:17px;padding:6px 8px;border-radius:8px}' +
+        '.compare-empty-cell{border:1px dashed rgba(255,255,255,0.12);border-radius:12px;padding:12px}';
+      document.head.appendChild(style);
+      return style;
+    }
+
+    // true (sub-pixel) unclamped content width via a throwaway clone with no width constraint --
+    // same naturalChipContentWidth/naturalTextWidth precedent used by the board's own census
+    // test, needed here because the meta line's dots are element children (.meta-dot), not plain
+    // text, so a plain textContent measurement would drop their margins.
+    function naturalMetaWidth(html, cs) {
+      var clone = document.createElement('span');
+      clone.style.position = 'absolute';
+      clone.style.visibility = 'hidden';
+      clone.style.whiteSpace = 'nowrap';
+      clone.style.fontSize = cs.fontSize;
+      clone.style.fontWeight = cs.fontWeight;
+      clone.style.fontFamily = cs.fontFamily;
+      clone.innerHTML = html;
+      document.body.appendChild(clone);
+      var w = clone.getBoundingClientRect().width;
+      document.body.removeChild(clone);
+      return w;
+    }
+
+    t('compare meta census (binding): every distinct SEED_PLAYERS team|position|byeWeek combo fits the real cols-2 meta budget at 12px -- 0 may clip', function () {
+      var fixture = buildCompareGeometryFixture();
+      var styleTag = injectCompareGeometryCSS();
+      try {
+        var probe = { id: 'census-probe', rank: 1, name: 'X', team: 'KC', position: 'RB', byeWeek: 9, tier: null, adp: null };
+        var state = {
+          schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+          players: [probe],
+          marks: { 'census-probe': { drafted: false, target: false, avoid: false, mine: false } },
+          undoStack: [],
+          filters: { position: 'ALL', status: 'AVAILABLE' },
+          searchText: '',
+          manuallyEdited: false,
+          league: null
+        };
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([probe.id]); // 1 card -> cols-2, the same column width as the 2-up layout
+
+        var root = fixture.querySelector('#compare-root');
+        assert(root.querySelector('.compare-grid').classList.contains('cols-2'), 'sanity: a single card renders in cols-2');
+
+        // budget arithmetic at the pinned 390px fixture width: 390 - 12 - 12 (.compare-grid
+        // padding) - 8 (.compare-grid gap) = 358, /2 = 179 (.compare-card) - 10 - 10
+        // (.compare-card-inner padding) = 159 - 28 (.compare-card-head padding-right) = 131 - 44
+        // (avatar-lg) - 8 (head gap) = 79px left for .compare-card-meta (flex:1) -- cross-checked
+        // against the real measured card/meta boxes below, not asserted from arithmetic alone
+        var cardRect = root.querySelector('.compare-card').getBoundingClientRect();
+        assert(Math.abs(cardRect.width - 179) <= 0.5, 'sanity: real card width should be ~179px at the pinned 390px fixture width: ' + cardRect.width);
+
+        var metaEl = root.querySelector('.compare-card-meta');
+        var cs = getComputedStyle(metaEl);
+        var budget = metaEl.getBoundingClientRect().width;
+        assert(budget > 0, 'sanity: budget should be a positive real measurement: ' + budget);
+
+        var seen = {};
+        var combos = [];
+        DC.data.SEED_PLAYERS.forEach(function (p) {
+          var key = p.team + '|' + p.position + '|' + p.byeWeek;
+          if (!seen[key]) {
+            seen[key] = true;
+            combos.push({ team: p.team, position: p.position, byeWeek: p.byeWeek });
+          }
+        });
+        assert(combos.length > 0, 'sanity: expected at least one distinct combo');
+
+        var overflowing = [];
+        var widest = { width: -1, combo: null };
+        combos.forEach(function (c) {
+          // exact markup compare.js's cardHTML emits for the meta line -- team/position are always
+          // plain uppercase letters (asserted elsewhere in the data-integrity tests), no esc() needed
+          var html = c.team + '<span class="meta-dot">' + TEST_MIDDOT + '</span>' + c.position + '<span class="meta-dot">' + TEST_MIDDOT + '</span>' + 'B' + c.byeWeek;
+          var w = naturalMetaWidth(html, cs);
+          if (w > widest.width) {
+            widest = { width: w, combo: c.team + '|' + c.position + '|B' + c.byeWeek };
+          }
+          if (w > budget) {
+            overflowing.push(c.team + '|' + c.position + '|B' + c.byeWeek + ' (' + w.toFixed(1) + 'px)');
+          }
+        });
+
+        assertEq(overflowing.length, 0, 'expected 0 of ' + combos.length + ' distinct team|position|byeWeek combos to clip the ' + budget.toFixed(1) + 'px meta budget at 12px (widest: ' + widest.combo + ' @ ' + widest.width.toFixed(1) + 'px, margin ' + (budget - widest.width).toFixed(1) + 'px) -- got ' + overflowing.length + ': ' + overflowing.join('; '));
+      } finally {
+        document.head.removeChild(styleTag);
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    // hand-built card object (bypassing buildCards) so drafted status icons ('Pick 12' + the
+    // check + person glyphs) can coexist with the longest text any verdictFor branch can emit
+    // (compare.js:73-112, the on-the-clock "likely there at #following" wait branch) -- these
+    // two never co-occur for a REAL card (buildCards forces verdict to the short 'drafted' text
+    // once marks.drafted is true), but cardHTML itself doesn't know or care how its card object
+    // was built, and this is the true worst-case content the template can ever be asked to render
+    function buildQuadWorstCaseCard(id) {
+      var player = {
+        id: id, rank: 1, name: 'Quad Worst Case Fixture Name', team: 'SEA', position: 'WR', byeWeek: 13, tier: 1,
+        adp: { espn: 130, yahoo: 150, sleeper: 140 }
+      };
+      return {
+        player: player,
+        adp: { espn: 130, yahoo: 150, sleeper: 140 },
+        posRank: 12,
+        pickNumber: 12,
+        marks: { target: false, avoid: false, drafted: true, mine: true },
+        verdict: { cls: 'verdict-wait', text: 'ADP 145 ' + TEST_MIDDOT + ' on the clock ' + TEST_EMDASH + ' likely there at #192' }
+      };
+    }
+
+    t('compare quad no-clip (binding): a worst-case card (tier strip + drafted status row + X link + 4 adp rows + the longest verdictFor text) never overflows its own box in the quad grid at 390x844', function () {
+      var fixture = buildCompareGeometryFixture();
+      var styleTag = injectCompareGeometryCSS();
+      try {
+        var store = DC.state.createStore(DC.state.createSeedState());
+        DC.compare.mount(store);
+        var ids = DC.data.SEED_PLAYERS.slice(0, 4).map(function (p) { return p.id; });
+        DC.compare.open(ids); // real render establishes the real header height + quad grid honestly
+
+        var root = fixture.querySelector('#compare-root');
+        assert(root.querySelector('.compare-grid').classList.contains('quad'), 'sanity: 4 cards should render in the quad grid');
+
+        var oldCards = root.querySelectorAll('.compare-card');
+        assertEq(oldCards.length, 4, 'sanity: 4 real cards before the worst-case swap');
+        Array.prototype.forEach.call(oldCards, function (cardEl, i) {
+          // swap each real card's markup for the worst-case one in place -- keeps the real
+          // header/grid shell (and its real height budget) honest while stressing card content
+          cardEl.outerHTML = DC.compare.templates.cardHTML(buildQuadWorstCaseCard('quad-worst-' + i));
+        });
+
+        var cards = root.querySelectorAll('.compare-card');
+        assertEq(cards.length, 4, 'expected 4 worst-case cards after the swap');
+        Array.prototype.forEach.call(cards, function (cardEl, i) {
+          assert(cardEl.querySelector('.tier-strip'), 'sanity: worst-case card ' + i + ' should carry a non-null tier strip');
+          assertEq(cardEl.querySelectorAll('.compare-card-status-icons svg').length, 2, 'sanity: worst-case card ' + i + ' should carry exactly 2 status icons');
+          assert(cardEl.querySelector('.compare-x-link'), 'sanity: worst-case card ' + i + ' should carry the X link');
+          assertEq(cardEl.querySelectorAll('.adp-val').length, 4, 'sanity: worst-case card ' + i + ' should carry all 4 adp rows');
+
+          var cardRect = cardEl.getBoundingClientRect();
+          assert(cardEl.scrollHeight <= cardEl.clientHeight, 'card ' + i + ' should not clip its own content: scrollHeight=' + cardEl.scrollHeight + ' clientHeight=' + cardEl.clientHeight);
+
+          var verdictRect = cardEl.querySelector('.compare-verdict').getBoundingClientRect();
+          assert(verdictRect.bottom <= cardRect.bottom + 0.5, 'card ' + i + ' verdict box bottom should sit inside the card: verdictBottom=' + verdictRect.bottom + ' cardBottom=' + cardRect.bottom);
+        });
+      } finally {
+        document.head.removeChild(styleTag);
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
       }

@@ -4,7 +4,7 @@
 
   var MIDDOT = '·';
   var EMDASH = '—';
-  var THINSPACE = ' '; // U+2009 thin space -- compare-card-head meta separator only, replaces MIDDOT there for width
+  var DOT = '<span class="meta-dot">' + '·' + '</span>'; // compare-card-head meta separator only
   var SLACK = 3; // picks of cushion on either side of a bucket boundary
   var BACK_TO_BACK_MAX_GAP = 1; // following - current this small means no one else picks in between -- his own next pick, not a rival's
   var MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -19,13 +19,13 @@
   }
 
   // duplicated per the esc() precedent — not exported from state, not shared with ui.js/edit.js
-  function tierChipHTML(tier) {
+  function tierStripHTML(tier) {
     var cls = DC.state.tierColorClass(tier);
-    return cls ? '<span class="tier-chip ' + cls + '">T' + tier + '</span>' : '';
+    return cls ? '<div class="tier-strip ' + cls + '"><span>TIER ' + tier + '</span></div>' : '';
   }
 
   // avatarHTML duplicated from ui.js (44px box via .avatar-lg, ESPN combiner at w=96&h=70 for
-  // 2x) — same esc()/tierChipHTML precedent, not exported/shared
+  // 2x) — same esc()/tierStripHTML precedent, not exported/shared
   function avatarHTML(player) {
     var src = null;
     if (player && player.position === 'DST') {
@@ -43,11 +43,22 @@
     return '<span class="player-avatar-box avatar-lg">' + inner + '</span>';
   }
 
-  function adpRowHTML(label, value) {
-    return '<div class="adp-row"><span class="adp-site">' + esc(label) + '</span><span class="adp-val">' + esc(value) + '</span></div>';
+  function adpRowHTML(label, value, extraClass) {
+    var cls = 'adp-row' + (extraClass ? ' ' + extraClass : '');
+    return '<div class="' + cls + '"><span class="adp-site">' + esc(label) + '</span><span class="adp-val">' + esc(value) + '</span></div>';
   }
 
-  // isAdpNum semantics duplicated from state.js -- not exported, same esc()/tierChipHTML precedent
+  // brand glyph, not part of DC.ui's icon set -- single path, viewBox 0 0 24 24
+  var X_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zM17.083 19.77h1.833L7.084 4.126H5.117z"></path></svg>';
+
+  /** @param {*} player @returns {string} X search link; DST names strip the trailing " D/ST" from the query only, not the aria-label */
+  function xLinkHTML(player) {
+    var searchName = player.position === 'DST' ? player.name.replace(/\s*D\/ST$/, '') : player.name;
+    var href = 'https://x.com/search?q=' + encodeURIComponent(searchName) + '&f=top';
+    return '<a class="compare-x-link" href="' + esc(href) + '" target="_blank" rel="noopener" aria-label="Search X for ' + esc(player.name) + '">' + X_ICON + '</a>';
+  }
+
+  // isAdpNum semantics duplicated from state.js -- not exported, same esc()/tierStripHTML precedent
   function isAdpNum(n) {
     return typeof n === 'number' && isFinite(n) && n >= 1;
   }
@@ -142,7 +153,9 @@
     return cards;
   }
 
-  function cardHTML(card) {
+  /** @param {*} card @param {{xAria:string}} [opts] xAria overrides the ✕ button's aria-label */
+  function cardHTML(card, opts) {
+    opts = opts || {};
     var player = card.player;
     var marks = card.marks || {};
     var adp = card.adp;
@@ -152,38 +165,46 @@
     var weightedConsensus = DC.state.adpConsensus(player);
     var weightedVal = typeof weightedConsensus === 'number' ? weightedConsensus : EMDASH;
 
-    var statusHTML = '';
+    var statusIconsHTML = '';
     if (marks.target) {
-      statusHTML += DC.ui.icon('star');
+      statusIconsHTML += DC.ui.icon('star');
     }
     if (marks.avoid) {
-      statusHTML += DC.ui.icon('x');
+      statusIconsHTML += DC.ui.icon('x');
     }
     if (marks.drafted) {
       var pickText = typeof card.pickNumber === 'number' ? card.pickNumber : EMDASH;
-      statusHTML += DC.ui.icon('check') + '<span>Pick ' + pickText + '</span>';
+      statusIconsHTML += DC.ui.icon('check') + '<span>Pick ' + pickText + '</span>';
     }
     if (marks.mine) {
-      statusHTML += DC.ui.icon('user');
+      statusIconsHTML += DC.ui.icon('user');
     }
+
+    var xAria = opts.xAria || 'Remove from compare';
 
     return (
       '<div class="compare-card" data-id="' + esc(player.id) + '">' +
-        '<button class="compare-card-x" data-action="compare-remove-card" data-id="' + esc(player.id) + '" aria-label="Remove from compare">' + DC.ui.icon('x') + '</button>' +
-        '<div class="compare-card-head">' +
-          avatarHTML(player) +
-          '<div class="compare-card-meta">' + esc(player.team) + THINSPACE + esc(player.position) + THINSPACE + 'B' + player.byeWeek + '</div>' +
+        tierStripHTML(player.tier) +
+        '<button class="compare-card-x" data-action="compare-remove-card" data-id="' + esc(player.id) + '" aria-label="' + esc(xAria) + '">' + DC.ui.icon('x') + '</button>' +
+        '<div class="compare-card-inner">' +
+          '<div class="compare-card-head">' +
+            avatarHTML(player) +
+            '<div class="compare-card-meta">' + esc(player.team) + DOT + esc(player.position) + DOT + 'B' + player.byeWeek + '</div>' +
+          '</div>' +
+          '<div class="compare-card-name">' + esc(player.name) + '</div>' +
+          '<div class="compare-card-ranks">#' + player.rank + ' ' + MIDDOT + ' ' + esc(player.position) + card.posRank + '</div>' +
+          '<div class="compare-card-adp">' +
+            adpRowHTML('ESPN', espnVal) +
+            adpRowHTML('Yahoo', yahooVal) +
+            adpRowHTML('Sleeper', sleeperVal) +
+            adpRowHTML('Weighted', weightedVal, 'adp-row-weighted') +
+          '</div>' +
+          '<div class="compare-card-status">' +
+            '<span class="compare-card-status-icons">' + statusIconsHTML + '</span>' +
+            xLinkHTML(player) +
+          '</div>' +
+          '<div class="compare-verdict ' + card.verdict.cls + '">' + esc(card.verdict.text) + '</div>' +
         '</div>' +
-        '<div class="compare-card-name">' + esc(player.name) + '</div>' +
-        '<div class="compare-card-ranks">#' + player.rank + ' ' + MIDDOT + ' ' + esc(player.position) + card.posRank + tierChipHTML(player.tier) + '</div>' +
-        '<div class="compare-card-adp">' +
-          adpRowHTML('ESPN', espnVal) +
-          adpRowHTML('Yahoo', yahooVal) +
-          adpRowHTML('Sleeper', sleeperVal) +
-          adpRowHTML('Weighted', weightedVal) +
-        '</div>' +
-        '<div class="compare-verdict ' + card.verdict.cls + '">' + esc(card.verdict.text) + '</div>' +
-        '<div class="compare-card-status">' + statusHTML + '</div>' +
       '</div>'
     );
   }
@@ -191,7 +212,7 @@
   /** @param {Array} cards @returns {string} cols-2 for <=2 cards, quad for 3-4; a hint cell fills the lone empty slot at 1 or 3 */
   function gridHTML(cards) {
     var isQuad = cards.length > 2;
-    var html = cards.map(cardHTML).join('');
+    var html = cards.map(function (card) { return cardHTML(card); }).join('');
     if (cards.length === 1 || cards.length === 3) {
       html += '<div class="compare-empty-cell">Long-press players on the board to add more</div>';
     }
