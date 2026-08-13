@@ -137,8 +137,8 @@
   /**
    * @param {number|null} tier
    * @returns {string} full-card-width band above the row body; '' when tier is null (card starts
-   *   at the body, no strip at all) — replaces the old main-board .tier-chip (edit.js/compare.js
-   *   keep their own tierChipHTML copies, untouched)
+   *   at the body, no strip at all) — replaces the old main-board .tier-chip (edit.js keeps its
+   *   own tierChipHTML copy; compare.js has its own tierStripHTML, untouched)
    */
   function tierStripHTML(tier) {
     var cls = DC.state.tierColorClass(tier);
@@ -151,7 +151,7 @@
    *   the box's 28px geometry never varies with data availability. DST -> sleeper team logo
    *   (unconditional); else an ESPN headshot when DC.adpData.images has the join key; else a
    *   bare empty span. onerror hides a broken <img> behind the box's own circle background —
-   *   duplicated (larger, w=96&h=70) in compare.js per the esc()/tierChipHTML precedent.
+   *   duplicated (larger, w=96&h=70) in compare.js per the esc()/tierStripHTML precedent.
    */
   function avatarHTML(player) {
     var src = null;
