@@ -89,10 +89,11 @@
    *   render()'s comment) — always has every id in real usage; templates exercised standalone
    *   without ctx simply omit the bold leading token, same graceful-fallback precedent as the
    *   old rankBadgeHTML.
-   * @returns {string} '<b>POSn</b> · TEAM · Bye N[<span class="adp-badge">n</span>]' — posRank
-   *   bold leading token, ADP trailing badge (bare number, no label — the label clipped to "AD…"
-   *   on rows with a 2-digit bye + 2-digit ADP) only when adpConsensus resolves; the badge's own
-   *   margin separates it from Bye N, never a middot (no dangling separators either way)
+   * @returns {string} '<span class="meta-main">POSn · TEAM · Bye N</span>[<span
+   *   class="adp-badge">n</span>]' — text run always wrapped in .meta-main so it's the only
+   *   piece that ellipsizes under flex shrink; ADP trailing badge (bare number, no label) only
+   *   when adpConsensus resolves; the badge's own margin separates it from Bye N, never a
+   *   middot (no dangling separators either way)
    */
   function metricsLineHTML(view, ctx) {
     var posRank = ctx && ctx.posRanks && ctx.posRanks[view.id];
@@ -103,7 +104,7 @@
     parts.push(esc(view.team));
     var bye = view.byeWeek === 0 ? NDASH_BYE : String(view.byeWeek);
     parts.push('Bye ' + bye);
-    var html = parts.join(' ' + MIDDOT + ' ');
+    var html = '<span class="meta-main">' + parts.join(' ' + MIDDOT + ' ') + '</span>';
     var consensus = DC.state.adpConsensus(view);
     if (typeof consensus === 'number') {
       html += '<span class="adp-badge">' + consensus + '</span>';

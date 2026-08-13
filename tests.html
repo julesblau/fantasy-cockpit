@@ -4877,11 +4877,11 @@
         var withAdp = { id: 'ma1', rank: 6, name: 'Meta Fixture One', team: 'KC', position: 'RB', byeWeek: 9, drafted: false, target: false, avoid: false, tier: null, adp: { espn: 4, yahoo: 6, sleeper: 5 } };
         var withAdpHtml = DC.ui.templates.playerRowHTML(withAdp, { posRanks: { ma1: 2 } });
         // 0.35*4 + 0.20*6 + 0.45*5 = 4.85 -> 4.9 (weighted ADP resolves to tenths)
-        assert(withAdpHtml.indexOf('<div class="player-meta player-meta-card"><b>RB2</b> · KC · Bye 9<span class="adp-badge">4.9</span></div>') !== -1, withAdpHtml);
+        assert(withAdpHtml.indexOf('<div class="player-meta player-meta-card"><span class="meta-main"><b>RB2</b> · KC · Bye 9</span><span class="adp-badge">4.9</span></div>') !== -1, withAdpHtml);
 
         var noAdp = Object.assign({}, withAdp, { id: 'ma2', name: 'Meta Fixture Two', adp: null });
         var noAdpHtml = DC.ui.templates.playerRowHTML(noAdp, {});
-        assert(noAdpHtml.indexOf('<div class="player-meta player-meta-card">KC · Bye 9</div>') !== -1, 'no posRank token without ctx.posRanks, no dangling ADP segment when consensus is null: ' + noAdpHtml);
+        assert(noAdpHtml.indexOf('<div class="player-meta player-meta-card"><span class="meta-main">KC · Bye 9</span></div>') !== -1, 'no posRank token without ctx.posRanks, no dangling ADP segment when consensus is null: ' + noAdpHtml);
       } finally {
         window.DC.adpData = real;
       }
@@ -7323,7 +7323,8 @@
         '.player-name{font-size:17px;font-weight:600;line-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
         '#player-list .player-name{font-size:15px;line-height:18px}' +
         '.player-meta{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-        '.player-meta-card{font-size:12px}' +
+        '.player-meta-card{font-size:12px;display:flex;align-items:center}' +
+        '.meta-main{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
         '.adp-badge{background:#3A3A3C;color:#FFFFFF;font-size:11px;font-weight:700;border-radius:5px;padding:1px 5px;margin-left:4px;font-variant-numeric:tabular-nums;vertical-align:middle}' +
         '.signal-tags{display:inline-flex;gap:4px;margin-left:4px;vertical-align:middle}' +
         '.btn-toggle{position:relative;width:32px;height:44px}' +
@@ -7512,28 +7513,41 @@
         fixture.querySelector('#player-list').innerHTML = DC.ui.templates.availableRowHTML(view, { posRanks: { long1: 9 } });
         var metaEl = fixture.querySelector('#player-list .player-meta-card');
         assert(metaEl, 'expected the metrics line to render');
-        var text = metaEl.textContent;
+        var metaMain = metaEl.querySelector('.meta-main');
+        assert(metaMain, 'expected the text run to be wrapped in .meta-main');
+        var text = metaMain.textContent;
         assert(text.indexOf('RB9') !== -1 && text.indexOf('KC') !== -1 && text.indexOf('Bye 9') !== -1, 'sanity: ' + text);
         var badge = metaEl.querySelector('.adp-badge');
         assert(badge && badge.textContent === '99.2', 'expected the ADP badge to render the bare tenths-precision number, no label: ' + (badge && badge.textContent));
-        assert(metaEl.scrollWidth <= metaEl.clientWidth, 'a realistic long metrics line should fit without truncation: scrollWidth=' + metaEl.scrollWidth + ' clientWidth=' + metaEl.clientWidth);
+        assert(metaMain.scrollWidth <= metaMain.clientWidth, 'a realistic long metrics line should fit .meta-main without truncation: scrollWidth=' + metaMain.scrollWidth + ' clientWidth=' + metaMain.clientWidth);
+
+        // badge must render fully inside the card -- flex shrink never touches it, but verify
+        // the real geometry rather than trusting the CSS alone
+        var badgeRect = badge.getBoundingClientRect();
+        var metaRect = metaEl.getBoundingClientRect();
+        assert(badgeRect.right <= metaRect.right + 0.5, 'badge should be fully visible inside .player-meta-card: badge.right=' + badgeRect.right + ' meta.right=' + metaRect.right);
 
         // scrollWidth/clientWidth are integers that clamp equal whenever content fits — real,
         // if coarse (see the naturalChipContentWidth precedent above) — so cross-check the real
-        // sub-pixel margin via an unclamped clone (this is what actually backs the "real margin"
-        // claim in this test's title, not the coarse integer check above).
-        var cs = getComputedStyle(metaEl);
+        // sub-pixel margin via an unclamped clone of .meta-main's own content, compared against
+        // the budget .meta-main would have if it grew to fill the space the badge doesn't use
+        // (this is what actually backs the "real margin" claim in this test's title, not the
+        // coarse integer check above -- .meta-main itself isn't shrunk in the fitting case, so
+        // comparing its own rendered width to its natural width would read ~0).
+        var cs = getComputedStyle(metaMain);
         var clone = document.createElement('div');
         clone.style.position = 'absolute';
         clone.style.visibility = 'hidden';
         clone.style.whiteSpace = 'nowrap';
         clone.style.fontSize = cs.fontSize;
         clone.style.fontFamily = cs.fontFamily;
-        clone.innerHTML = metaEl.innerHTML;
+        clone.innerHTML = metaMain.innerHTML;
         document.body.appendChild(clone);
         var natural = clone.getBoundingClientRect().width;
         document.body.removeChild(clone);
-        var margin = metaEl.getBoundingClientRect().width - natural;
+        var badgeOuterWidth = badgeRect.width + parseFloat(getComputedStyle(badge).marginLeft);
+        var budget = metaRect.width - badgeOuterWidth;
+        var margin = budget - natural;
         assert(margin >= 15, 'expected a real margin even with the wider 4-char tenths badge (measured ~23.6px): margin=' + margin.toFixed(2));
       } finally {
         document.head.removeChild(styleTag);
@@ -7542,7 +7556,7 @@
       }
     });
 
-    t('metrics-fit: the pathological worst case (3-letter team + 5-char tenths-precision ADP badge + 2-digit posRank + a sig tag, all at once) safely ellipsis-clips instead of breaking the row', function () {
+    t('metrics-fit: the pathological worst case (3-letter team + 5-char tenths-precision ADP badge + 2-digit posRank + a sig tag, all at once) truncates .meta-main first so the badge and sig tag stay fully visible and the row never widens', function () {
       var fixture = buildPinned390FixtureCard();
       var styleTag = injectRowGeometryCSS();
       try {
@@ -7556,15 +7570,29 @@
         var row = fixture.querySelector('#player-list .player-row');
         var metaEl = row.querySelector('.player-meta-card');
         assert(metaEl, 'expected the metrics line to render');
+        var metaMain = metaEl.querySelector('.meta-main');
+        assert(metaMain, 'expected the text run to be wrapped in .meta-main');
         var text = metaEl.textContent;
         assert(text.indexOf('WR15') !== -1 && text.indexOf('SEA') !== -1 && text.indexOf('Bye 11') !== -1 && text.indexOf('CLIFF') !== -1, 'sanity: this is the intended pathological string: ' + text);
         var badge = metaEl.querySelector('.adp-badge');
         assert(badge && badge.textContent === '199.5', 'expected the ADP badge to render the bare tenths-precision number, no label: ' + (badge && badge.textContent));
+        var sigTag = metaEl.querySelector('.sig-tag');
+        assert(sigTag && sigTag.textContent === 'CLIFF', 'expected the CLIFF sig tag to render: ' + (sigTag && sigTag.textContent));
 
-        var cs = getComputedStyle(metaEl);
-        assertEq(cs.overflow, 'hidden', 'overflow must clip inside the box, never push the card wider');
-        assertEq(cs.textOverflow, 'ellipsis', 'overflow must resolve as an ellipsis, not a silent hard clip');
-        assert(metaEl.scrollWidth > metaEl.clientWidth, 'sanity: this pathological combination is expected to genuinely overflow the measured metrics-line budget (scrollWidth=' + metaEl.scrollWidth + ' clientWidth=' + metaEl.clientWidth + ') — see the comment above this test');
+        // .meta-main is the only flex child with overflow:hidden, so it's the only one flex
+        // will shrink below content size -- verify the ellipsis mechanism actually engages there
+        var cs = getComputedStyle(metaMain);
+        assertEq(cs.overflow, 'hidden', '.meta-main must clip its own text, never push the card wider');
+        assertEq(cs.textOverflow, 'ellipsis', '.meta-main must resolve as an ellipsis, not a silent hard clip');
+        assert(metaMain.scrollWidth > metaMain.clientWidth, 'sanity: this pathological combination is expected to genuinely overflow .meta-main\'s budget (scrollWidth=' + metaMain.scrollWidth + ' clientWidth=' + metaMain.clientWidth + ') — see the comment above this test');
+
+        // badge and sig tag keep their content-based min-width floor -- they must stay fully
+        // visible inside the card even though the text run above them is truncating
+        var metaRect = metaEl.getBoundingClientRect();
+        var badgeRect = badge.getBoundingClientRect();
+        var sigRect = sigTag.getBoundingClientRect();
+        assert(badgeRect.right <= metaRect.right + 0.5, 'badge must be fully visible, never clipped by the row: badge.right=' + badgeRect.right + ' meta.right=' + metaRect.right);
+        assert(sigRect.right <= metaRect.right + 0.5, 'sig tag must be fully visible, never clipped by the row: sig.right=' + sigRect.right + ' meta.right=' + metaRect.right);
 
         var rowRect = row.getBoundingClientRect();
         assert(rowRect.width <= 358.5, 'the card itself must not widen to accommodate the overflow: ' + rowRect.width);

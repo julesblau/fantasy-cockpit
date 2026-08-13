@@ -524,14 +524,27 @@ button.player-rank {
 }
 
 /* card metrics line modifier: posRank/ADP bold tokens, smaller than the shared .player-meta size
-   (edit screen keeps the 13px base) */
+   (edit screen keeps the 13px base); flex so shrink pressure lands on .meta-main, never the
+   badge or signal tags */
 .player-meta-card {
   font-size: 12px;
+  display: flex;
+  align-items: center;
 }
 
 .player-meta-card b {
   color: var(--text-1);
   font-weight: 700;
+}
+
+/* text run (posrank/team/bye) — the only flex child with overflow:hidden, so it's the only
+   one flex will shrink below content size; badge/.signal-tags keep their content-based min
+   and never clip */
+.meta-main {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* bare-number ADP badge on the metrics line — no "ADP" label, so it never clips on rows with a
