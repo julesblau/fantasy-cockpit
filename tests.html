@@ -2610,7 +2610,7 @@
       assert(html.indexOf('player-rank">1<') !== -1, 'rank shown');
       assert(html.indexOf('Ja&#39;Marr Chase') !== -1, 'name is escaped: ' + html);
       assert(html.indexOf('<b>WR1</b>') !== -1, 'posRank renders as the bold leading metrics token: ' + html);
-      assert(html.indexOf('CIN') !== -1 && html.indexOf('Bye 10') !== -1, 'metrics line: ' + html);
+      assert(html.indexOf('CIN') !== -1 && html.indexOf('B10') !== -1, 'metrics line: ' + html);
       assert(html.indexOf('data-action="draft"') !== -1, 'draft action present');
       assert(html.indexOf('data-action="toggle-target"') !== -1, 'toggle-target action present');
       assert(html.indexOf('data-action="toggle-avoid"') !== -1, 'toggle-avoid action present');
@@ -2654,10 +2654,10 @@
       assert(html.indexOf('Pick —') !== -1, 'Pick em-dash badge: ' + html);
     });
 
-    t('playerRowHTML: byeWeek 0 renders as "Bye —"', function () {
+    t('playerRowHTML: byeWeek 0 renders as "B—"', function () {
       var view = { id: 'p4', rank: 200, name: 'Free Agent Guy', team: 'FA', position: 'WR', byeWeek: 0, drafted: false, target: false, avoid: false };
       var html = DC.ui.templates.playerRowHTML(view, { searching: false });
-      assert(html.indexOf('Bye —') !== -1, 'byeWeek 0 -> Bye —: ' + html);
+      assert(html.indexOf('B—') !== -1, 'byeWeek 0 -> B—: ' + html);
     });
 
     t('chipsHTML: renders 12 chips total (8 position + 4 status incl. Mine); RB position + TARGETS status marked active; FLEX sits between TE and DST', function () {
@@ -5105,11 +5105,11 @@
         var withAdp = { id: 'ma1', rank: 6, name: 'Meta Fixture One', team: 'KC', position: 'RB', byeWeek: 9, drafted: false, target: false, avoid: false, tier: null, adp: { espn: 4, yahoo: 6, sleeper: 5 } };
         var withAdpHtml = DC.ui.templates.playerRowHTML(withAdp, { posRanks: { ma1: 2 } });
         // 0.35*4 + 0.20*6 + 0.45*5 = 4.85 -> 4.9 (weighted ADP resolves to tenths)
-        assert(withAdpHtml.indexOf('<div class="player-meta player-meta-card"><span class="meta-main"><b>RB2</b> · KC · Bye 9</span><span class="adp-badge">4.9</span></div>') !== -1, withAdpHtml);
+        assert(withAdpHtml.indexOf('<div class="player-meta player-meta-card"><span class="meta-main"><b>RB2</b> · KC · B9</span><span class="adp-badge">4.9</span></div>') !== -1, withAdpHtml);
 
         var noAdp = Object.assign({}, withAdp, { id: 'ma2', name: 'Meta Fixture Two', adp: null });
         var noAdpHtml = DC.ui.templates.playerRowHTML(noAdp, {});
-        assert(noAdpHtml.indexOf('<div class="player-meta player-meta-card"><span class="meta-main">KC · Bye 9</span></div>') !== -1, 'no posRank token without ctx.posRanks, no dangling ADP segment when consensus is null: ' + noAdpHtml);
+        assert(noAdpHtml.indexOf('<div class="player-meta player-meta-card"><span class="meta-main">KC · B9</span></div>') !== -1, 'no posRank token without ctx.posRanks, no dangling ADP segment when consensus is null: ' + noAdpHtml);
       } finally {
         window.DC.adpData = real;
       }
@@ -7789,7 +7789,7 @@
         var metaMain = metaEl.querySelector('.meta-main');
         assert(metaMain, 'expected the text run to be wrapped in .meta-main');
         var text = metaMain.textContent;
-        assert(text.indexOf('RB9') !== -1 && text.indexOf('KC') !== -1 && text.indexOf('Bye 9') !== -1, 'sanity: ' + text);
+        assert(text.indexOf('RB9') !== -1 && text.indexOf('KC') !== -1 && text.indexOf('B9') !== -1, 'sanity: ' + text);
         var badge = metaEl.querySelector('.adp-badge');
         assert(badge && badge.textContent === '99.2', 'expected the ADP badge to render the bare tenths-precision number, no label: ' + (badge && badge.textContent));
         assert(metaMain.scrollWidth <= metaMain.clientWidth, 'a realistic long metrics line should fit .meta-main without truncation: scrollWidth=' + metaMain.scrollWidth + ' clientWidth=' + metaMain.clientWidth);
@@ -7846,7 +7846,7 @@
         var metaMain = metaEl.querySelector('.meta-main');
         assert(metaMain, 'expected the text run to be wrapped in .meta-main');
         var text = metaEl.textContent;
-        assert(text.indexOf('WR15') !== -1 && text.indexOf('SEA') !== -1 && text.indexOf('Bye 11') !== -1 && text.indexOf('CLIFF') !== -1, 'sanity: this is the intended pathological string: ' + text);
+        assert(text.indexOf('WR15') !== -1 && text.indexOf('SEA') !== -1 && text.indexOf('B11') !== -1 && text.indexOf('CLIFF') !== -1, 'sanity: this is the intended pathological string: ' + text);
         var badge = metaEl.querySelector('.adp-badge');
         assert(badge && badge.textContent === '199.5', 'expected the ADP badge to render the bare tenths-precision number, no label: ' + (badge && badge.textContent));
         var sigTag = metaEl.querySelector('.sig-tag');
@@ -7890,7 +7890,7 @@
         var metaEl = row.querySelector('.player-meta-card');
         var metaMain = metaEl.querySelector('.meta-main');
         var text = metaEl.textContent;
-        assert(text.indexOf('WR15') !== -1 && text.indexOf('SEA') !== -1 && text.indexOf('Bye 11') !== -1 && text.indexOf('CLIFF') !== -1, 'sanity: this is the intended pathological string: ' + text);
+        assert(text.indexOf('WR15') !== -1 && text.indexOf('SEA') !== -1 && text.indexOf('B11') !== -1 && text.indexOf('CLIFF') !== -1, 'sanity: this is the intended pathological string: ' + text);
 
         var adpBadge = metaEl.querySelector('.adp-badge');
         var projBadge = metaEl.querySelector('.proj-badge');

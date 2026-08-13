@@ -116,7 +116,7 @@
    *   precedent as the old rankBadgeHTML. ctx.signals is read only to decide proj-badge
    *   suppression (see below) — callers that never render signalTagsHTML (drafted/
    *   drafted-search rows) simply pass a ctx without it, so the badge always renders there.
-   * @returns {string} '<span class="meta-main">POSn · TEAM · Bye N</span>[<span
+   * @returns {string} '<span class="meta-main">POSn · TEAM · BN</span>[<span
    *   class="adp-badge">n</span>][<span class="proj-badge">n</span>]' — text run always wrapped
    *   in .meta-main so it's the only piece that ellipsizes under flex shrink; ADP trailing badge
    *   (bare number, no label) only when adpConsensus resolves; proj badge only when
@@ -133,7 +133,7 @@
     }
     parts.push(esc(view.team));
     var bye = view.byeWeek === 0 ? NDASH_BYE : String(view.byeWeek);
-    parts.push('Bye ' + bye);
+    parts.push('B' + bye);
     var html = '<span class="meta-main">' + parts.join(' ' + MIDDOT + ' ') + '</span>';
     var consensus = DC.state.adpConsensus(view);
     if (typeof consensus === 'number') {
