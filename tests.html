@@ -2904,6 +2904,41 @@
       }
     });
 
+    t('sheet: "DK lines as of" note renders the stubbed dkUpdatedAt as a short date near the ADP note; omitted entirely when DC.dkData is absent', function () {
+      var real = window.DC.dkData;
+      function dkNoteIn(fixture) {
+        var notes = Array.prototype.slice.call(fixture.querySelectorAll('.sheet-note'));
+        return notes.filter(function (n) { return n.textContent.indexOf('DK lines as of') === 0; })[0];
+      }
+      try {
+        window.DC.dkData = { updatedAt: '2026-08-01', players: {} };
+        var fixture = buildMountFixture();
+        try {
+          DC.ui.mount(DC.state.createStore(DC.state.createSeedState()));
+          fixture.querySelector('[data-action="open-settings"]').click();
+          var note = dkNoteIn(fixture);
+          assert(note, 'expected a DK freshness sheet-note when DC.dkData is present');
+          assertEq(note.textContent, 'DK lines as of Aug 1', 'short human date, no leading zero on the day');
+        } finally {
+          document.body.removeChild(fixture);
+          localStorage.removeItem(DC.state.STORAGE_KEY);
+        }
+
+        window.DC.dkData = undefined;
+        var fixture2 = buildMountFixture();
+        try {
+          DC.ui.mount(DC.state.createStore(DC.state.createSeedState()));
+          fixture2.querySelector('[data-action="open-settings"]').click();
+          assertEq(dkNoteIn(fixture2), undefined, 'DK freshness note should be omitted entirely when DC.dkData is absent');
+        } finally {
+          document.body.removeChild(fixture2);
+          localStorage.removeItem(DC.state.STORAGE_KEY);
+        }
+      } finally {
+        window.DC.dkData = real;
+      }
+    });
+
     t('applyRankings: manuallyEdited true auto-backs-up (createObjectURL) BEFORE the single IMPORT_PLAYERS dispatch', function () {
       var fixture = buildMountFixture();
       var seed = DC.state.createSeedState();
@@ -5077,6 +5112,49 @@
         assert(noAdpHtml.indexOf('<div class="player-meta player-meta-card"><span class="meta-main">KC · Bye 9</span></div>') !== -1, 'no posRank token without ctx.posRanks, no dangling ADP segment when consensus is null: ' + noAdpHtml);
       } finally {
         window.DC.adpData = real;
+      }
+    });
+
+    t('playerRowHTML: .player-meta-card appends a .proj-badge (bare whole-number DK points, no label) after the .adp-badge when dkProjForPlayer resolves — both/adp-only/proj-only/neither combinations render with no dangling separator; suppressed when the row already carries both signal tags, still renders with exactly one', function () {
+      var realAdp = window.DC.adpData;
+      var realDk = window.DC.dkData;
+      try {
+        window.DC.adpData = { players: {} };
+        window.DC.dkData = { players: { 'projbadgefixture': { passYds: 4000 } } }; // 4000/25 = 160
+
+        var base = { id: 'pbf1', rank: 6, name: 'Proj Badge Fixture', team: 'KC', position: 'QB', byeWeek: 9, drafted: false, target: false, avoid: false, tier: null };
+
+        var both = Object.assign({}, base, { adp: { espn: 4, yahoo: 6, sleeper: 5 } }); // consensus 4.9; name keys into dkData -> 160
+        var bothHtml = DC.ui.templates.playerRowHTML(both, {});
+        assert(bothHtml.indexOf('<span class="adp-badge">4.9</span><span class="proj-badge">160</span>') !== -1, 'both badges: adp then proj, no separator between them: ' + bothHtml);
+
+        var adpOnly = Object.assign({}, base, { id: 'pbf2', name: 'Adp Only Fixture', adp: { espn: 4, yahoo: 6, sleeper: 5 } }); // name not in dkData -> proj null
+        var adpOnlyHtml = DC.ui.templates.playerRowHTML(adpOnly, {});
+        assert(adpOnlyHtml.indexOf('<span class="adp-badge">4.9</span></div>') !== -1, 'adp-only: badge is the last thing before .player-meta-card closes: ' + adpOnlyHtml);
+        assert(adpOnlyHtml.indexOf('proj-badge') === -1, 'no proj badge when dk is null: ' + adpOnlyHtml);
+
+        var projOnly = Object.assign({}, base, { adp: null }); // still keys into dkData, no adp
+        var projOnlyHtml = DC.ui.templates.playerRowHTML(projOnly, {});
+        assert(projOnlyHtml.indexOf('</span><span class="proj-badge">160</span>') !== -1, 'proj-only: badge sits directly after .meta-main\'s closing tag: ' + projOnlyHtml);
+        assert(projOnlyHtml.indexOf('adp-badge') === -1, 'no adp badge when consensus is null: ' + projOnlyHtml);
+
+        var neither = Object.assign({}, base, { id: 'pbf3', name: 'Neither Badge Fixture', adp: null });
+        var neitherHtml = DC.ui.templates.playerRowHTML(neither, {});
+        assert(neitherHtml.indexOf('adp-badge') === -1 && neitherHtml.indexOf('proj-badge') === -1, 'neither badge when both are null: ' + neitherHtml);
+
+        // suppression: "both" resolves both adp and dk, so it isolates the tag-count effect
+        assert(typeof DC.state.dkProjForPlayer(both) === 'number', 'sanity: this fixture\'s DK value must actually resolve for the suppression check below to mean anything');
+        var twoTagsHtml = DC.ui.templates.playerRowHTML(both, { signals: { value: { pbf1: true }, cliff: { pbf1: true } } });
+        assert(twoTagsHtml.indexOf('adp-badge') !== -1, 'adp badge stays even with 2 signal tags: ' + twoTagsHtml);
+        assert(twoTagsHtml.indexOf('proj-badge') === -1, 'proj badge must be suppressed when the row carries both signal tags: ' + twoTagsHtml);
+        assert(twoTagsHtml.indexOf('sig-value') !== -1 && twoTagsHtml.indexOf('sig-cliff') !== -1, 'sanity: both tags actually rendered: ' + twoTagsHtml);
+
+        var oneTagHtml = DC.ui.templates.playerRowHTML(both, { signals: { value: { pbf1: true }, cliff: {} } });
+        assert(oneTagHtml.indexOf('proj-badge') !== -1, 'proj badge renders when only 1 signal tag is present: ' + oneTagHtml);
+        assert(oneTagHtml.indexOf('sig-value') !== -1 && oneTagHtml.indexOf('sig-cliff') === -1, 'sanity: exactly 1 tag rendered: ' + oneTagHtml);
+      } finally {
+        window.DC.adpData = realAdp;
+        window.DC.dkData = realDk;
       }
     });
 
@@ -7520,6 +7598,7 @@
         '.player-meta-card{font-size:12px;display:flex;align-items:center}' +
         '.meta-main{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
         '.adp-badge{background:#3A3A3C;color:#FFFFFF;font-size:11px;font-weight:700;border-radius:5px;padding:1px 5px;margin-left:4px;font-variant-numeric:tabular-nums;vertical-align:middle}' +
+        '.proj-badge{background:none;border:1px solid #3A3A3C;color:rgba(255,255,255,0.60);font-size:11px;font-weight:700;border-radius:5px;padding:0 4px;margin-left:4px;font-variant-numeric:tabular-nums;vertical-align:middle}' +
         '.signal-tags{display:inline-flex;gap:4px;margin-left:4px;vertical-align:middle}' +
         '.btn-toggle{position:relative;width:32px;height:44px}' +
         '.btn-toggle::after{content:"";position:absolute;top:0;bottom:0;left:-6px;right:-6px}' +
@@ -7791,6 +7870,88 @@
         var rowRect = row.getBoundingClientRect();
         assert(rowRect.width <= 358.5, 'the card itself must not widen to accommodate the overflow: ' + rowRect.width);
       } finally {
+        document.head.removeChild(styleTag);
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('metrics-fit (a): adp badge + proj badge + ONE sig tag together at the pathological worst case -- .meta-main truncates first, all three floors stay fully visible inside .player-info, row width pin preserved', function () {
+      var fixture = buildPinned390FixtureCard();
+      var styleTag = injectRowGeometryCSS();
+      var realDk = window.DC.dkData;
+      try {
+        window.DC.dkData = { players: { 'fixturecomboa': { recYds: 1000 } } }; // 1000/10 = 100
+        var view = { id: 'fita', rank: 40, name: 'Fixture Combo A', team: 'SEA', position: 'WR', byeWeek: 11, tier: null, drafted: false, target: false, avoid: false, adp: { espn: 199, yahoo: 199, sleeper: 200 } };
+        var ctx = { posRanks: { fita: 15 }, signals: { value: {}, cliff: { fita: true } } }; // ONE tag
+        assert(typeof DC.state.dkProjForPlayer(view) === 'number', 'sanity: this fixture\'s DK value should resolve');
+        fixture.querySelector('#player-list').innerHTML = DC.ui.templates.availableRowHTML(view, ctx);
+        var row = fixture.querySelector('#player-list .player-row');
+        var metaEl = row.querySelector('.player-meta-card');
+        var metaMain = metaEl.querySelector('.meta-main');
+        var text = metaEl.textContent;
+        assert(text.indexOf('WR15') !== -1 && text.indexOf('SEA') !== -1 && text.indexOf('Bye 11') !== -1 && text.indexOf('CLIFF') !== -1, 'sanity: this is the intended pathological string: ' + text);
+
+        var adpBadge = metaEl.querySelector('.adp-badge');
+        var projBadge = metaEl.querySelector('.proj-badge');
+        var sigTag = metaEl.querySelector('.sig-tag');
+        assert(adpBadge && adpBadge.textContent === '199.5', 'expected the ADP badge to render the bare tenths-precision number: ' + (adpBadge && adpBadge.textContent));
+        assert(projBadge && projBadge.textContent === '100', 'expected the proj badge to render the resolved DK points: ' + (projBadge && projBadge.textContent));
+        assert(sigTag && sigTag.textContent === 'CLIFF', 'expected the CLIFF sig tag to render: ' + (sigTag && sigTag.textContent));
+
+        assert(metaMain.scrollWidth > metaMain.clientWidth, 'sanity: this pathological combination is expected to genuinely overflow .meta-main\'s budget (scrollWidth=' + metaMain.scrollWidth + ' clientWidth=' + metaMain.clientWidth + ')');
+
+        // adp badge/proj badge/sig tag have no overflow:hidden anywhere up to .player-info --
+        // real rect containment against .player-info's right edge, not just against .meta-main
+        var infoRect = row.querySelector('.player-info').getBoundingClientRect();
+        [adpBadge, projBadge, sigTag].forEach(function (el) {
+          var r = el.getBoundingClientRect();
+          assert(r.right <= infoRect.right + 0.5, el.className + ' must stay fully visible inside .player-info: right=' + r.right + ' infoRight=' + infoRect.right);
+        });
+
+        var rowRect = row.getBoundingClientRect();
+        assert(rowRect.width <= 358.5, 'the card itself must not widen to accommodate the overflow: ' + rowRect.width);
+      } finally {
+        window.DC.dkData = realDk;
+        document.head.removeChild(styleTag);
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('metrics-fit (b): VALUE+CLIFF double tag with a resolvable DK value -- proj badge is suppressed entirely (absent from the DOM), adp badge + both tags stay fully visible inside .player-info (this combo overflowed before the suppression rule existed)', function () {
+      var fixture = buildPinned390FixtureCard();
+      var styleTag = injectRowGeometryCSS();
+      var realDk = window.DC.dkData;
+      try {
+        window.DC.dkData = { players: { 'fixturecombob': { recYds: 1000 } } };
+        var view = { id: 'fitb', rank: 40, name: 'Fixture Combo B', team: 'SEA', position: 'WR', byeWeek: 11, tier: null, drafted: false, target: false, avoid: false, adp: { espn: 199, yahoo: 199, sleeper: 200 } };
+        // synthetic: VALUE + ADP~199 can't co-occur in real production data (valueFlagIds needs
+        // consensus <= 75, see the CLIFF-only pathological test above) -- this fixture only needs
+        // to prove the suppression MECHANISM: 2 tags rendering together must drop the proj badge
+        // regardless of how those 2 tags came to render together.
+        var ctx = { posRanks: { fitb: 15 }, signals: { value: { fitb: true }, cliff: { fitb: true } } };
+        assert(typeof DC.state.dkProjForPlayer(view) === 'number', 'sanity: this fixture\'s DK value must actually resolve -- suppression, not a null value, is what hides the badge');
+        fixture.querySelector('#player-list').innerHTML = DC.ui.templates.availableRowHTML(view, ctx);
+        var row = fixture.querySelector('#player-list .player-row');
+        var metaEl = row.querySelector('.player-meta-card');
+
+        assert(!metaEl.querySelector('.proj-badge'), 'proj badge must be entirely absent from the DOM when 2 signal tags render: ' + metaEl.innerHTML);
+
+        var adpBadge = metaEl.querySelector('.adp-badge');
+        var sigTags = metaEl.querySelectorAll('.sig-tag');
+        assert(adpBadge && adpBadge.textContent === '199.5', 'expected the ADP badge to render the bare tenths-precision number: ' + (adpBadge && adpBadge.textContent));
+        assertEq(sigTags.length, 2, 'expected both signal tags to render');
+        assertEq(sigTags[0].textContent, 'VALUE', 'VALUE must render first');
+        assertEq(sigTags[1].textContent, 'CLIFF', 'CLIFF must render second');
+
+        var infoRect = row.querySelector('.player-info').getBoundingClientRect();
+        [adpBadge, sigTags[0], sigTags[1]].forEach(function (el) {
+          var r = el.getBoundingClientRect();
+          assert(r.right <= infoRect.right + 0.5, el.className + ' must stay fully visible inside .player-info: right=' + r.right + ' infoRight=' + infoRect.right);
+        });
+      } finally {
+        window.DC.dkData = realDk;
         document.head.removeChild(styleTag);
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
@@ -8785,13 +8946,19 @@
       }
     });
 
-    t('4. card content: name, abbreviated B + byeWeek in meta, #rank and POS+posRank in ranks, tier chip class, the three adp-vals match the seeded per-site values, and Weighted is the weighted consensus', function () {
+    t('4. card content: name, abbreviated B + byeWeek in meta, #rank and POS+posRank in ranks, tier chip class, the three adp-vals match the seeded per-site values, Weighted is the weighted consensus, and .dk-proj-row sits after .compare-card-adp and before .compare-card-status', function () {
       var fixture = buildCompareFixture();
+      var realDk = window.DC.dkData;
       try {
+        window.DC.dkData = { players: { 'cardcontentone': { rushYds: 1000 } } }; // 1000/10 = 100
         var players = [
-          { id: 'cc-1', rank: 3, name: 'Card Content One', team: 'AAA', position: 'RB', byeWeek: 5, tier: 2, adp: { espn: 4, yahoo: 6, sleeper: 5 } }
+          { id: 'cc-1', rank: 3, name: 'Card Content One', team: 'AAA', position: 'RB', byeWeek: 5, tier: 2, adp: { espn: 4, yahoo: 6, sleeper: 5 } },
+          { id: 'cc-2', rank: 4, name: 'Card Content Two', team: 'AAA', position: 'RB', byeWeek: 5, tier: null, adp: null } // name unkeyed in dkData -> null dk
         ];
-        var marks = { 'cc-1': { drafted: false, target: false, avoid: false, mine: false } };
+        var marks = {
+          'cc-1': { drafted: false, target: false, avoid: false, mine: false },
+          'cc-2': { drafted: false, target: false, avoid: false, mine: false }
+        };
         var state = {
           schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
           players: players,
@@ -8805,7 +8972,8 @@
         var store = DC.state.createStore(state);
         DC.compare.mount(store);
         var p = players[0];
-        DC.compare.open([p.id]);
+        var p2 = players[1];
+        DC.compare.open([p.id, p2.id]);
 
         var root = fixture.querySelector('#compare-root');
         var card = root.querySelector('.compare-card[data-id="' + p.id + '"]');
@@ -8841,13 +9009,27 @@
 
         var inner = card.querySelector('.compare-card-inner');
         assert(inner, 'expected .compare-card-inner to wrap the post-strip content');
-        ['compare-card-head', 'compare-card-name', 'compare-card-ranks', 'compare-card-adp', 'compare-card-status', 'compare-verdict'].forEach(function (cls) {
+        ['compare-card-head', 'compare-card-name', 'compare-card-ranks', 'compare-card-adp', 'dk-proj-row', 'compare-card-status', 'compare-verdict'].forEach(function (cls) {
           assert(inner.querySelector('.' + cls), 'expected .' + cls + ' inside .compare-card-inner');
         });
         var innerKids = inner.children;
         assert(innerKids[innerKids.length - 1].classList.contains('compare-verdict'), 'verdict should be the LAST element child of .compare-card-inner');
         assert(innerKids[innerKids.length - 2].classList.contains('compare-card-status'), 'status row should sit immediately before the verdict');
+
+        var dkRow = card.querySelector('.dk-proj-row');
+        assertEq(dkRow.querySelector('.dk-proj-label').textContent, 'DK Proj', 'dk-proj-row label should read "DK Proj"');
+        assertEq(dkRow.querySelector('.dk-proj-val').textContent, '100', 'expected the stubbed DK value to render');
+        var adpIdx = Array.prototype.indexOf.call(innerKids, card.querySelector('.compare-card-adp'));
+        var dkIdx = Array.prototype.indexOf.call(innerKids, dkRow);
+        var statusIdx = Array.prototype.indexOf.call(innerKids, card.querySelector('.compare-card-status'));
+        assert(adpIdx !== -1 && adpIdx < dkIdx && dkIdx < statusIdx, 'dk-proj-row should sit after .compare-card-adp and before .compare-card-status: adpIdx=' + adpIdx + ' dkIdx=' + dkIdx + ' statusIdx=' + statusIdx);
+
+        var card2 = root.querySelector('.compare-card[data-id="' + p2.id + '"]');
+        var dkRow2 = card2.querySelector('.dk-proj-row');
+        assert(dkRow2, 'expected .dk-proj-row to always render, even without a resolvable DK value');
+        assertEq(dkRow2.querySelector('.dk-proj-val').textContent, TEST_EMDASH, 'null dkProjForPlayer should render an em-dash, matching the adp rows\' convention');
       } finally {
+        window.DC.dkData = realDk;
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
       }
@@ -9866,6 +10048,9 @@
         '.adp-row{display:flex;justify-content:space-between;font-size:13px;line-height:20px}' +
         '.adp-row-weighted{border-top:1px solid rgba(255,255,255,0.12);margin-top:3px;padding-top:3px}' +
         '.adp-row-weighted .adp-val{font-weight:800;font-size:15px}' +
+        '.dk-proj-row{display:flex;justify-content:space-between;line-height:20px;margin-top:6px;font-size:13px}' +
+        '.dk-proj-label{color:#FFFFFF;font-weight:700}' +
+        '.dk-proj-val{font-weight:800;font-size:15px;font-variant-numeric:tabular-nums}' +
         '.compare-card-status{margin-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:13px}' +
         '.compare-card-status-icons{display:flex;gap:8px;align-items:center}' +
         '.compare-x-link{display:inline-flex;align-items:center;justify-content:center;box-sizing:content-box;width:18px;height:18px;padding:13px 9px 13px 17px;margin:-13px -9px -13px -17px}' +
@@ -9984,10 +10169,12 @@
       };
     }
 
-    t('compare quad no-clip (binding): a worst-case card (tier strip + drafted status row + X link + 4 adp rows + the longest verdictFor text) never overflows its own box in the quad grid at 390x844', function () {
+    t('compare quad no-clip (binding): a worst-case card (tier strip + drafted status row + X link + 4 adp rows + the DK proj row rendering a real value + the longest verdictFor text) never overflows its own box in the quad grid at 390x844', function () {
       var fixture = buildCompareGeometryFixture();
       var styleTag = injectCompareGeometryCSS();
+      var realDk = window.DC.dkData;
       try {
+        window.DC.dkData = { players: { 'quadworstcasefixturename': { recYds: 1000 } } }; // 1000/10 = 100 -- exercises the DK row for real, not just its em-dash fallback
         var store = DC.state.createStore(DC.state.createSeedState());
         DC.compare.mount(store);
         var ids = DC.data.SEED_PLAYERS.slice(0, 4).map(function (p) { return p.id; });
@@ -10011,6 +10198,9 @@
           assertEq(cardEl.querySelectorAll('.compare-card-status-icons svg').length, 2, 'sanity: worst-case card ' + i + ' should carry exactly 2 status icons');
           assert(cardEl.querySelector('.compare-x-link'), 'sanity: worst-case card ' + i + ' should carry the X link');
           assertEq(cardEl.querySelectorAll('.adp-val').length, 4, 'sanity: worst-case card ' + i + ' should carry all 4 adp rows');
+          var dkRow = cardEl.querySelector('.dk-proj-row');
+          assert(dkRow, 'sanity: worst-case card ' + i + ' should carry the DK proj row');
+          assertEq(dkRow.querySelector('.dk-proj-val').textContent, '100', 'DK row should render the stubbed real value, not its em-dash fallback, in this pressure test');
 
           var cardRect = cardEl.getBoundingClientRect();
           assert(cardEl.scrollHeight <= cardEl.clientHeight, 'card ' + i + ' should not clip its own content: scrollHeight=' + cardEl.scrollHeight + ' clientHeight=' + cardEl.clientHeight);
@@ -10033,6 +10223,7 @@
           assert(ixHeight >= 44, 'card ' + i + ' X-link hit target, clipped to the card, should be >=44px tall: ' + ixHeight.toFixed(2));
         });
       } finally {
+        window.DC.dkData = realDk;
         document.head.removeChild(styleTag);
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
@@ -10126,6 +10317,7 @@
         assertEq(cards[0].querySelector('.compare-card-name').textContent, player.name, 'peek card should match the tapped player');
         var xBtn = peekRoot.querySelector('.compare-card-x');
         assertEq(xBtn.getAttribute('aria-label'), 'Close', 'peek card X aria-label should be "Close", not the compare-screen default');
+        assert(cards[0].querySelector('.dk-proj-row'), 'peek card should carry .dk-proj-row too -- shared cardHTML, no separate peek template');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);

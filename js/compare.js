@@ -164,6 +164,8 @@
     var sleeperVal = adp && isAdpNum(adp.sleeper) ? adp.sleeper : EMDASH;
     var weightedConsensus = DC.state.adpConsensus(player);
     var weightedVal = typeof weightedConsensus === 'number' ? weightedConsensus : EMDASH;
+    var dkProj = DC.state.dkProjForPlayer(player);
+    var dkProjVal = typeof dkProj === 'number' ? dkProj : EMDASH;
 
     var statusIconsHTML = '';
     if (marks.target) {
@@ -199,6 +201,7 @@
             adpRowHTML('Sleeper', sleeperVal) +
             adpRowHTML('Weighted', weightedVal, 'adp-row-weighted') +
           '</div>' +
+          '<div class="dk-proj-row"><span class="dk-proj-label">DK Proj</span><span class="dk-proj-val">' + esc(dkProjVal) + '</span></div>' +
           '<div class="compare-card-status">' +
             '<span class="compare-card-status-icons">' + statusIconsHTML + '</span>' +
             xLinkHTML(player) +

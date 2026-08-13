@@ -54,6 +54,12 @@
     return updated ? '<div class="sheet-note">ADP updated ' + esc(updated) + '</div>' : '';
   }
 
+  /** @returns {string} live-read from DC.state.dkUpdatedAt() — DK lines have no refresh flow, so unlike adpNoteInnerHTML this is never re-rendered after mount */
+  function dkNoteInnerHTML() {
+    var updated = shortAdpDate(DC.state.dkUpdatedAt());
+    return updated ? '<div class="sheet-note">DK lines as of ' + esc(updated) + '</div>' : '';
+  }
+
   // ---- icons ---------------------------------------------------------------
 
   var ICON_BODIES = {
@@ -84,16 +90,40 @@
   // ---- pure templates --------------------------------------------------------
 
   /**
+   * @param {string} playerId @param {*} [signals] same shape as signalTagsHTML's param
+   * @returns {number} rendered tag count for this player (0-2) — mirrors signalTagsHTML's own
+   *   cap so the suppression check below agrees with what actually rendered
+   */
+  function signalTagCount(playerId, signals) {
+    if (!signals) {
+      return 0;
+    }
+    var n = 0;
+    for (var i = 0; i < SIGNAL_DEFS.length && n < 2; i++) {
+      var set = signals[SIGNAL_DEFS[i][0]];
+      if (set && set[playerId]) {
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /**
    * @param {Object} view
-   * @param {{posRanks:*}} [ctx] posRanks id->positionRank map, computed once per render (see
-   *   render()'s comment) — always has every id in real usage; templates exercised standalone
-   *   without ctx simply omit the bold leading token, same graceful-fallback precedent as the
-   *   old rankBadgeHTML.
+   * @param {{posRanks:*, signals:*}} [ctx] posRanks id->positionRank map, computed once per
+   *   render (see render()'s comment) — always has every id in real usage; templates exercised
+   *   standalone without ctx simply omit the bold leading token, same graceful-fallback
+   *   precedent as the old rankBadgeHTML. ctx.signals is read only to decide proj-badge
+   *   suppression (see below) — callers that never render signalTagsHTML (drafted/
+   *   drafted-search rows) simply pass a ctx without it, so the badge always renders there.
    * @returns {string} '<span class="meta-main">POSn · TEAM · Bye N</span>[<span
-   *   class="adp-badge">n</span>]' — text run always wrapped in .meta-main so it's the only
-   *   piece that ellipsizes under flex shrink; ADP trailing badge (bare number, no label) only
-   *   when adpConsensus resolves; the badge's own margin separates it from Bye N, never a
-   *   middot (no dangling separators either way)
+   *   class="adp-badge">n</span>][<span class="proj-badge">n</span>]' — text run always wrapped
+   *   in .meta-main so it's the only piece that ellipsizes under flex shrink; ADP trailing badge
+   *   (bare number, no label) only when adpConsensus resolves; proj badge only when
+   *   dkProjForPlayer resolves AND this player isn't already carrying both signal tags (redundant
+   *   once 2 tags render — see the .proj-badge comment in styles.css for the measured overflow
+   *   this avoids); badge margins are the only separators, never a middot, so no combination
+   *   dangles one
    */
   function metricsLineHTML(view, ctx) {
     var posRank = ctx && ctx.posRanks && ctx.posRanks[view.id];
@@ -108,6 +138,10 @@
     var consensus = DC.state.adpConsensus(view);
     if (typeof consensus === 'number') {
       html += '<span class="adp-badge">' + consensus + '</span>';
+    }
+    var proj = DC.state.dkProjForPlayer(view);
+    if (typeof proj === 'number' && signalTagCount(view.id, ctx && ctx.signals) < 2) {
+      html += '<span class="proj-badge">' + proj + '</span>';
     }
     return html;
   }
@@ -552,6 +586,7 @@
           '<div class="import-preview"></div>' +
         '</div>' +
         '<div class="adp-note-slot">' + adpNoteInnerHTML() + '</div>' +
+        '<div class="dk-note-slot">' + dkNoteInnerHTML() + '</div>' +
         '<button class="sheet-row" data-action="adp-refresh">Refresh ADP</button>' +
         '<div class="adp-refresh-status"></div>' +
         '<button class="sheet-row" data-action="export">Export Backup</button>' +

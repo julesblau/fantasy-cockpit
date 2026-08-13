@@ -570,6 +570,22 @@ button.player-rank {
   vertical-align: middle;
 }
 
+/* outlined twin of .adp-badge -- the 1px border replaces the badge's 1px vertical padding so
+   both stay equal height; suppressed by metricsLineHTML when the row already carries both
+   signal tags (redundant number, avoids a measured overflow at the 390px floor) */
+.proj-badge {
+  background: none;
+  border: 1px solid var(--surface-3);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 5px;
+  padding: 0 4px;
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+
 /* quiet signal tags: available rows only, up to 2, priority VALUE > CLIFF — inline-flex so they
    sit at the end of the metrics line instead of on their own row */
 .signal-tags {
@@ -1147,6 +1163,9 @@ button.player-rank {
 .adp-row-weighted { border-top: 1px solid var(--hairline); margin-top: 3px; padding-top: 3px; }
 .adp-row-weighted .adp-site { color: var(--text-1); font-weight: 700; }
 .adp-row-weighted .adp-val { font-weight: 800; font-size: 15px; }
+.dk-proj-row { display: flex; justify-content: space-between; line-height: 20px; margin-top: 6px; font-size: 13px; }
+.dk-proj-label { color: var(--text-1); font-weight: 700; }
+.dk-proj-val { font-weight: 800; font-size: 15px; font-variant-numeric: tabular-nums; }
 .compare-card-status { margin-top: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text-2); }
 .compare-card-status-icons { display: flex; gap: 8px; align-items: center; }
 .compare-x-link { display: inline-flex; align-items: center; justify-content: center; box-sizing: content-box; width: 18px; height: 18px; padding: 13px 9px 13px 17px; margin: -13px -9px -13px -17px; color: var(--text-3); }
