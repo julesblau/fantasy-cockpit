@@ -1005,27 +1005,38 @@
     return wsum > 0 ? Math.round((sum / wsum) * 10) / 10 : null;
   }
 
-  var DK_GATE_COMPONENT = { QB: 'passYds', RB: 'rushYds', WR: 'recYds', TE: 'recYds' }; // other positions (K/DST/unknown) never gate
+  // full position line set required for a projection; partial data yields null, never a partial sum
+  var DK_REQUIRED_COMPONENTS = {
+    QB: ['passYds', 'passTds', 'rushYds', 'rushTds'],
+    RB: ['rushYds', 'rushTds', 'rec', 'recYds', 'recTds'],
+    WR: ['rec', 'recYds', 'recTds'],
+    TE: ['rec', 'recYds', 'recTds']
+  };
 
   /** @param {*} n @returns {boolean} */
   function isDkNum(n) {
     return typeof n === 'number' && isFinite(n);
   }
 
-  /** @param {*} player @returns {number|null} live DK-line-implied fantasy points; null when player is ungated, unkeyed, or unresolved */
+  /** @param {*} player @returns {number|null} live DK-line-implied fantasy points; null when player is ungated, unkeyed, or missing any required component */
   function dkProjForPlayer(player) {
     if (!player || typeof player !== 'object' || typeof player.name !== 'string' || typeof player.position !== 'string') {
       return null;
     }
-    var gateComponent = DK_GATE_COMPONENT[player.position];
-    if (!gateComponent) {
+    var required = DK_REQUIRED_COMPONENTS[player.position];
+    if (!required) {
       return null;
     }
     var table = window.DC && DC.dkData && DC.dkData.players;
     var key = normalizeAdpName(player.name);
     var entry = table && key ? table[key] : undefined;
-    if (!entry || !isDkNum(entry[gateComponent])) {
+    if (!entry) {
       return null;
+    }
+    for (var r = 0; r < required.length; r++) {
+      if (!isDkNum(entry[required[r]])) {
+        return null;
+      }
     }
     var sum = 0;
     if (isDkNum(entry.passYds)) { sum += entry.passYds / 25; }

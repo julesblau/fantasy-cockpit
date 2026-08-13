@@ -382,24 +382,25 @@
     t('dkProjForPlayer: RB with receiving work sums rush+reception components to whole points', function () {
       var real = window.DC.dkData;
       try {
-        window.DC.dkData = { players: { 'receivingrb': { rushYds: 1200.5, rushTds: 8.5, rec: 45.5, recYds: 350.5 } } };
-        assertEq(DC.state.dkProjForPlayer({ name: 'Receiving Rb', position: 'RB' }), 252);
+        window.DC.dkData = { players: { 'receivingrb': { rushYds: 1200.5, rushTds: 8.5, rec: 45.5, recYds: 350.5, recTds: 2.5 } } };
+        // 1200.5/10=120.05 + 8.5*6=51 + 45.5*1=45.5 + 350.5/10=35.05 + 2.5*6=15 -> 266.6, round 267
+        assertEq(DC.state.dkProjForPlayer({ name: 'Receiving Rb', position: 'RB' }), 267);
       } finally {
         window.DC.dkData = real;
       }
     });
 
-    t('dkProjForPlayer: partial WR (recYds only) — gate passes, sums just that component', function () {
+    t('dkProjForPlayer: strict gate — WR missing recTds (2/3 required) nulls out even though recYds resolves', function () {
       var real = window.DC.dkData;
       try {
         window.DC.dkData = { players: { 'partialwr': { recYds: 500.5 } } };
-        assertEq(DC.state.dkProjForPlayer({ name: 'Partial Wr', position: 'WR' }), 50, '500.5/10=50.05 -> round 50');
+        assertEq(DC.state.dkProjForPlayer({ name: 'Partial Wr', position: 'WR' }), null, 'WR requires rec+recYds+recTds; recYds alone is not a complete line');
       } finally {
         window.DC.dkData = real;
       }
     });
 
-    t('dkProjForPlayer: position gate — missing gate component nulls out; K/DST/unknown never gate', function () {
+    t('dkProjForPlayer: strict completeness gate — missing any required component nulls out; K/DST/unknown never gate', function () {
       var real = window.DC.dkData;
       try {
         window.DC.dkData = {
@@ -410,9 +411,9 @@
             'gatekicker': { passYds: 4000, rushYds: 300, recYds: 300 }
           }
         };
-        assertEq(DC.state.dkProjForPlayer({ name: 'Gate Qb No Pass', position: 'QB' }), null, 'QB without passYds gates null');
-        assertEq(DC.state.dkProjForPlayer({ name: 'Gate Wr Only Rush', position: 'WR' }), null, 'WR without recYds gates null');
-        assertEq(DC.state.dkProjForPlayer({ name: 'Gate Rb Only Rec', position: 'RB' }), null, 'RB without rushYds gates null');
+        assertEq(DC.state.dkProjForPlayer({ name: 'Gate Qb No Pass', position: 'QB' }), null, 'QB missing passYds/passTds/rushTds (only rushYds present) -> null');
+        assertEq(DC.state.dkProjForPlayer({ name: 'Gate Wr Only Rush', position: 'WR' }), null, 'WR missing rec/recYds/recTds (rushYds is not a required WR component) -> null');
+        assertEq(DC.state.dkProjForPlayer({ name: 'Gate Rb Only Rec', position: 'RB' }), null, 'RB missing rushYds/rushTds/rec/recTds (only recYds present) -> null');
         assertEq(DC.state.dkProjForPlayer({ name: 'Gate Kicker', position: 'K' }), null, 'K never gates, even with a full entry');
         assertEq(DC.state.dkProjForPlayer({ name: 'Gate Kicker', position: 'DST' }), null, 'DST never gates, even with a full entry');
         assertEq(DC.state.dkProjForPlayer({ name: 'Gate Kicker', position: 'FLEX' }), null, 'unknown position never gates, even with a full entry');
@@ -421,7 +422,31 @@
       }
     });
 
-    t('dkProjForPlayer: missing entry, absent DC.dkData/players, and malformed components', function () {
+    t('dkProjForPlayer: strict gate — full required set present but exactly one required component malformed; extra non-required components still add when present', function () {
+      var real = window.DC.dkData;
+      try {
+        window.DC.dkData = {
+          players: {
+            'strictqbfull': { passYds: 3000, passTds: 20, rushYds: 200, rushTds: 2 },
+            'strictqbmissing': { passYds: 3000, passTds: 20, rushYds: 200 },
+            'strictrbmissing': { rushYds: 800, rushTds: 5, recYds: 200, recTds: 2 },
+            'strictwrextra': { rec: 50, recYds: 500, recTds: 4, rushYds: 100 },
+            'stricttemissing': { rec: 50, recYds: 500 }
+          }
+        };
+        // 3000/25=120 + 20*4=80 + 200/10=20 + 2*6=12 -> 232
+        assertEq(DC.state.dkProjForPlayer({ name: 'Strict Qb Full', position: 'QB' }), 232, 'QB 4/4 required components resolves to a number');
+        assertEq(DC.state.dkProjForPlayer({ name: 'Strict Qb Missing', position: 'QB' }), null, 'QB 3/4 (missing rushTds) -> null');
+        assertEq(DC.state.dkProjForPlayer({ name: 'Strict Rb Missing', position: 'RB' }), null, 'RB 4/5 (missing rec) -> null');
+        // 50*1=50 + 500/10=50 + 4*6=24 + 100/10=10 (rushYds is extra, not required for WR) -> 134
+        assertEq(DC.state.dkProjForPlayer({ name: 'Strict Wr Extra', position: 'WR' }), 134, 'WR 3/3 required + extra rushYds -> extra component still adds');
+        assertEq(DC.state.dkProjForPlayer({ name: 'Strict Te Missing', position: 'TE' }), null, 'TE 2/3 (missing recTds) -> null');
+      } finally {
+        window.DC.dkData = real;
+      }
+    });
+
+    t('dkProjForPlayer: missing entry, absent DC.dkData/players, and one malformed required component', function () {
       var real = window.DC.dkData;
       try {
         window.DC.dkData = { players: {} };
@@ -433,11 +458,11 @@
         window.DC.dkData = {};
         assertEq(DC.state.dkProjForPlayer({ name: 'Nobody Here', position: 'QB' }), null, 'players undefined -> null');
 
-        window.DC.dkData = { players: { 'malformedqb': { passYds: 4000, passTds: 'x', rushYds: 300 } } };
-        assertEq(DC.state.dkProjForPlayer({ name: 'Malformed Qb', position: 'QB' }), 190, 'malformed non-gate component skipped, remaining components still sum');
+        window.DC.dkData = { players: { 'malformedqb': { passYds: 4000, passTds: 'x', rushYds: 300, rushTds: 5 } } };
+        assertEq(DC.state.dkProjForPlayer({ name: 'Malformed Qb', position: 'QB' }), null, 'all 4 required present but passTds is a string -> one malformed required component nulls the whole result');
 
         window.DC.dkData = { players: { 'malformedgateqb': { passYds: NaN, rushYds: 300 } } };
-        assertEq(DC.state.dkProjForPlayer({ name: 'Malformed Gate Qb', position: 'QB' }), null, 'malformed GATE component -> null');
+        assertEq(DC.state.dkProjForPlayer({ name: 'Malformed Gate Qb', position: 'QB' }), null, 'malformed passYds, and passTds/rushTds also absent -> null');
       } finally {
         window.DC.dkData = real;
       }
@@ -446,11 +471,13 @@
     t('dkProjForPlayer: live-read — reassigning window.DC.dkData mid-run is reflected immediately, no reload hook needed', function () {
       var real = window.DC.dkData;
       try {
-        window.DC.dkData = { players: { 'livereadqb': { passYds: 2500 } } };
-        assertEq(DC.state.dkProjForPlayer({ name: 'Live Read Qb', position: 'QB' }), 100, 'first read: 2500/25=100');
+        window.DC.dkData = { players: { 'livereadqb': { passYds: 2500, passTds: 15, rushYds: 100, rushTds: 1 } } };
+        // 2500/25=100 + 15*4=60 + 100/10=10 + 1*6=6 -> 176
+        assertEq(DC.state.dkProjForPlayer({ name: 'Live Read Qb', position: 'QB' }), 176, 'first read: complete 4/4 stack sums to 176');
 
-        window.DC.dkData = { players: { 'livereadqb': { passYds: 5000 } } };
-        assertEq(DC.state.dkProjForPlayer({ name: 'Live Read Qb', position: 'QB' }), 200, 'second read after reassignment: 5000/25=200');
+        window.DC.dkData = { players: { 'livereadqb': { passYds: 5000, passTds: 30, rushYds: 200, rushTds: 3 } } };
+        // 5000/25=200 + 30*4=120 + 200/10=20 + 3*6=18 -> 358
+        assertEq(DC.state.dkProjForPlayer({ name: 'Live Read Qb', position: 'QB' }), 358, 'second read after reassignment: a distinct complete 4/4 stack sums to 358');
       } finally {
         window.DC.dkData = real;
       }
@@ -469,7 +496,7 @@
       }
     });
 
-    t('seam-level liveness (binding, real data): >=35 of the first 60 SEED_PLAYERS resolve a finite dkProjForPlayer', function () {
+    t('seam-level liveness (binding, real data): >=25 of the first 60 SEED_PLAYERS resolve a finite dkProjForPlayer under the strict completeness gate (measured 34/60)', function () {
       var first60 = DC.data.SEED_PLAYERS.slice(0, 60);
       var hits = 0;
       first60.forEach(function (p) {
@@ -478,7 +505,7 @@
           hits++;
         }
       });
-      assert(hits >= 35, 'hits=' + hits + '/60');
+      assert(hits >= 25, 'hits=' + hits + '/60');
     });
   })();
   </script>
@@ -5120,7 +5147,7 @@
       var realDk = window.DC.dkData;
       try {
         window.DC.adpData = { players: {} };
-        window.DC.dkData = { players: { 'projbadgefixture': { passYds: 4000 } } }; // 4000/25 = 160
+        window.DC.dkData = { players: { 'projbadgefixture': { passYds: 4000, passTds: 0, rushYds: 0, rushTds: 0 } } }; // full 4/4 required set, 4000/25 + 0 + 0 + 0 = 160
 
         var base = { id: 'pbf1', rank: 6, name: 'Proj Badge Fixture', team: 'KC', position: 'QB', byeWeek: 9, drafted: false, target: false, avoid: false, tier: null };
 
@@ -7881,7 +7908,7 @@
       var styleTag = injectRowGeometryCSS();
       var realDk = window.DC.dkData;
       try {
-        window.DC.dkData = { players: { 'fixturecomboa': { recYds: 1000 } } }; // 1000/10 = 100
+        window.DC.dkData = { players: { 'fixturecomboa': { rec: 0, recYds: 1000, recTds: 0 } } }; // full 3/3 required set, 0 + 1000/10 + 0 = 100
         var view = { id: 'fita', rank: 40, name: 'Fixture Combo A', team: 'SEA', position: 'WR', byeWeek: 11, tier: null, drafted: false, target: false, avoid: false, adp: { espn: 199, yahoo: 199, sleeper: 200 } };
         var ctx = { posRanks: { fita: 15 }, signals: { value: {}, cliff: { fita: true } } }; // ONE tag
         assert(typeof DC.state.dkProjForPlayer(view) === 'number', 'sanity: this fixture\'s DK value should resolve');
@@ -7924,7 +7951,7 @@
       var styleTag = injectRowGeometryCSS();
       var realDk = window.DC.dkData;
       try {
-        window.DC.dkData = { players: { 'fixturecombob': { recYds: 1000 } } };
+        window.DC.dkData = { players: { 'fixturecombob': { rec: 0, recYds: 1000, recTds: 0 } } }; // full 3/3 required set, resolves to 100
         var view = { id: 'fitb', rank: 40, name: 'Fixture Combo B', team: 'SEA', position: 'WR', byeWeek: 11, tier: null, drafted: false, target: false, avoid: false, adp: { espn: 199, yahoo: 199, sleeper: 200 } };
         // synthetic: VALUE + ADP~199 can't co-occur in real production data (valueFlagIds needs
         // consensus <= 75, see the CLIFF-only pathological test above) -- this fixture only needs
@@ -8950,7 +8977,8 @@
       var fixture = buildCompareFixture();
       var realDk = window.DC.dkData;
       try {
-        window.DC.dkData = { players: { 'cardcontentone': { rushYds: 1000 } } }; // 1000/10 = 100
+        // full 5/5 RB required set: 1000/10=100 + 5*6=30 + 20*1=20 + 100/10=10 + 5*6=30 -> 190
+        window.DC.dkData = { players: { 'cardcontentone': { rushYds: 1000, rushTds: 5, rec: 20, recYds: 100, recTds: 5 } } };
         var players = [
           { id: 'cc-1', rank: 3, name: 'Card Content One', team: 'AAA', position: 'RB', byeWeek: 5, tier: 2, adp: { espn: 4, yahoo: 6, sleeper: 5 } },
           { id: 'cc-2', rank: 4, name: 'Card Content Two', team: 'AAA', position: 'RB', byeWeek: 5, tier: null, adp: null } // name unkeyed in dkData -> null dk
@@ -9018,7 +9046,7 @@
 
         var dkRow = card.querySelector('.dk-proj-row');
         assertEq(dkRow.querySelector('.dk-proj-label').textContent, 'DK Proj', 'dk-proj-row label should read "DK Proj"');
-        assertEq(dkRow.querySelector('.dk-proj-val').textContent, '100', 'expected the stubbed DK value to render');
+        assertEq(dkRow.querySelector('.dk-proj-val').textContent, '190', 'expected the stubbed DK value to render');
         var adpIdx = Array.prototype.indexOf.call(innerKids, card.querySelector('.compare-card-adp'));
         var dkIdx = Array.prototype.indexOf.call(innerKids, dkRow);
         var statusIdx = Array.prototype.indexOf.call(innerKids, card.querySelector('.compare-card-status'));
@@ -10174,7 +10202,7 @@
       var styleTag = injectCompareGeometryCSS();
       var realDk = window.DC.dkData;
       try {
-        window.DC.dkData = { players: { 'quadworstcasefixturename': { recYds: 1000 } } }; // 1000/10 = 100 -- exercises the DK row for real, not just its em-dash fallback
+        window.DC.dkData = { players: { 'quadworstcasefixturename': { rec: 0, recYds: 1000, recTds: 0 } } }; // full 3/3 required set, resolves to 100 -- exercises the DK row for real, not just its em-dash fallback
         var store = DC.state.createStore(DC.state.createSeedState());
         DC.compare.mount(store);
         var ids = DC.data.SEED_PLAYERS.slice(0, 4).map(function (p) { return p.id; });
