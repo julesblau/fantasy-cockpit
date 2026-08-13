@@ -207,6 +207,7 @@ draft-cockpit/
   js/
     data.js               seed player data (276 players: QB/RB/WR/TE plus K/DST), team bye weeks, id slugging
     adp-data.js           GENERATED -- real ADP table (espn/yahoo/sleeper); regenerate with scripts\update-adp.ps1
+    dk-data.js            GENERATED -- DraftKings season-line O/U sidecar; regenerate with scripts\update-dk-lines.ps1
     state.js              state shape, reducer, localStorage load/save, schema migrations
     adp-refresh.js        in-app ADP refresh (Settings -> Refresh ADP) -- pulls fresh Sleeper + ESPN numbers on the device; Yahoo still only updates via update-adp.ps1
     importer.js           rankings + backup file parsing (CSV/TSV/list/parenthesized/backup JSON)
@@ -223,6 +224,7 @@ draft-cockpit/
     run-tests.ps1          headless-Chrome/Edge test runner (fail-closed: crash counts as failure)
     make-icons.ps1         regenerates the three icon PNGs via System.Drawing
     update-adp.ps1         fetches ESPN/Yahoo/Sleeper ADP and regenerates js\adp-data.js
+    update-dk-lines.ps1    scrapes DraftKings season-line O/U props and regenerates js\dk-data.js
 ```
 
 ## Regenerating icons
