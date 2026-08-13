@@ -1,11 +1,11 @@
 // Bump CACHE_NAME (v1 -> v2 ...) whenever any precached file changes.
-var CACHE_NAME = 'draft-cockpit-v16';
+var CACHE_NAME = 'draft-cockpit-v17';
 // Player headshots/logos: a separate, un-versioned runtime cache -- never wiped by an app-shell bump.
 var IMG_CACHE_NAME = 'draft-cockpit-img-v1';
 var IMG_HOSTS = ['a.espncdn.com', 'sleepercdn.com'];
 var PRECACHE = [
   './', './index.html', './styles.css', './manifest.webmanifest',
-  './js/data.js', './js/adp-data.js', './js/state.js', './js/adp-refresh.js', './js/importer.js', './js/ui.js', './js/edit.js', './js/app.js', './js/compare.js',
+  './js/data.js', './js/adp-data.js', './js/dk-data.js', './js/state.js', './js/adp-refresh.js', './js/importer.js', './js/ui.js', './js/edit.js', './js/app.js', './js/compare.js',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'
 ];
 

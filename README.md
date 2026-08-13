@@ -42,7 +42,7 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
-**Reminder for this release:** this release bumps the service-worker cache to v16. Compare cards have a new layout: a tier strip up top, a Weighted ADP row set apart with a hairline and bold text, a tinted verdict box, and an X (Twitter) search link per player. Tap a player's photo on the board to pop his card up over the board without opening full Compare. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+**Reminder for this release:** this release bumps the service-worker cache to v17. Board rows and compare/peek cards now show DK Proj -- implied season PPR points computed from DraftKings' own season-long player prop lines -- alongside ADP (see DK Proj, below). Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
 
 ## Install on iPhone
 
@@ -176,6 +176,24 @@ powershell -File scripts\run-tests.ps1
 Then bump `CACHE_NAME` in `sw.js` (v17, v18, ...), update the release reminder above, commit, and deploy. Your phone picks up the new numbers on the second online open, same as any other update (see Install on iPhone, above).
 
 Sources are weighted, not averaged equally -- Sleeper 45%, ESPN 35%, Yahoo 20%. The weighting lives in one constant, `ADP_WEIGHTS` in `js/state.js`, if you ever want to tilt it further toward one site.
+
+## DK Proj
+
+DK Proj is an implied season PPR points total, built entirely from DraftKings' own season-long Player Stats O/U lines -- not an analyst's rankings. `dkProjForPlayer` in `js/state.js` sums `passYds/25 + passTds*4 + rushYds/10 + rushTds*6 + receptions + recYds/10 + recTds*6` over whichever of those lines DK has posted for that player, then rounds to the nearest whole point.
+
+It shows in two places: an outlined badge on board rows, right after the filled gray ADP badge on the meta line, and its own "DK Proj" row on compare cards and the photo-tap peek card. A player with no DK line data just skips the board badge; the compare/peek card shows an em-dash in its DK Proj row instead. If a row already carries both quiet-signal tags (VALUE and CLIFF -- see Quiet signals, below), the badge yields and doesn't render there, by design -- the number itself is never hidden, it's still on that player's compare/peek card.
+
+Coverage is whatever DraftKings itself prices -- currently around 135 skill players (QB/RB/WR/TE), the draftable core. Kickers, team defenses, and deep bench players outside DK's own prop market have none.
+
+**Refreshing DK Proj:**
+
+```powershell
+powershell -File scripts\update-dk-lines.ps1
+```
+
+PC-only. It drives a real Chrome window, positioned off-screen, for roughly 4-5 minutes while it works through DK's stat tabs one at a time -- DraftKings' bot protection admits only a real browser, so scripts and headless Chrome are blocked. It's fail-closed: if any tab's parse/coverage gate comes up short, the script exits without touching the existing `js/dk-data.js` at all. After a clean run, follow the same tail as an ADP refresh: run the standard tests, bump `CACHE_NAME` in `sw.js`, update the release reminder above, commit, and deploy. These lines move all preseason, so re-running the script the morning of the draft is the safest bet.
+
+**Caveats:** DK's O/U lines are juiced betting medians, not true means -- fine for ranking players against each other, not gospel season totals. There's no interception market on DraftKings, so every QB's DK Proj runs a touch rich relative to a true expectation. The "DK lines as of" date under Settings shows when the sidecar was last refreshed.
 
 ## Project layout
 
