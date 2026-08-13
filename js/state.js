@@ -1005,6 +1005,44 @@
     return wsum > 0 ? Math.round((sum / wsum) * 10) / 10 : null;
   }
 
+  var DK_GATE_COMPONENT = { QB: 'passYds', RB: 'rushYds', WR: 'recYds', TE: 'recYds' }; // other positions (K/DST/unknown) never gate
+
+  /** @param {*} n @returns {boolean} */
+  function isDkNum(n) {
+    return typeof n === 'number' && isFinite(n);
+  }
+
+  /** @param {*} player @returns {number|null} live DK-line-implied fantasy points; null when player is ungated, unkeyed, or unresolved */
+  function dkProjForPlayer(player) {
+    if (!player || typeof player !== 'object' || typeof player.name !== 'string' || typeof player.position !== 'string') {
+      return null;
+    }
+    var gateComponent = DK_GATE_COMPONENT[player.position];
+    if (!gateComponent) {
+      return null;
+    }
+    var table = window.DC && DC.dkData && DC.dkData.players;
+    var key = normalizeAdpName(player.name);
+    var entry = table && key ? table[key] : undefined;
+    if (!entry || !isDkNum(entry[gateComponent])) {
+      return null;
+    }
+    var sum = 0;
+    if (isDkNum(entry.passYds)) { sum += entry.passYds / 25; }
+    if (isDkNum(entry.passTds)) { sum += entry.passTds * 4; }
+    if (isDkNum(entry.rushYds)) { sum += entry.rushYds / 10; }
+    if (isDkNum(entry.rushTds)) { sum += entry.rushTds * 6; }
+    if (isDkNum(entry.rec)) { sum += entry.rec * 1; }
+    if (isDkNum(entry.recYds)) { sum += entry.recYds / 10; }
+    if (isDkNum(entry.recTds)) { sum += entry.recTds * 6; }
+    return Math.round(sum);
+  }
+
+  /** @returns {string|null} live read: DK sidecar's updatedAt, else null */
+  function dkUpdatedAt() {
+    return (window.DC && DC.dkData && DC.dkData.updatedAt) || null;
+  }
+
   function isValidState(obj) {
     if (!obj || typeof obj !== 'object') {
       return false;
@@ -1230,6 +1268,8 @@
     adpForPlayer: adpForPlayer,
     reloadAdpOverride: reloadAdpOverride,
     adpUpdatedAt: adpUpdatedAt,
-    ADP_OVERRIDE_KEY: ADP_OVERRIDE_KEY
+    ADP_OVERRIDE_KEY: ADP_OVERRIDE_KEY,
+    dkProjForPlayer: dkProjForPlayer,
+    dkUpdatedAt: dkUpdatedAt
   };
 })();

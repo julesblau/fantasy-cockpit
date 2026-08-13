@@ -352,6 +352,137 @@
   })();
   </script>
 
+  <!-- Task 2 (R15): DK implied-points derivation seam (js/state.js dkProjForPlayer/dkUpdatedAt) -->
+  <script>
+  (function () {
+    'use strict';
+    section('dk-implied-points');
+
+    t('dkProjForPlayer: QB full stack sums pass+rush components to whole points', function () {
+      var real = window.DC.dkData;
+      try {
+        window.DC.dkData = { players: { 'fullstackqb': { passYds: 4000.5, passTds: 28.5, rushYds: 300.5, rushTds: 2.5 } } };
+        assertEq(DC.state.dkProjForPlayer({ name: 'Fullstack Qb', position: 'QB' }), 319);
+      } finally {
+        window.DC.dkData = real;
+      }
+    });
+
+    t('dkProjForPlayer: WR/TE typical sums reception components to whole points', function () {
+      var real = window.DC.dkData;
+      try {
+        window.DC.dkData = { players: { 'typicalwr': { rec: 80.5, recYds: 1000.5, recTds: 6.5 } } };
+        assertEq(DC.state.dkProjForPlayer({ name: 'Typical Wr', position: 'WR' }), 220);
+        assertEq(DC.state.dkProjForPlayer({ name: 'Typical Wr', position: 'TE' }), 220, 'TE gates on recYds identically to WR');
+      } finally {
+        window.DC.dkData = real;
+      }
+    });
+
+    t('dkProjForPlayer: RB with receiving work sums rush+reception components to whole points', function () {
+      var real = window.DC.dkData;
+      try {
+        window.DC.dkData = { players: { 'receivingrb': { rushYds: 1200.5, rushTds: 8.5, rec: 45.5, recYds: 350.5 } } };
+        assertEq(DC.state.dkProjForPlayer({ name: 'Receiving Rb', position: 'RB' }), 252);
+      } finally {
+        window.DC.dkData = real;
+      }
+    });
+
+    t('dkProjForPlayer: partial WR (recYds only) — gate passes, sums just that component', function () {
+      var real = window.DC.dkData;
+      try {
+        window.DC.dkData = { players: { 'partialwr': { recYds: 500.5 } } };
+        assertEq(DC.state.dkProjForPlayer({ name: 'Partial Wr', position: 'WR' }), 50, '500.5/10=50.05 -> round 50');
+      } finally {
+        window.DC.dkData = real;
+      }
+    });
+
+    t('dkProjForPlayer: position gate — missing gate component nulls out; K/DST/unknown never gate', function () {
+      var real = window.DC.dkData;
+      try {
+        window.DC.dkData = {
+          players: {
+            'gateqbnopass': { rushYds: 300 },
+            'gatewronlyrush': { rushYds: 300 },
+            'gaterbonlyrec': { recYds: 300 },
+            'gatekicker': { passYds: 4000, rushYds: 300, recYds: 300 }
+          }
+        };
+        assertEq(DC.state.dkProjForPlayer({ name: 'Gate Qb No Pass', position: 'QB' }), null, 'QB without passYds gates null');
+        assertEq(DC.state.dkProjForPlayer({ name: 'Gate Wr Only Rush', position: 'WR' }), null, 'WR without recYds gates null');
+        assertEq(DC.state.dkProjForPlayer({ name: 'Gate Rb Only Rec', position: 'RB' }), null, 'RB without rushYds gates null');
+        assertEq(DC.state.dkProjForPlayer({ name: 'Gate Kicker', position: 'K' }), null, 'K never gates, even with a full entry');
+        assertEq(DC.state.dkProjForPlayer({ name: 'Gate Kicker', position: 'DST' }), null, 'DST never gates, even with a full entry');
+        assertEq(DC.state.dkProjForPlayer({ name: 'Gate Kicker', position: 'FLEX' }), null, 'unknown position never gates, even with a full entry');
+      } finally {
+        window.DC.dkData = real;
+      }
+    });
+
+    t('dkProjForPlayer: missing entry, absent DC.dkData/players, and malformed components', function () {
+      var real = window.DC.dkData;
+      try {
+        window.DC.dkData = { players: {} };
+        assertEq(DC.state.dkProjForPlayer({ name: 'Nobody Here', position: 'QB' }), null, 'missing entry -> null');
+
+        window.DC.dkData = undefined;
+        assertEq(DC.state.dkProjForPlayer({ name: 'Nobody Here', position: 'QB' }), null, 'DC.dkData undefined -> null');
+
+        window.DC.dkData = {};
+        assertEq(DC.state.dkProjForPlayer({ name: 'Nobody Here', position: 'QB' }), null, 'players undefined -> null');
+
+        window.DC.dkData = { players: { 'malformedqb': { passYds: 4000, passTds: 'x', rushYds: 300 } } };
+        assertEq(DC.state.dkProjForPlayer({ name: 'Malformed Qb', position: 'QB' }), 190, 'malformed non-gate component skipped, remaining components still sum');
+
+        window.DC.dkData = { players: { 'malformedgateqb': { passYds: NaN, rushYds: 300 } } };
+        assertEq(DC.state.dkProjForPlayer({ name: 'Malformed Gate Qb', position: 'QB' }), null, 'malformed GATE component -> null');
+      } finally {
+        window.DC.dkData = real;
+      }
+    });
+
+    t('dkProjForPlayer: live-read — reassigning window.DC.dkData mid-run is reflected immediately, no reload hook needed', function () {
+      var real = window.DC.dkData;
+      try {
+        window.DC.dkData = { players: { 'livereadqb': { passYds: 2500 } } };
+        assertEq(DC.state.dkProjForPlayer({ name: 'Live Read Qb', position: 'QB' }), 100, 'first read: 2500/25=100');
+
+        window.DC.dkData = { players: { 'livereadqb': { passYds: 5000 } } };
+        assertEq(DC.state.dkProjForPlayer({ name: 'Live Read Qb', position: 'QB' }), 200, 'second read after reassignment: 5000/25=200');
+      } finally {
+        window.DC.dkData = real;
+      }
+    });
+
+    t('dkUpdatedAt: live read of DC.dkData.updatedAt, null when DC.dkData absent', function () {
+      var real = window.DC.dkData;
+      try {
+        window.DC.dkData = { updatedAt: '2026-08-01', players: {} };
+        assertEq(DC.state.dkUpdatedAt(), '2026-08-01');
+
+        window.DC.dkData = undefined;
+        assertEq(DC.state.dkUpdatedAt(), null);
+      } finally {
+        window.DC.dkData = real;
+      }
+    });
+
+    t('seam-level liveness (binding, real data): >=35 of the first 60 SEED_PLAYERS resolve a finite dkProjForPlayer', function () {
+      var first60 = DC.data.SEED_PLAYERS.slice(0, 60);
+      var hits = 0;
+      first60.forEach(function (p) {
+        var v = DC.state.dkProjForPlayer(p);
+        if (typeof v === 'number' && isFinite(v)) {
+          hits++;
+        }
+      });
+      assert(hits >= 35, 'hits=' + hits + '/60');
+    });
+  })();
+  </script>
+
   <!-- Task 3: state store tests (reducer / selectors / search / persistence) -->
   <script>
   (function () {
