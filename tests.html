@@ -41,6 +41,7 @@
   <!-- app scripts under test (later tasks append more script tags here, before the harness) -->
   <script src="./js/data.js"></script>
   <script src="./js/adp-data.js"></script>
+  <script src="./js/dk-data.js"></script>
   <script src="./js/state.js"></script>
   <script src="./js/adp-refresh.js"></script>
   <script src="./js/importer.js"></script>
@@ -286,6 +287,67 @@
       Object.keys(DC.adpData.images).forEach(function (k) {
         assert(!/\|dst$/.test(k), 'dst key found in images: ' + k);
       });
+    });
+  })();
+  </script>
+
+  <!-- Task 1: dk-data.js sidecar table (shape/liveness only - values are live O/U lines, never asserted) -->
+  <script>
+  (function () {
+    'use strict';
+    section('dk-data');
+
+    var COMPONENT_ORDER = ['passYds', 'passTds', 'rushYds', 'rushTds', 'rec', 'recYds', 'recTds'];
+    var COMPONENT_INDEX = {};
+    COMPONENT_ORDER.forEach(function (c, i) { COMPONENT_INDEX[c] = i; });
+
+    t('DC.dkData exists with well-shaped updatedAt/source/players', function () {
+      assert(DC.dkData && typeof DC.dkData === 'object', 'DC.dkData missing');
+      assert(/^\d{4}-\d{2}-\d{2}$/.test(DC.dkData.updatedAt), 'updatedAt shape: ' + DC.dkData.updatedAt);
+      assert(!isNaN(new Date(DC.dkData.updatedAt).getTime()), 'updatedAt not parseable as a date');
+      assertEq(DC.dkData.source, 'draftkings');
+      assert(DC.dkData.players && typeof DC.dkData.players === 'object' && !Array.isArray(DC.dkData.players), 'players not a plain object');
+    });
+
+    t('players table has at least 100 entries', function () {
+      var n = Object.keys(DC.dkData.players).length;
+      assert(n >= 100, 'entry count=' + n);
+    });
+
+    t('every key: lowercase [a-z0-9]+ only', function () {
+      var keyPattern = /^[a-z0-9]+$/;
+      Object.keys(DC.dkData.players).forEach(function (k) {
+        assert(keyPattern.test(k), 'bad key: ' + k);
+      });
+    });
+
+    t('every entry non-empty, keys subset of canonical components in canonical order, values finite >=0', function () {
+      Object.keys(DC.dkData.players).forEach(function (k) {
+        var entry = DC.dkData.players[k];
+        var keys = Object.keys(entry);
+        assert(keys.length > 0, 'empty entry for ' + k);
+        var lastIdx = -1;
+        keys.forEach(function (ck) {
+          assert(Object.prototype.hasOwnProperty.call(COMPONENT_INDEX, ck), 'unexpected component "' + ck + '" on ' + k);
+          var idx = COMPONENT_INDEX[ck];
+          assert(idx > lastIdx, 'component "' + ck + '" out of canonical order on ' + k);
+          lastIdx = idx;
+          var v = entry[ck];
+          assert(typeof v === 'number' && isFinite(v) && v >= 0, 'bad value for ' + k + '.' + ck + ': ' + v);
+        });
+      });
+    });
+
+    t('join-liveness: >=40 of the first 60 SEED_PLAYERS resolve via normalizeAdpName', function () {
+      var first60 = DC.data.SEED_PLAYERS.slice(0, 60);
+      var hits = 0;
+      first60.forEach(function (p) {
+        var key = DC.state.normalizeAdpName(p.name);
+        if (key && Object.prototype.hasOwnProperty.call(DC.dkData.players, key)) {
+          hits++;
+        }
+      });
+      assert(hits >= 40, 'hits=' + hits + '/60');
     });
   })();
   </script>
