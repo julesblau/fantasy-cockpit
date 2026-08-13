@@ -3,6 +3,7 @@
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $outFile = Join-Path $repoRoot "js\dk-data.js"
 $dataJsPath = Join-Path $repoRoot "js\data.js"
+$manualLinesPath = Join-Path $repoRoot "scripts\dk-manual-lines.json"
 
 $port = 9755
 $profileDir = Join-Path $env:TEMP 'draft-cockpit-dk-profile'
@@ -274,6 +275,153 @@ finally {
     if ($chromeProc) { try { Stop-Process -Id $chromeProc.Id -Force -ErrorAction SilentlyContinue } catch {} }
 }
 
+# ---- RAW_PLAYERS board parse (name/team/position, board order) ----------------------------
+# board rank = array index+1, mirrors SEED_PLAYERS.map in js/data.js. Feeds the manual-merge
+# typo guard below and the gap worksheet after the gates.
+
+try {
+    $dataJsText = [IO.File]::ReadAllText($dataJsPath)
+}
+catch {
+    Fail("failed to read $dataJsPath for RAW_PLAYERS parse: $($_.Exception.Message)")
+}
+$rawStart = $dataJsText.IndexOf("var RAW_PLAYERS = [")
+if ($rawStart -lt 0) {
+    Fail("could not find 'var RAW_PLAYERS = [' in js/data.js")
+}
+$rawEnd = $dataJsText.IndexOf("];", $rawStart)
+if ($rawEnd -lt 0) {
+    Fail("could not find closing '];' for RAW_PLAYERS in js/data.js")
+}
+$rawBlock = $dataJsText.Substring($rawStart, $rawEnd - $rawStart)
+$rowPattern = '\[\s*(?:"([^"]+)"|''([^'']+)'')\s*,\s*''([A-Za-z]+)''\s*,\s*''([A-Za-z]+)''\s*\]'
+$rowMatches = [regex]::Matches($rawBlock, $rowPattern)
+if ($rowMatches.Count -eq 0) {
+    Fail("parsed zero seed player rows from RAW_PLAYERS")
+}
+
+$boardPlayers = New-Object System.Collections.ArrayList
+$seenKeys = @{}
+$seenPositions = @{}
+$collisions = 0
+$rank = 0
+foreach ($m in $rowMatches) {
+    $rank++
+    $name = $m.Groups[1].Value
+    if (-not $m.Groups[1].Success) { $name = $m.Groups[2].Value }
+    $team = $m.Groups[3].Value
+    $pos = $m.Groups[4].Value
+    $k = Normalize-AdpName $name
+    if ($seenKeys.ContainsKey($k)) {
+        Write-Host "WARN: RAW_PLAYERS names '$($seenKeys[$k])' and '$name' both normalize to key '$k'"
+        $collisions++
+    }
+    else {
+        $seenKeys[$k] = $name
+        $seenPositions[$k] = $pos
+    }
+    [void]$boardPlayers.Add(@{ Rank = $rank; Name = $name; Team = $team; Position = $pos; Key = $k })
+}
+Write-Host ""
+Write-Host "RAW_PLAYERS normalization collision check:"
+if ($collisions -eq 0) {
+    Write-Host "  no collisions found ($($rowMatches.Count) names checked)"
+}
+
+# ---- Manual sportsbook lines merge (fail-closed) -------------------------------------------
+# PS 5.1 landmine (empirically reproduced): ConvertFrom-Json yields PSCustomObject; .Keys on it
+# silently returns $null and foreach($k in $null) silently no-ops -- the merge would report 0
+# fills with no error. Iterate BOTH levels via .PSObject.Properties, and self-check the count
+# to convert that silent failure into a fail-closed error.
+
+if (-not (Test-Path $manualLinesPath)) {
+    Write-Host ""
+    Write-Host "No scripts\dk-manual-lines.json found; skipping manual overlay merge."
+}
+else {
+    try {
+        $manualText = [IO.File]::ReadAllText($manualLinesPath)
+        $manual = $manualText | ConvertFrom-Json
+    }
+    catch {
+        Fail("failed to read/parse $manualLinesPath : $($_.Exception.Message)")
+    }
+    if (-not $manual.lines) {
+        Fail("$manualLinesPath missing 'lines' object")
+    }
+
+    $manualPlayerProps = @($manual.lines.PSObject.Properties)
+    $expectedPlayerCount = $manualPlayerProps.Count
+    $manualPlayerCount = 0
+    $manualFillCount = 0
+
+    foreach ($prop in $manualPlayerProps) {
+        $rawManualName = $prop.Name
+        $compsObj = $prop.Value
+
+        $aliased = $rawManualName
+        if ($ALIASES.ContainsKey($rawManualName)) { $aliased = $ALIASES[$rawManualName] }
+        $key = Normalize-AdpName $aliased
+
+        if (-not $seenKeys.ContainsKey($key)) {
+            Write-Host "WARN: manual line for '$rawManualName' (key '$key') matches no RAW_PLAYERS name; merging anyway"
+        }
+
+        if (-not $players.ContainsKey($key)) {
+            $players[$key] = @{}
+            if (-not $playerRawNames.ContainsKey($key)) { $playerRawNames[$key] = $rawManualName }
+        }
+
+        foreach ($comp in @($compsObj.PSObject.Properties)) {
+            $compName = $comp.Name
+            $compValRaw = $comp.Value
+
+            if ($componentOrder -notcontains $compName) {
+                Fail("manual line for '$rawManualName' has unknown component '$compName' (expected one of: $($componentOrder -join ', '))")
+            }
+
+            $numVal = $null
+            if ($compValRaw -is [double] -or $compValRaw -is [int] -or $compValRaw -is [long] -or $compValRaw -is [decimal]) {
+                $numVal = [double]$compValRaw
+            }
+            else {
+                $parsed = [double]0
+                if ([double]::TryParse([string]$compValRaw, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)) {
+                    $numVal = $parsed
+                }
+            }
+            if ($null -eq $numVal -or [double]::IsNaN($numVal) -or [double]::IsInfinity($numVal) -or $numVal -lt 0) {
+                Fail("manual line for '$rawManualName' component '$compName' is not a finite non-negative number: '$compValRaw'")
+            }
+
+            if (-not $players[$key].ContainsKey($compName)) {
+                $players[$key][$compName] = $numVal
+                $manualFillCount++
+            }
+        }
+        $manualPlayerCount++
+    }
+
+    if ($manualPlayerCount -ne $expectedPlayerCount) {
+        Fail("manual merge processed $manualPlayerCount players but expected $expectedPlayerCount -- PSObject.Properties enumeration mismatch")
+    }
+
+    Write-Host ""
+    Write-Host "manual fills applied: $manualFillCount components across $manualPlayerCount players (manual file dated $($manual.updated))"
+    if ($manual.updated) {
+        try {
+            $updatedDate = [DateTime]::ParseExact([string]$manual.updated, "yyyy-MM-dd", [System.Globalization.CultureInfo]::InvariantCulture)
+            $ageDays = (Get-Date).Date.Subtract($updatedDate).TotalDays
+            if ($ageDays -gt 14) {
+                Write-Host "WARN: manual lines file is $([int]$ageDays) days old (dated $($manual.updated)) - consider refreshing"
+            }
+        }
+        catch {
+            Write-Host "WARN: manual lines 'updated' field '$($manual.updated)' is not a parseable yyyy-MM-dd date"
+        }
+    }
+}
+
 # ---- Gates (fail closed) --------------------------------------------------------------------
 
 Write-Host ""
@@ -315,52 +463,6 @@ foreach ($hk in ($histogram.Keys | Sort-Object)) {
     Write-Host "  $hk : $($histogram[$hk])"
 }
 
-# ---- RAW_PLAYERS collision + seed liveness check ------------------------------------------
-
-try {
-    $dataJsText = [IO.File]::ReadAllText($dataJsPath)
-}
-catch {
-    Fail("failed to read $dataJsPath for collision check: $($_.Exception.Message)")
-}
-$rawStart = $dataJsText.IndexOf("var RAW_PLAYERS = [")
-if ($rawStart -lt 0) {
-    Fail("could not find 'var RAW_PLAYERS = [' in js/data.js")
-}
-$rawEnd = $dataJsText.IndexOf("];", $rawStart)
-if ($rawEnd -lt 0) {
-    Fail("could not find closing '];' for RAW_PLAYERS in js/data.js")
-}
-$rawBlock = $dataJsText.Substring($rawStart, $rawEnd - $rawStart)
-$namePattern = '\[\s*(?:"([^"]+)"|''([^'']+)'')\s*,\s*''[A-Za-z]+''\s*,\s*''([A-Za-z]+)''\s*\]'
-$nameMatches = [regex]::Matches($rawBlock, $namePattern)
-if ($nameMatches.Count -eq 0) {
-    Fail("parsed zero seed player names from RAW_PLAYERS")
-}
-
-Write-Host ""
-Write-Host "RAW_PLAYERS normalization collision check:"
-$seenKeys = @{}
-$seenPositions = @{}
-$collisions = 0
-foreach ($m in $nameMatches) {
-    $name = $m.Groups[1].Value
-    if (-not $m.Groups[1].Success) { $name = $m.Groups[2].Value }
-    $pos = $m.Groups[3].Value
-    $k = Normalize-AdpName $name
-    if ($seenKeys.ContainsKey($k)) {
-        Write-Host "WARN: RAW_PLAYERS names '$($seenKeys[$k])' and '$name' both normalize to key '$k'"
-        $collisions++
-    }
-    else {
-        $seenKeys[$k] = $name
-        $seenPositions[$k] = $pos
-    }
-}
-if ($collisions -eq 0) {
-    Write-Host "  no collisions found ($($nameMatches.Count) names checked)"
-}
-
 # ---- Alias-sweep diagnostics: full DK<->board diff for manual nickname/formal-name review ---
 
 $skillPositions = @{ 'QB' = $true; 'RB' = $true; 'WR' = $true; 'TE' = $true }
@@ -388,23 +490,66 @@ foreach ($n in ($boardOnlySkillNames | Sort-Object)) {
     Write-Host "  - $n"
 }
 
-$first60 = $nameMatches | Select-Object -First 60
+$first60 = $boardPlayers | Select-Object -First 60
 $livenessHits = 0
 $unmatchedNames = New-Object System.Collections.ArrayList
-foreach ($m in $first60) {
-    $name = $m.Groups[1].Value
-    if (-not $m.Groups[1].Success) { $name = $m.Groups[2].Value }
-    $k = Normalize-AdpName $name
-    if ($players.ContainsKey($k)) {
+foreach ($bp in $first60) {
+    if ($players.ContainsKey($bp.Key)) {
         $livenessHits++
     }
     else {
-        [void]$unmatchedNames.Add($name)
+        [void]$unmatchedNames.Add($bp.Name)
     }
 }
 if ($livenessHits -lt 40) {
     Write-Host "WARN: seed liveness $livenessHits/60 is below the tests.html gate of 40"
 }
+
+# ---- Gap worksheet (post-merge; rank order; QB/RB/WR/TE only) -----------------------------
+
+$REQUIRED_COMPONENTS = @{
+    'QB' = @('passYds', 'passTds', 'rushYds', 'rushTds')
+    'RB' = @('rushYds', 'rushTds', 'rec', 'recYds', 'recTds')
+    'WR' = @('rec', 'recYds', 'recTds')
+    'TE' = @('rec', 'recYds', 'recTds')
+}
+$COMP_LABELS = @{
+    'passYds' = 'pass yds'; 'passTds' = 'pass TDs'
+    'rushYds' = 'rush yds'; 'rushTds' = 'rush TDs'
+    'rec' = 'receptions'; 'recYds' = 'rec yds'; 'recTds' = 'rec TDs'
+}
+
+Write-Host ""
+Write-Host "Gap worksheet (missing required DK lines, rank order; first 150 board ranks shown):"
+$totalGaps = 0
+$shownGaps = 0
+foreach ($bp in $boardPlayers) {
+    $required = $REQUIRED_COMPONENTS[$bp.Position]
+    if (-not $required) { continue }
+
+    $missingLabels = New-Object System.Collections.ArrayList
+    if (-not $players.ContainsKey($bp.Key)) {
+        [void]$missingLabels.Add('ALL LINES')
+    }
+    else {
+        $entry = $players[$bp.Key]
+        foreach ($comp in $required) {
+            if (-not $entry.ContainsKey($comp)) {
+                [void]$missingLabels.Add($COMP_LABELS[$comp])
+            }
+        }
+    }
+
+    if ($missingLabels.Count -gt 0) {
+        $totalGaps++
+        if ($bp.Rank -le 150) {
+            Write-Host "  #$($bp.Rank) $($bp.Name) ($($bp.Position), $($bp.Team)): $($missingLabels -join ', ')"
+            $shownGaps++
+        }
+    }
+}
+Write-Host ""
+Write-Host "Total gaps: $totalGaps QB/RB/WR/TE players missing at least one required line ($shownGaps shown within rank 150)"
 
 # ---- Write js/dk-data.js ---------------------------------------------------------------------
 
