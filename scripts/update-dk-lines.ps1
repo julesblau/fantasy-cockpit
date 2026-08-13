@@ -26,8 +26,12 @@ $gateMins = @{
 # fixed emit order - binding repo-wide (js consumers assume this key sequence)
 $componentOrder = @('passYds', 'passTds', 'rushYds', 'rushTds', 'rec', 'recYds', 'recTds')
 
-# DK raw name -> canonical name, applied before Normalize-AdpName; empty until a real drift is found
-$ALIASES = @{}
+# DK raw name -> canonical (board) name, applied before Normalize-AdpName.
+# DK renders some players by their formal first name; the board uses the nickname it's drafted under.
+$ALIASES = @{
+    'Cameron Skattebo' = 'Cam Skattebo'
+    'Cameron Ward' = 'Cam Ward'
+}
 
 function Fail($msg) {
     Write-Host "ERROR: $msg"
@@ -102,6 +106,7 @@ function Wait-CdpReady($p, $timeoutSec) {
 $blockPattern = 'NFL 2026/27 - (?<name>.+?) Regular Season (?<label>[A-Za-z ]+)\s*\r?\n\s*Over (?<overLine>\d+(?:\.\d+)?)\s*\r?\n\s*(?<overOdds>[+\u2212]?\d+|Even)\s*\r?\n\s*Under (?<underLine>\d+(?:\.\d+)?)\s*\r?\n\s*(?<underOdds>[+\u2212]?\d+|Even)'
 
 $players = @{}
+$playerRawNames = @{}
 $tabCounts = @{}
 $labelsByTab = @{}
 $histogram = @{}
@@ -257,6 +262,7 @@ try {
 
             if (-not $players.ContainsKey($key)) { $players[$key] = @{} }
             $players[$key][$compKey] = $overLine
+            if (-not $playerRawNames.ContainsKey($key)) { $playerRawNames[$key] = $rawName }
         }
     }
 }
@@ -326,7 +332,7 @@ if ($rawEnd -lt 0) {
     Fail("could not find closing '];' for RAW_PLAYERS in js/data.js")
 }
 $rawBlock = $dataJsText.Substring($rawStart, $rawEnd - $rawStart)
-$namePattern = '\[\s*(?:"([^"]+)"|''([^'']+)'')\s*,'
+$namePattern = '\[\s*(?:"([^"]+)"|''([^'']+)'')\s*,\s*''[A-Za-z]+''\s*,\s*''([A-Za-z]+)''\s*\]'
 $nameMatches = [regex]::Matches($rawBlock, $namePattern)
 if ($nameMatches.Count -eq 0) {
     Fail("parsed zero seed player names from RAW_PLAYERS")
@@ -335,10 +341,12 @@ if ($nameMatches.Count -eq 0) {
 Write-Host ""
 Write-Host "RAW_PLAYERS normalization collision check:"
 $seenKeys = @{}
+$seenPositions = @{}
 $collisions = 0
 foreach ($m in $nameMatches) {
     $name = $m.Groups[1].Value
     if (-not $m.Groups[1].Success) { $name = $m.Groups[2].Value }
+    $pos = $m.Groups[3].Value
     $k = Normalize-AdpName $name
     if ($seenKeys.ContainsKey($k)) {
         Write-Host "WARN: RAW_PLAYERS names '$($seenKeys[$k])' and '$name' both normalize to key '$k'"
@@ -346,10 +354,38 @@ foreach ($m in $nameMatches) {
     }
     else {
         $seenKeys[$k] = $name
+        $seenPositions[$k] = $pos
     }
 }
 if ($collisions -eq 0) {
     Write-Host "  no collisions found ($($nameMatches.Count) names checked)"
+}
+
+# ---- Alias-sweep diagnostics: full DK<->board diff for manual nickname/formal-name review ---
+
+$skillPositions = @{ 'QB' = $true; 'RB' = $true; 'WR' = $true; 'TE' = $true }
+
+$dkOnlyKeys = New-Object System.Collections.ArrayList
+foreach ($k in $players.Keys) {
+    if (-not $seenKeys.ContainsKey($k)) {
+        [void]$dkOnlyKeys.Add($playerRawNames[$k])
+    }
+}
+$boardOnlySkillNames = New-Object System.Collections.ArrayList
+foreach ($k in $seenKeys.Keys) {
+    if ($skillPositions.ContainsKey($seenPositions[$k]) -and -not $players.ContainsKey($k)) {
+        [void]$boardOnlySkillNames.Add($seenKeys[$k] + ' (' + $seenPositions[$k] + ')')
+    }
+}
+Write-Host ""
+Write-Host "Alias sweep - DK-scraped names with NO board key match ($($dkOnlyKeys.Count)):"
+foreach ($n in ($dkOnlyKeys | Sort-Object)) {
+    Write-Host "  - $n"
+}
+Write-Host ""
+Write-Host "Alias sweep - board QB/RB/WR/TE names with NO DK key match ($($boardOnlySkillNames.Count)):"
+foreach ($n in ($boardOnlySkillNames | Sort-Object)) {
+    Write-Host "  - $n"
 }
 
 $first60 = $nameMatches | Select-Object -First 60
