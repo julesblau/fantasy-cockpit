@@ -2,7 +2,7 @@
 var CACHE_NAME = 'draft-cockpit-v17';
 // Player headshots/logos: a separate, un-versioned runtime cache -- never wiped by an app-shell bump.
 var IMG_CACHE_NAME = 'draft-cockpit-img-v1';
-var IMG_HOSTS = ['a.espncdn.com', 'sleepercdn.com'];
+var IMG_HOSTS = ['a.espncdn.com', 'sleepercdn.com', 's.yimg.com', 'sportsbook.draftkings.com'];
 var PRECACHE = [
   './', './index.html', './styles.css', './manifest.webmanifest',
   './js/data.js', './js/adp-data.js', './js/dk-data.js', './js/state.js', './js/adp-refresh.js', './js/importer.js', './js/ui.js', './js/edit.js', './js/app.js', './js/compare.js',

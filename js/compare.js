@@ -43,9 +43,24 @@
     return '<span class="player-avatar-box avatar-lg">' + inner + '</span>';
   }
 
+  // live-verified source logos, keyed by adpRowHTML label -- Weighted is ours, not a source, so
+  // it's deliberately absent; DK's own logo is DK_LOGO_URL below (separate hardcoded row)
+  var SRC_LOGOS = {
+    ESPN: 'https://a.espncdn.com/i/espn/misc_logos/500/espn.png',
+    Yahoo: 'https://s.yimg.com/rz/l/favicon.ico',
+    Sleeper: 'https://sleepercdn.com/favicon.ico'
+  };
+  var DK_LOGO_URL = 'https://sportsbook.draftkings.com/apple-touch-icon.png';
+
+  // onerror uses display:none, not the avatar precedent's visibility:hidden class -- a hidden
+  // 14px box would leave a dead gap before the label; display:none collapses it instead
+  function srcLogoHTML(url) {
+    return url ? '<img class="src-logo" src="' + esc(url) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">' : '';
+  }
+
   function adpRowHTML(label, value, extraClass) {
     var cls = 'adp-row' + (extraClass ? ' ' + extraClass : '');
-    return '<div class="' + cls + '"><span class="adp-site">' + esc(label) + '</span><span class="adp-val">' + esc(value) + '</span></div>';
+    return '<div class="' + cls + '"><span class="adp-site">' + srcLogoHTML(SRC_LOGOS[label]) + esc(label) + '</span><span class="adp-val">' + esc(value) + '</span></div>';
   }
 
   // brand glyph, not part of DC.ui's icon set -- single path, viewBox 0 0 24 24
@@ -201,7 +216,7 @@
             adpRowHTML('Sleeper', sleeperVal) +
             adpRowHTML('Weighted', weightedVal, 'adp-row-weighted') +
           '</div>' +
-          '<div class="dk-proj-row"><span class="dk-proj-label">DK Proj</span><span class="dk-proj-val">' + esc(dkProjVal) + '</span></div>' +
+          '<div class="dk-proj-row"><span class="dk-proj-label">' + srcLogoHTML(DK_LOGO_URL) + 'DK Proj</span><span class="dk-proj-val">' + esc(dkProjVal) + '</span></div>' +
           '<div class="compare-card-status">' +
             '<span class="compare-card-status-icons">' + statusIconsHTML + '</span>' +
             xLinkHTML(player) +

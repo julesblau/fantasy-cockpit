@@ -7624,8 +7624,8 @@
         '.player-meta{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
         '.player-meta-card{font-size:12px;display:flex;align-items:center}' +
         '.meta-main{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-        '.adp-badge{background:#3A3A3C;color:#FFFFFF;font-size:11px;font-weight:700;border-radius:5px;padding:1px 5px;margin-left:4px;font-variant-numeric:tabular-nums;vertical-align:middle}' +
-        '.proj-badge{background:none;border:1px solid #3A3A3C;color:rgba(255,255,255,0.60);font-size:11px;font-weight:700;border-radius:5px;padding:0 4px;margin-left:4px;font-variant-numeric:tabular-nums;vertical-align:middle}' +
+        '.adp-badge{background:#8A4FFF;color:#FFFFFF;font-size:11px;font-weight:700;border-radius:5px;padding:1px 5px;margin-left:4px;font-variant-numeric:tabular-nums;vertical-align:middle}' +
+        '.proj-badge{background:#3BE37E;color:#043018;border:none;font-size:11px;font-weight:700;border-radius:5px;padding:1px 5px;margin-left:4px;font-variant-numeric:tabular-nums;vertical-align:middle}' +
         '.signal-tags{display:inline-flex;gap:4px;margin-left:4px;vertical-align:middle}' +
         '.btn-toggle{position:relative;width:32px;height:44px}' +
         '.btn-toggle::after{content:"";position:absolute;top:0;bottom:0;left:-6px;right:-6px}' +
@@ -9063,6 +9063,51 @@
       }
     });
 
+    t('source logos: ESPN/Yahoo/Sleeper adp rows each carry their live-verified .src-logo img (exact src + onerror=display:none, not the avatar visibility:hidden pattern), Weighted carries none', function () {
+      var player = { id: 'logo-fixture', rank: 1, name: 'Logo Fixture Player', team: 'AAA', position: 'WR', byeWeek: 5, tier: null, adp: { espn: 10, yahoo: 12, sleeper: 11 } };
+      var card = { player: player, adp: player.adp, posRank: 1, pickNumber: null, marks: { target: false, avoid: false, drafted: false, mine: false }, verdict: { cls: 'verdict-none', text: 'x' } };
+      var html = DC.compare.templates.cardHTML(card);
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      var rows = wrap.querySelectorAll('.adp-row');
+      assertEq(rows.length, 4, 'sanity: expected 4 adp rows');
+
+      var bySite = {
+        0: ['ESPN', 'https://a.espncdn.com/i/espn/misc_logos/500/espn.png'],
+        1: ['Yahoo', 'https://s.yimg.com/rz/l/favicon.ico'],
+        2: ['Sleeper', 'https://sleepercdn.com/favicon.ico']
+      };
+      Object.keys(bySite).forEach(function (i) {
+        var row = rows[Number(i)];
+        var label = bySite[i][0];
+        var url = bySite[i][1];
+        var img = row.querySelector('.adp-site img.src-logo');
+        assert(img, label + ' row should carry a .src-logo img: ' + row.innerHTML);
+        assertEq(img.getAttribute('src'), url, label + ' logo src should match the live-verified URL');
+        assertEq(img.getAttribute('onerror'), "this.style.display='none'", label + ' logo onerror should display:none');
+        assertEq(img.getAttribute('alt'), '', label + ' logo alt should be empty');
+      });
+
+      var weightedRow = rows[3];
+      assert(weightedRow.classList.contains('adp-row-weighted'), 'sanity: row 3 should be the Weighted row');
+      assert(!weightedRow.querySelector('.src-logo'), 'Weighted row should carry NO .src-logo -- it is ours, not a source: ' + weightedRow.innerHTML);
+    });
+
+    t('DK Proj row (compare.js\'s own hardcoded literal, not adpRowHTML): .dk-proj-label carries its own live-verified .src-logo img, same onerror pattern, textContent still "DK Proj"', function () {
+      var player = { id: 'dk-logo-fixture', rank: 1, name: 'Dk Logo Fixture Player', team: 'AAA', position: 'WR', byeWeek: 5, tier: null, adp: null };
+      var card = { player: player, adp: null, posRank: 1, pickNumber: null, marks: { target: false, avoid: false, drafted: false, mine: false }, verdict: { cls: 'verdict-none', text: 'x' } };
+      var html = DC.compare.templates.cardHTML(card);
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      var label = wrap.querySelector('.dk-proj-label');
+      assert(label, 'sanity: expected .dk-proj-label');
+      var img = label.querySelector('img.src-logo');
+      assert(img, 'DK Proj row should carry a .src-logo img (DraftKings apple-touch-icon, verified live): ' + label.innerHTML);
+      assertEq(img.getAttribute('src'), 'https://sportsbook.draftkings.com/apple-touch-icon.png', 'DK logo src should match the live-verified URL');
+      assertEq(img.getAttribute('onerror'), "this.style.display='none'", 'DK logo onerror should display:none');
+      assertEq(label.textContent, 'DK Proj', 'label textContent should stay "DK Proj" -- the img contributes no text');
+    });
+
     t('5. ADP null fallback: a player whose adp is null renders the em-dash for all four adp-vals', function () {
       var fixture = buildCompareFixture();
       try {
@@ -10074,6 +10119,7 @@
         '.compare-card-ranks{font-size:15px;font-weight:700;margin-top:8px}' +
         '.compare-card-adp{margin-top:8px}' +
         '.adp-row{display:flex;justify-content:space-between;font-size:13px;line-height:20px}' +
+        '.src-logo{width:14px;height:14px;border-radius:3px;margin-right:5px;vertical-align:-2px}' +
         '.adp-row-weighted{border-top:1px solid rgba(255,255,255,0.12);margin-top:3px;padding-top:3px}' +
         '.adp-row-weighted .adp-val{font-weight:800;font-size:15px}' +
         '.dk-proj-row{display:flex;justify-content:space-between;line-height:20px;margin-top:6px;font-size:13px}' +
@@ -10252,6 +10298,54 @@
         });
       } finally {
         window.DC.dkData = realDk;
+        document.head.removeChild(styleTag);
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('compare geometry (binding): source logos don\'t break adp-row layout -- Weighted .adp-val right edge stays inside the card, and the widest logo-bearing row\'s .adp-site rect does not intersect its own .adp-val rect', function () {
+      var fixture = buildCompareGeometryFixture();
+      var styleTag = injectCompareGeometryCSS();
+      try {
+        var probe = { id: 'logo-geo-probe', rank: 1, name: 'X', team: 'KC', position: 'RB', byeWeek: 9, tier: null, adp: { espn: 1234, yahoo: 5678, sleeper: 910 } };
+        var state = {
+          schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+          players: [probe],
+          marks: { 'logo-geo-probe': { drafted: false, target: false, avoid: false, mine: false } },
+          undoStack: [],
+          filters: { position: 'ALL', status: 'AVAILABLE' },
+          searchText: '',
+          manuallyEdited: false,
+          league: null
+        };
+        var store = DC.state.createStore(state);
+        DC.compare.mount(store);
+        DC.compare.open([probe.id]);
+
+        var root = fixture.querySelector('#compare-root');
+        var card = root.querySelector('.compare-card');
+        var cardRect = card.getBoundingClientRect();
+
+        var rows = card.querySelectorAll('.adp-row');
+        assertEq(rows.length, 4, 'sanity: expected 4 adp rows');
+        var weightedRow = rows[3];
+        var weightedValRect = weightedRow.querySelector('.adp-val').getBoundingClientRect();
+        assert(weightedValRect.right <= cardRect.right + 0.5, 'Weighted .adp-val right edge should stay inside the card: valRight=' + weightedValRect.right + ' cardRight=' + cardRect.right);
+
+        var logoRows = Array.prototype.filter.call(rows, function (row) { return row.querySelector('.src-logo'); });
+        assert(logoRows.length === 3, 'sanity: expected exactly 3 logo-bearing rows (ESPN/Yahoo/Sleeper): ' + logoRows.length);
+        var widest = null;
+        logoRows.forEach(function (row) {
+          var siteRect = row.querySelector('.adp-site').getBoundingClientRect();
+          if (!widest || siteRect.width > widest.siteRect.width) {
+            widest = { row: row, siteRect: siteRect };
+          }
+        });
+        var valRect = widest.row.querySelector('.adp-val').getBoundingClientRect();
+        var overlap = widest.siteRect.right > valRect.left && valRect.right > widest.siteRect.left && widest.siteRect.bottom > valRect.top && valRect.bottom > widest.siteRect.top;
+        assert(!overlap, 'widest logo-bearing .adp-site rect should not intersect its own .adp-val rect: siteRect=' + JSON.stringify({ left: widest.siteRect.left, right: widest.siteRect.right }) + ' valRect=' + JSON.stringify({ left: valRect.left, right: valRect.right }));
+      } finally {
         document.head.removeChild(styleTag);
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);

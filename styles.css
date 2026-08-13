@@ -21,6 +21,8 @@
   --tier-c4: #5E5CE6;
   --tier-c5: #66D4CF;
   --tier-c6: #8E8E93;
+  --badge-adp: #8A4FFF;
+  --badge-proj: #3BE37E;
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
   --radius-chip: 9999px;
   --radius-card: 12px;
@@ -559,8 +561,8 @@ button.player-rank {
 /* bare-number ADP badge on the metrics line — no "ADP" label, so it never clips on rows with a
    2-digit bye + 2-digit ADP; margin-left is its separator, not a middot */
 .adp-badge {
-  background: var(--surface-3);
-  color: var(--text-1);
+  background: var(--badge-adp);
+  color: #FFFFFF;
   font-size: 11px;
   font-weight: 700;
   border-radius: 5px;
@@ -570,17 +572,17 @@ button.player-rank {
   vertical-align: middle;
 }
 
-/* outlined twin of .adp-badge -- the 1px border replaces the badge's 1px vertical padding so
-   both stay equal height; suppressed by metricsLineHTML when the row already carries both
-   signal tags (redundant number, avoids a measured overflow at the 390px floor) */
+/* filled twin of .adp-badge -- padding 1px 5px matches it exactly (no border, unlike the old
+   outlined version) so height/width don't shift; suppressed by metricsLineHTML when the row
+   already carries both signal tags (redundant number, avoids a measured overflow at the 390px floor) */
 .proj-badge {
-  background: none;
-  border: 1px solid var(--surface-3);
-  color: var(--text-2);
+  background: var(--badge-proj);
+  color: #043018;
+  border: none;
   font-size: 11px;
   font-weight: 700;
   border-radius: 5px;
-  padding: 0 4px;
+  padding: 1px 5px;
   margin-left: 4px;
   font-variant-numeric: tabular-nums;
   vertical-align: middle;
@@ -1160,6 +1162,7 @@ button.player-rank {
 .adp-row { display: flex; justify-content: space-between; font-size: 13px; line-height: 20px; }
 .adp-site { color: var(--text-3); }
 .adp-val { font-variant-numeric: tabular-nums; }
+.src-logo { width: 14px; height: 14px; border-radius: 3px; margin-right: 5px; vertical-align: -2px; }
 .adp-row-weighted { border-top: 1px solid var(--hairline); margin-top: 3px; padding-top: 3px; }
 .adp-row-weighted .adp-site { color: var(--text-1); font-weight: 700; }
 .adp-row-weighted .adp-val { font-weight: 800; font-size: 15px; }
