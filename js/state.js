@@ -988,7 +988,7 @@
     return adpOverride ? adpOverride.updatedAt : (DC.adpData ? DC.adpData.updatedAt : null);
   }
 
-  var ADP_WEIGHTS = { espn: 0.35, yahoo: 0.20, sleeper: 0.45 }; // market-sharpness weighting; sleeper heaviest
+  var ADP_WEIGHTS = { espn: 0.30, yahoo: 0.10, sleeper: 0.60 }; // market-sharpness weighting; sleeper heaviest
 
   /**
    * @param {Player} player

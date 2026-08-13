@@ -175,7 +175,7 @@ powershell -File scripts\run-tests.ps1
 
 Then bump `CACHE_NAME` in `sw.js` (v17, v18, ...), update the release reminder above, commit, and deploy. Your phone picks up the new numbers on the second online open, same as any other update (see Install on iPhone, above).
 
-Sources are weighted, not averaged equally -- Sleeper 45%, ESPN 35%, Yahoo 20%. The weighting lives in one constant, `ADP_WEIGHTS` in `js/state.js`, if you ever want to tilt it further toward one site.
+Sources are weighted, not averaged equally -- Sleeper 60%, ESPN 30%, Yahoo 10%. The weighting lives in one constant, `ADP_WEIGHTS` in `js/state.js`, if you ever want to tilt it further toward one site.
 
 ## DK Proj
 
