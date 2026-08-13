@@ -9576,7 +9576,7 @@
         '.adp-row-weighted .adp-val{font-weight:800;font-size:15px}' +
         '.compare-card-status{margin-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:13px}' +
         '.compare-card-status-icons{display:flex;gap:8px;align-items:center}' +
-        '.compare-x-link{display:inline-flex;align-items:center;justify-content:center;box-sizing:content-box;width:18px;height:18px;padding:13px;margin:-13px}' +
+        '.compare-x-link{display:inline-flex;align-items:center;justify-content:center;box-sizing:content-box;width:18px;height:18px;padding:13px 9px 13px 17px;margin:-13px -9px -13px -17px}' +
         '.compare-verdict{margin-top:8px;font-size:13px;font-weight:700;line-height:17px;padding:6px 8px;border-radius:8px}' +
         '.compare-empty-cell{border:1px dashed rgba(255,255,255,0.12);border-radius:12px;padding:12px}';
       document.head.appendChild(style);
@@ -9725,6 +9725,20 @@
 
           var verdictRect = cardEl.querySelector('.compare-verdict').getBoundingClientRect();
           assert(verdictRect.bottom <= cardRect.bottom + 0.5, 'card ' + i + ' verdict box bottom should sit inside the card: verdictBottom=' + verdictRect.bottom + ' cardBottom=' + cardRect.bottom);
+
+          // .compare-card has overflow:hidden, which clips both painting AND hit-testing -- the
+          // link's own rect can extend past the card's edge (its hit-target trick trades padding
+          // for margin), so what's ACTUALLY clickable is the intersection of the two rects, not
+          // the link's own rect. Must stay >=44x44 (Apple HIG tap-target floor).
+          var linkRect = cardEl.querySelector('.compare-x-link').getBoundingClientRect();
+          var ixLeft = Math.max(linkRect.left, cardRect.left);
+          var ixRight = Math.min(linkRect.right, cardRect.right);
+          var ixTop = Math.max(linkRect.top, cardRect.top);
+          var ixBottom = Math.min(linkRect.bottom, cardRect.bottom);
+          var ixWidth = ixRight - ixLeft;
+          var ixHeight = ixBottom - ixTop;
+          assert(ixWidth >= 44, 'card ' + i + ' X-link hit target, clipped to the card, should be >=44px wide: ' + ixWidth.toFixed(2) + ' (linkRect=' + JSON.stringify({ left: linkRect.left, right: linkRect.right }) + ' cardRect=' + JSON.stringify({ left: cardRect.left, right: cardRect.right }) + ')');
+          assert(ixHeight >= 44, 'card ' + i + ' X-link hit target, clipped to the card, should be >=44px tall: ' + ixHeight.toFixed(2));
         });
       } finally {
         document.head.removeChild(styleTag);

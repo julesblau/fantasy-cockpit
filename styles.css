@@ -1122,7 +1122,7 @@ button.player-rank {
 .adp-row-weighted .adp-val { font-weight: 800; font-size: 15px; }
 .compare-card-status { margin-top: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text-2); }
 .compare-card-status-icons { display: flex; gap: 8px; align-items: center; }
-.compare-x-link { display: inline-flex; align-items: center; justify-content: center; box-sizing: content-box; width: 18px; height: 18px; padding: 13px; margin: -13px; color: var(--text-3); }
+.compare-x-link { display: inline-flex; align-items: center; justify-content: center; box-sizing: content-box; width: 18px; height: 18px; padding: 13px 9px 13px 17px; margin: -13px -9px -13px -17px; color: var(--text-3); }
 .compare-verdict { margin-top: 8px; font-size: 13px; font-weight: 700; line-height: 17px; padding: 6px 8px; border-radius: 8px; }
 .verdict-red { color: var(--accent-avoid); }
 .verdict-orange { color: var(--accent-undo); }
