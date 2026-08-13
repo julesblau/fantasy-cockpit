@@ -471,6 +471,15 @@ button.player-rank {
   visibility: hidden;
 }
 
+/* enlarges the avatar's tap target to ~40x40 without changing row layout (net 0: negative
+   margin pulls neighbors back in, padding pushes the box back out) */
+.avatar-tap {
+  display: inline-flex;
+  flex: none;
+  margin: -6px -6px;
+  padding: 6px 6px;
+}
+
 .player-info {
   flex: 1;
   min-width: 0;
@@ -1106,6 +1115,11 @@ button.player-rank {
 #edit-root.leaving {
   pointer-events: none;
 }
+
+/* photo-tap peek popup: scrim + one compare-style card floating over the board */
+#peek-root { position: absolute; inset: 0; z-index: 24; }
+#peek-root[hidden] { display: none; }
+.peek-card { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(85%, 340px); }
 
 /* compare screen (never coexists with edit-root, hence the shared z-index tier) */
 #compare-root { position: absolute; inset: 0; background: var(--bg-base); z-index: 22; display: flex; flex-direction: column; }

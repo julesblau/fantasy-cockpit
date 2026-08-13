@@ -170,6 +170,12 @@
     return '<span class="player-avatar-box">' + inner + '</span>';
   }
 
+  // wraps avatarHTML in a peek tap target -- carries data-action so the compare-select
+  // long-press recognizer bails on it (listEl pointerdown, see mount() below)
+  function avatarTapHTML(view) {
+    return '<span class="avatar-tap" data-action="peek" data-id="' + esc(view.id) + '" role="button" aria-label="Show player card">' + avatarHTML(view) + '</span>';
+  }
+
   // shared by all three main-board row templates — the two-line pos-rank badge is gone here
   // (posRank moved to metricsLineHTML's bold leading token); edit.js keeps its own two-line
   // rank-position/rank-overall badge in editRowHTML, untouched.
@@ -199,7 +205,7 @@
         tierStripHTML(view.tier) +
         '<div class="player-row-body">' +
           cardRankHTML(view) +
-          avatarHTML(view) +
+          avatarTapHTML(view) +
           '<div class="player-info">' +
             '<div class="player-name">' + esc(view.name) + '</div>' +
             '<div class="player-meta player-meta-card">' + metricsLineHTML(view, ctx) + signalTagsHTML(view.id, ctx.signals) + '</div>' +
@@ -225,7 +231,7 @@
         tierStripHTML(view.tier) +
         '<div class="player-row-body">' +
           cardRankHTML(view) +
-          avatarHTML(view) +
+          avatarTapHTML(view) +
           '<div class="player-info">' +
             '<div class="player-name">' + esc(view.name) + '</div>' +
             '<div class="player-meta player-meta-card">' + metricsLineHTML(view, ctx) + '</div>' +
@@ -254,7 +260,7 @@
         tierStripHTML(view.tier) +
         '<div class="player-row-body">' +
           cardRankHTML(view) +
-          avatarHTML(view) +
+          avatarTapHTML(view) +
           '<div class="player-info">' +
             '<div class="player-name">' +
               '<span style="display:inline-flex;width:16px;height:16px;vertical-align:-3px;color:var(--accent-draft);margin-right:4px">' + icon('check', 16) + '</span>' +
@@ -502,6 +508,22 @@
       trayEl = document.createElement('div');
       trayEl.id = 'compare-tray';
       appEl.insertBefore(trayEl, bottomBarEl);
+    }
+
+    // photo-tap peek popup -- direct child of #app, same structural slot as #edit-root/#compare-root
+    var peekRoot = document.getElementById('peek-root');
+    if (!peekRoot) {
+      peekRoot = document.createElement('div');
+      peekRoot.id = 'peek-root';
+      peekRoot.hidden = true;
+      peekRoot.innerHTML = '<div class="scrim" data-action="peek-close"></div><div class="peek-card"></div>';
+      appEl.appendChild(peekRoot);
+    }
+    var peekCardEl = peekRoot.querySelector('.peek-card');
+
+    function closePeek() {
+      peekRoot.hidden = true;
+      peekCardEl.innerHTML = '';
     }
 
     // ---- static DOM, built once ----
@@ -1074,6 +1096,25 @@
         }
         case 'open-compare':
           DC.compare.open(compareIds.slice(), { onRemove: onCompareRemove });
+          break;
+        case 'peek': {
+          var card = DC.compare.templates.buildCards(store.getState(), [id])[0];
+          if (!card) {
+            break; // stale/unknown id -- silent no-op
+          }
+          peekCardEl.innerHTML = DC.compare.templates.cardHTML(card, { xAria: 'Close' });
+          peekRoot.hidden = false;
+          break;
+        }
+        case 'peek-close':
+          closePeek();
+          break;
+        case 'compare-remove-card':
+          // only ours to handle when the click originated inside the peek popup -- the real
+          // compare screen's own X is handled by compare.js's #compare-root-scoped listener
+          if (target.closest('#peek-root')) {
+            closePeek();
+          }
           break;
         case 'set-position': {
           var pos = target.getAttribute('data-position');

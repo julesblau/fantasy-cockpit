@@ -7319,6 +7319,7 @@
         '.player-rank{width:36px}' +
         '#player-list .player-rank{width:26px;text-align:center}' +
         '.player-avatar-box{width:28px;height:28px;flex:none}' +
+        '.avatar-tap{display:inline-flex;flex:none;margin:-6px -6px;padding:6px 6px}' +
         '.player-info{flex:1;min-width:0}' +
         '.player-name{font-size:17px;font-weight:600;line-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
         '#player-list .player-name{font-size:15px;line-height:18px}' +
@@ -7596,6 +7597,46 @@
 
         var rowRect = row.getBoundingClientRect();
         assert(rowRect.width <= 358.5, 'the card itself must not widen to accommodate the overflow: ' + rowRect.width);
+      } finally {
+        document.head.removeChild(styleTag);
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    // hit-bleed isolation: a 2-row real fixture (tier strip + body per row, stacked with gap:0
+    // as in the real #player-list) -- the enlarged .avatar-tap must stay inside its own row's
+    // .player-row-body, never reaching into the tier strip above it or the next row's body below.
+    t('avatar-tap hit-bleed isolation: the enlarged avatar tap target stays inside its own row\'s .player-row-body -- never overlapping the tier strip above or an adjacent row\'s body', function () {
+      var fixture = buildPinned390FixtureCard();
+      var styleTag = injectRowGeometryCSS();
+      try {
+        var view1 = { id: 'bleed1', rank: 1, name: 'Bleed Fixture One', team: 'KC', position: 'RB', byeWeek: 9, tier: 1, drafted: false, target: false, avoid: false };
+        var view2 = { id: 'bleed2', rank: 2, name: 'Bleed Fixture Two', team: 'SEA', position: 'WR', byeWeek: 11, tier: 1, drafted: false, target: false, avoid: false };
+        fixture.querySelector('#player-list').innerHTML =
+          DC.ui.templates.availableRowHTML(view1, {}) +
+          DC.ui.templates.availableRowHTML(view2, {});
+
+        var rows = fixture.querySelectorAll('#player-list .player-row');
+        assertEq(rows.length, 2, 'sanity: expected 2 rows in the fixture');
+
+        var row1 = rows[0];
+        var row2 = rows[1];
+        var tap1 = row1.querySelector('.avatar-tap');
+        var body1 = row1.querySelector('.player-row-body');
+        var strip1 = row1.querySelector('.tier-strip');
+        var body2 = row2.querySelector('.player-row-body');
+        assert(strip1, 'sanity: row 1 should carry a tier strip to test against');
+
+        var tapRect = tap1.getBoundingClientRect();
+        var bodyRect = body1.getBoundingClientRect();
+        var stripRect = strip1.getBoundingClientRect();
+        var body2Rect = body2.getBoundingClientRect();
+
+        assert(tapRect.top >= bodyRect.top - 0.5, 'avatar-tap must not bleed above its own row-body: tapRect.top=' + tapRect.top + ' bodyRect.top=' + bodyRect.top);
+        assert(tapRect.bottom <= bodyRect.bottom + 0.5, 'avatar-tap must not bleed below its own row-body: tapRect.bottom=' + tapRect.bottom + ' bodyRect.bottom=' + bodyRect.bottom);
+        assert(tapRect.top >= stripRect.bottom - 0.5, 'avatar-tap must never overlap the tier strip above: tapRect.top=' + tapRect.top + ' stripRect.bottom=' + stripRect.bottom);
+        assert(tapRect.bottom <= body2Rect.top + 0.5, 'avatar-tap must never reach into the next row\'s body: tapRect.bottom=' + tapRect.bottom + ' body2Rect.top=' + body2Rect.top);
       } finally {
         document.head.removeChild(styleTag);
         document.body.removeChild(fixture);
@@ -8340,6 +8381,36 @@
         assert(!qbTile.classList.contains('is-compared'), 'a roster tile must never gain is-compared');
         var tray = fixture.querySelector('#compare-tray');
         assert(!tray || tray.innerHTML === '', 'compare tray should stay empty');
+      } finally {
+        timers.restore();
+        compare.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('15. gesture coexistence: pointerdown on .avatar-tap + flush no longer arms the compare hold (deliberate -- the photo now opens the peek instead); pointerdown on .player-name + flush still arms it, unaffected', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        var tray = fixture.querySelector('#compare-tray');
+
+        row.querySelector('.avatar-tap').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0, clientX: 0, clientY: 0 }));
+        timers.flushOne();
+
+        assert(!row.classList.contains('is-compared'), 'a pointerdown on .avatar-tap must not arm the compare recognizer');
+        assertEq(tray.innerHTML, '', 'tray should stay empty after a photo pointerdown');
+
+        row.querySelector('.player-name').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 2, button: 0, clientX: 0, clientY: 0 }));
+        timers.flushOne();
+
+        assert(row.classList.contains('is-compared'), '.player-name should still arm the compare recognizer exactly as before');
+        assertEq(tray.querySelectorAll('.compare-chip').length, 1, 'expected 1 chip after the name long-press fires');
       } finally {
         timers.restore();
         compare.restore();
@@ -9774,6 +9845,175 @@
         localStorage.removeItem(DC.state.STORAGE_KEY);
       }
     });
+
+    // peek guard regression (Round 14 Task 3): ui.js's own appEl click listener now carries a
+    // 'compare-remove-card' case too (for closing the peek popup) -- clicks on the REAL compare
+    // screen's own X also bubble through appEl and carry that same action, so the case MUST stay
+    // guarded to #peek-root or it would hijack compare.js's own #compare-root-scoped handling.
+    t('peek/compare guard regression: opening the real compare screen (DC.compare.open, 2 ids) and clicking a card\'s own X there removes it exactly as before -- onRemove fires once, #peek-root (created by DC.ui.mount) stays hidden throughout', function () {
+      var fixture = buildUiCompareFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        DC.compare.mount(store);
+
+        var id0 = DC.data.SEED_PLAYERS[0].id;
+        var id1 = DC.data.SEED_PLAYERS[1].id;
+        var onRemoveCalls = [];
+        DC.compare.open([id0, id1], { onRemove: function (id) { onRemoveCalls.push(id); } });
+
+        var compareRoot = fixture.querySelector('#compare-root');
+        assertEq(compareRoot.hidden, false, 'sanity: compare-root should be open');
+        assertEq(compareRoot.querySelectorAll('.compare-card').length, 2, 'sanity: 2 cards open');
+
+        var peekRoot = fixture.querySelector('#peek-root');
+        assert(peekRoot, 'expected DC.ui.mount to have created #peek-root as a sibling of #compare-root');
+        assertEq(peekRoot.hidden, true, 'sanity: peek-root should start hidden');
+
+        compareRoot.querySelector('.compare-card[data-id="' + id0 + '"] .compare-card-x').click();
+
+        assertEq(onRemoveCalls, [id0], 'onRemove should fire exactly once, for the removed card\'s id -- an unguarded case would double-fire or otherwise hijack this');
+        assertEq(compareRoot.querySelectorAll('.compare-card').length, 1, 'the real compare screen should still remove the card exactly as before');
+        assertEq(peekRoot.hidden, true, 'the guarded case must never touch #peek-root for a click that originated inside #compare-root');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+  })();
+  </script>
+
+  <!-- Round 14 Task 3: photo-tap peek popup -- tapping a main-board row's headshot pops that
+       player's full compare-style card over the board -->
+  <script>
+  (function () {
+    'use strict';
+    section('peek');
+
+    // duplicated from the compare-select/compare sections above -- per-file/per-section helper
+    // duplication is the established convention here.
+    function buildMountFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function openPeekFor(fixture, playerId) {
+      var tap = fixture.querySelector('.player-row[data-id="' + playerId + '"] .avatar-tap');
+      tap.click();
+      return fixture.querySelector('#peek-root');
+    }
+
+    t('1. tap a row\'s avatar -> #peek-root unhidden with exactly 1 .compare-card matching the tapped player; card X aria-label is "Close"', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        var player = DC.data.SEED_PLAYERS[0];
+        var peekRoot = openPeekFor(fixture, player.id);
+
+        assert(peekRoot, 'expected #peek-root to exist (created by DC.ui.mount)');
+        assertEq(peekRoot.hidden, false, 'peek-root should be unhidden after a peek tap');
+        var cards = peekRoot.querySelectorAll('.compare-card');
+        assertEq(cards.length, 1, 'expected exactly 1 compare-card in the peek popup');
+        assertEq(cards[0].querySelector('.compare-card-name').textContent, player.name, 'peek card should match the tapped player');
+        var xBtn = peekRoot.querySelector('.compare-card-x');
+        assertEq(xBtn.getAttribute('aria-label'), 'Close', 'peek card X aria-label should be "Close", not the compare-screen default');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('2. scrim click ([data-action="peek-close"]) closes the peek: root hidden, .peek-card emptied', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        var player = DC.data.SEED_PLAYERS[0];
+        var peekRoot = openPeekFor(fixture, player.id);
+        assertEq(peekRoot.hidden, false, 'sanity: peek should be open before the scrim click');
+
+        peekRoot.querySelector('.scrim').click();
+
+        assertEq(peekRoot.hidden, true, 'peek-root should be hidden after a scrim click');
+        assertEq(peekRoot.querySelector('.peek-card').innerHTML, '', '.peek-card should be emptied on close');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('3. card X click inside #peek-root closes the peek: root hidden, .peek-card emptied', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        var player = DC.data.SEED_PLAYERS[0];
+        var peekRoot = openPeekFor(fixture, player.id);
+        assertEq(peekRoot.hidden, false, 'sanity: peek should be open before the card X click');
+
+        peekRoot.querySelector('.compare-card-x').click();
+
+        assertEq(peekRoot.hidden, true, 'peek-root should be hidden after the card X is clicked');
+        assertEq(peekRoot.querySelector('.peek-card').innerHTML, '', '.peek-card should be emptied on close');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('4. stale id: an avatar-tap whose data-id is not in state is a silent no-op -- root stays hidden, no throw', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        var row = fixture.querySelector('.player-row');
+        var tap = row.querySelector('.avatar-tap');
+        tap.setAttribute('data-id', 'does-not-exist-in-state');
+
+        tap.click(); // must not throw
+
+        var peekRoot = fixture.querySelector('#peek-root');
+        assertEq(peekRoot.hidden, true, 'peek-root should stay hidden for a stale/unknown id');
+        assertEq(peekRoot.querySelector('.peek-card').innerHTML, '', '.peek-card should stay empty for a stale/unknown id');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('5. the X search anchor inside the peek card carries target="_blank" -- keeps navigating from inside the peek (no navigation actually exercised here)', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        var player = DC.data.SEED_PLAYERS[0];
+        var peekRoot = openPeekFor(fixture, player.id);
+
+        var xLink = peekRoot.querySelector('.compare-x-link');
+        assert(xLink, 'expected the X search link inside the peek card');
+        assertEq(xLink.getAttribute('target'), '_blank', 'X search link should open in a new tab, unaffected by living inside the peek');
+        assertEq(xLink.tagName, 'A', 'the X search link must stay a real anchor so it keeps navigating');
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
   })();
   </script>
 
@@ -10600,6 +10840,18 @@
         } finally {
           window.DC.adpData = real;
         }
+      });
+
+      t(label + ': the avatar is wrapped in .avatar-tap[data-action="peek"] carrying the matching data-id', function () {
+        var view = avatarFixturePlayer();
+        var html = render(view);
+        var wrap = document.createElement('div');
+        wrap.innerHTML = html;
+        var tap = wrap.querySelector('.avatar-tap');
+        assert(tap, label + ' should render .avatar-tap: ' + html);
+        assertEq(tap.getAttribute('data-action'), 'peek', label + ' avatar-tap should carry data-action="peek"');
+        assertEq(tap.getAttribute('data-id'), view.id, label + ' avatar-tap data-id should match the player id');
+        assert(tap.querySelector('.player-avatar-box'), label + ' avatar-tap should wrap .player-avatar-box: ' + html);
       });
     });
 
