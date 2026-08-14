@@ -1219,7 +1219,7 @@
           adpRefreshBtn.textContent = 'Refreshing…';
           DC.adpRefresh.run().then(function () {
             adpNoteSlot.innerHTML = adpNoteInnerHTML();
-            setAdpRefreshStatus('Sleeper + ESPN refreshed (Yahoo updates with deploys)');
+            setAdpRefreshStatus('Sleeper + ESPN refreshed (Flock + Underdog update with re-bakes)');
           }, function (err) {
             setAdpRefreshStatus(err && err.message ? err.message : String(err));
           }).then(function () {

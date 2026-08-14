@@ -6260,8 +6260,8 @@
     function makeValuePlayers() {
       var arr = [];
       for (var i = 1; i <= 250; i++) {
-        // adp consensus == i via three equal-valued sites, so the drift/ceiling arithmetic below reads the same as the old rank-based version
-        arr.push({ id: 'v' + i, rank: i, name: 'V ' + i, team: 'KC', position: 'RB', byeWeek: 9, tier: null, adp: { espn: i, yahoo: i, sleeper: i } });
+        // adp consensus == i via four equal-valued sites, so the drift/ceiling arithmetic below reads the same as the old rank-based version
+        arr.push({ id: 'v' + i, rank: i, name: 'V ' + i, team: 'KC', position: 'RB', byeWeek: 9, tier: null, adp: { flock: i, sleeper: i, underdog: i, espn: i } });
       }
       arr.push({ id: 'vnoadp', rank: 5, name: 'V NoADP', team: 'KC', position: 'RB', byeWeek: 9, tier: null }); // no adp field -> consensus null
       return arr;
@@ -6824,8 +6824,8 @@
       function addPlayer(id, position, tier, adp) {
         players.push({ id: id, rank: players.length + 1, name: id, team: 'KC', position: position, byeWeek: 9, tier: tier === undefined ? null : tier, adp: adp });
       }
-      addPlayer('valDrift1', 'RB', null, { espn: 1, yahoo: 1, sleeper: 1 }); // rank1, consensus 1 — stays available, drift-eligible -> VALUE only
-      addPlayer('val1', 'RB', null, { espn: 2, yahoo: 2, sleeper: 2 }); // rank2, consensus 2 — stays available, drift-eligible -> VALUE only
+      addPlayer('valDrift1', 'RB', null, { flock: 1, sleeper: 1, underdog: 1, espn: 1 }); // rank1, consensus 1 — stays available, drift-eligible -> VALUE only
+      addPlayer('val1', 'RB', null, { flock: 2, sleeper: 2, underdog: 2, espn: 2 }); // rank2, consensus 2 — stays available, drift-eligible -> VALUE only
       addPlayer('wrA', 'WR', 1); // rank3, no adp -> consensus null — gets drafted, leaving wrB as the sole tier-1 WR
       addPlayer('wrB', 'WR', 1); // rank4, no adp -> consensus null — stays available -> CLIFF only (not drift-eligible)
       for (var i = 1; i <= 17; i++) {
@@ -9015,9 +9015,9 @@
       return fillers;
     }
 
-    // hand-rolled fixture player: all 3 adp sites equal `a`, so adpConsensus derives to exactly `a`
+    // hand-rolled fixture player: all 4 adp sites equal `a`, so adpConsensus derives to exactly `a`
     function verdictFixturePlayer(id, a) {
-      return { id: id, rank: 1, name: id, team: 'AAA', position: 'RB', byeWeek: 5, tier: null, adp: (a === null ? null : { espn: a, yahoo: a, sleeper: a }) };
+      return { id: id, rank: 1, name: id, team: 'AAA', position: 'RB', byeWeek: 5, tier: null, adp: (a === null ? null : { flock: a, sleeper: a, underdog: a, espn: a }) };
     }
 
     function buildVerdictFixtureState(players, draftedIds, league) {
@@ -9099,14 +9099,14 @@
       }
     });
 
-    t('4. card content: name, abbreviated B + byeWeek in meta, #rank and POS+posRank in ranks, tier chip class, the three adp-vals match the seeded per-site values, Weighted is the weighted consensus, and .dk-proj-row sits after .compare-card-adp and before .compare-card-status', function () {
+    t('4. card content: name, abbreviated B + byeWeek in meta, #rank and POS+posRank in ranks, tier chip class, the four source adp-vals match the seeded per-site values in Flock/Sleeper/Underdog/ESPN order, Weighted is the weighted consensus, and .dk-proj-row sits after .compare-card-adp and before .compare-card-status', function () {
       var fixture = buildCompareFixture();
       var realDk = window.DC.dkData;
       try {
         // full 5/5 RB required set: 1000/10=100 + 5*6=30 + 20*1=20 + 100/10=10 + 5*6=30 -> 190
         window.DC.dkData = { players: { 'cardcontentone': { rushYds: 1000, rushTds: 5, rec: 20, recYds: 100, recTds: 5 } } };
         var players = [
-          { id: 'cc-1', rank: 3, name: 'Card Content One', team: 'AAA', position: 'RB', byeWeek: 5, tier: 2, adp: { espn: 4.8, yahoo: 6, sleeper: 4.8 } },
+          { id: 'cc-1', rank: 3, name: 'Card Content One', team: 'AAA', position: 'RB', byeWeek: 5, tier: 2, adp: { flock: 10, sleeper: 8, underdog: 6, espn: 4 } },
           { id: 'cc-2', rank: 4, name: 'Card Content Two', team: 'AAA', position: 'RB', byeWeek: 5, tier: null, adp: null } // name unkeyed in dkData -> null dk
         ];
         var marks = {
@@ -9151,15 +9151,16 @@
         }
 
         var adpVals = card.querySelectorAll('.adp-val');
-        assertEq(adpVals.length, 4, 'expected exactly 4 adp rows (ESPN/Yahoo/Sleeper/Weighted)');
-        assertEq(adpVals[0].textContent, String(p.adp.espn), 'ESPN adp value should match fixture');
-        assertEq(adpVals[1].textContent, String(p.adp.yahoo), 'Yahoo adp value should match fixture');
-        assertEq(adpVals[2].textContent, String(p.adp.sleeper), 'Sleeper adp value should match fixture');
-        // equal-value fixture: espn=sleeper=4.8 -> weighted=4.8 under any ADP_WEIGHTS blend (yahoo
-        // is a dead legacy key here -- adpConsensus no longer weights it, only displays it raw above)
-        assertEq(adpVals[3].textContent, '4.8', 'Weighted adp value should equal the weighted consensus');
+        assertEq(adpVals.length, 5, 'expected exactly 5 adp rows (Flock/Sleeper/Underdog/ESPN/Weighted)');
+        assertEq(adpVals[0].textContent, String(p.adp.flock), 'Flock adp value should match fixture');
+        assertEq(adpVals[1].textContent, String(p.adp.sleeper), 'Sleeper adp value should match fixture');
+        assertEq(adpVals[2].textContent, String(p.adp.underdog), 'Underdog adp value should match fixture');
+        assertEq(adpVals[3].textContent, String(p.adp.espn), 'ESPN adp value should match fixture');
+        // distinct per-site values under the real ADP_WEIGHTS blend (flock .30/sleeper .30/underdog .25/espn .15):
+        // 0.30*10 + 0.30*8 + 0.25*6 + 0.15*4 = 3 + 2.4 + 1.5 + 0.6 = 7.5
+        assertEq(adpVals[4].textContent, '7.5', 'Weighted adp value should equal the weighted consensus');
 
-        var weightedRow = card.querySelectorAll('.compare-card-adp .adp-row')[3];
+        var weightedRow = card.querySelectorAll('.compare-card-adp .adp-row')[4];
         assert(weightedRow.classList.contains('adp-row-weighted'), 'the Weighted row should carry adp-row-weighted');
 
         var inner = card.querySelector('.compare-card-inner');
@@ -9190,19 +9191,20 @@
       }
     });
 
-    t('source logos: ESPN/Yahoo/Sleeper adp rows each carry their live-verified .src-logo img (exact src + onerror=display:none, not the avatar visibility:hidden pattern), Weighted carries none', function () {
-      var player = { id: 'logo-fixture', rank: 1, name: 'Logo Fixture Player', team: 'AAA', position: 'WR', byeWeek: 5, tier: null, adp: { espn: 10, yahoo: 12, sleeper: 11 } };
+    t('source logos: Flock/Sleeper/Underdog/ESPN adp rows each carry their live-verified .src-logo img (exact src + onerror=display:none, not the avatar visibility:hidden pattern), Weighted carries none', function () {
+      var player = { id: 'logo-fixture', rank: 1, name: 'Logo Fixture Player', team: 'AAA', position: 'WR', byeWeek: 5, tier: null, adp: { flock: 9, sleeper: 11, underdog: 13, espn: 10 } };
       var card = { player: player, adp: player.adp, posRank: 1, pickNumber: null, marks: { target: false, avoid: false, drafted: false, mine: false }, verdict: { cls: 'verdict-none', text: 'x' } };
       var html = DC.compare.templates.cardHTML(card);
       var wrap = document.createElement('div');
       wrap.innerHTML = html;
       var rows = wrap.querySelectorAll('.adp-row');
-      assertEq(rows.length, 4, 'sanity: expected 4 adp rows');
+      assertEq(rows.length, 5, 'sanity: expected 5 adp rows');
 
       var bySite = {
-        0: ['ESPN', 'https://a.espncdn.com/i/espn/misc_logos/500/espn.png'],
-        1: ['Yahoo', 'https://s.yimg.com/rz/l/favicon.ico'],
-        2: ['Sleeper', 'https://sleepercdn.com/favicon.ico']
+        0: ['Flock', 'https://flockfantasy.com/favicon.ico'],
+        1: ['Sleeper', 'https://sleepercdn.com/favicon.ico'],
+        2: ['Underdog', 'https://cdn.prod.website-files.com/67d86be30d981ef8b914a00d/67d86be30d981ef8b914a10e_small-fav.png'],
+        3: ['ESPN', 'https://a.espncdn.com/i/espn/misc_logos/500/espn.png']
       };
       Object.keys(bySite).forEach(function (i) {
         var row = rows[Number(i)];
@@ -9215,9 +9217,25 @@
         assertEq(img.getAttribute('alt'), '', label + ' logo alt should be empty');
       });
 
-      var weightedRow = rows[3];
-      assert(weightedRow.classList.contains('adp-row-weighted'), 'sanity: row 3 should be the Weighted row');
+      var weightedRow = rows[4];
+      assert(weightedRow.classList.contains('adp-row-weighted'), 'sanity: row 4 should be the Weighted row');
       assert(!weightedRow.querySelector('.src-logo'), 'Weighted row should carry NO .src-logo -- it is ours, not a source: ' + weightedRow.innerHTML);
+    });
+
+    t('.compare-card-adp holds exactly 4 non-weighted .adp-row plus 1 .adp-row-weighted (last, full-width grid span), and cardHTML output never mentions Yahoo', function () {
+      var player = { id: 'grid-shape-fixture', rank: 1, name: 'Grid Shape Fixture', team: 'AAA', position: 'WR', byeWeek: 5, tier: null, adp: { flock: 5, sleeper: 6, underdog: 7, espn: 8 } };
+      var card = { player: player, adp: player.adp, posRank: 1, pickNumber: null, marks: { target: false, avoid: false, drafted: false, mine: false }, verdict: { cls: 'verdict-none', text: 'x' } };
+      var html = DC.compare.templates.cardHTML(card);
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      var adpBlock = wrap.querySelector('.compare-card-adp');
+      var allRows = adpBlock.querySelectorAll('.adp-row');
+      var weightedRows = adpBlock.querySelectorAll('.adp-row-weighted');
+      assertEq(allRows.length, 5, 'expected 5 total .adp-row elements (4 sources + Weighted)');
+      assertEq(weightedRows.length, 1, 'expected exactly 1 .adp-row-weighted');
+      assertEq(allRows.length - weightedRows.length, 4, 'expected exactly 4 non-weighted source rows');
+      assert(weightedRows[0] === allRows[allRows.length - 1], 'the weighted row should be LAST inside .compare-card-adp');
+      assertEq(html.toLowerCase().indexOf('yahoo'), -1, 'cardHTML output should never mention Yahoo');
     });
 
     t('DK Proj row (compare.js\'s own hardcoded literal, not adpRowHTML): .dk-proj-label carries its own live-verified .src-logo img, same onerror pattern, textContent still "DK Proj"', function () {
@@ -9235,7 +9253,7 @@
       assertEq(label.textContent, 'DK Proj', 'label textContent should stay "DK Proj" -- the img contributes no text');
     });
 
-    t('5. ADP null fallback: a player whose adp is null renders the em-dash for all four adp-vals', function () {
+    t('5. ADP null fallback: a player whose adp is null renders the em-dash for all five adp-vals', function () {
       var fixture = buildCompareFixture();
       try {
         var players = [
@@ -9262,7 +9280,7 @@
 
         var root = fixture.querySelector('#compare-root');
         var vals = root.querySelectorAll('.adp-val');
-        assertEq(vals.length, 8, 'expected 4 adp rows per card across 2 cards');
+        assertEq(vals.length, 10, 'expected 5 adp rows per card across 2 cards');
         Array.prototype.forEach.call(vals, function (v) {
           assertEq(v.textContent, '—', 'null adp should render the em-dash');
         });
@@ -10038,7 +10056,7 @@
       }
     });
 
-    t('31. partial sidecar entry: espn+sleeper present, yahoo absent -> two numeric cells, one em-dash cell', function () {
+    t('31. partial sidecar entry: espn+sleeper present, flock+underdog absent -> two numeric cells, two em-dash cells', function () {
       var fixture = buildCompareFixture();
       var real = window.DC.adpData;
       try {
@@ -10051,10 +10069,11 @@
 
         var root = fixture.querySelector('#compare-root');
         var vals = root.querySelectorAll('.compare-card[data-id="' + player.id + '"] .adp-val');
-        assertEq(vals.length, 4, 'expected exactly 4 adp rows');
-        assertEq(vals[0].textContent, '12', 'espn cell should render the sidecar value');
-        assertEq(vals[1].textContent, '—', 'yahoo cell should render the em-dash when the source key is absent');
-        assertEq(vals[2].textContent, '34', 'sleeper cell should render the sidecar value');
+        assertEq(vals.length, 5, 'expected exactly 5 adp rows');
+        assertEq(vals[0].textContent, '—', 'flock cell should render the em-dash when the source key is absent');
+        assertEq(vals[1].textContent, '34', 'sleeper cell should render the sidecar value');
+        assertEq(vals[2].textContent, '—', 'underdog cell should render the em-dash when the source key is absent');
+        assertEq(vals[3].textContent, '12', 'espn cell should render the sidecar value');
       } finally {
         window.DC.adpData = real;
         document.body.removeChild(fixture);
@@ -10062,15 +10081,15 @@
       }
     });
 
-    t('32. sidecar-resolved card: a stubbed table entry beats a different player.adp on the same fixture; the yahoo key is dead (never read by adpForPlayer) and always renders the em-dash regardless of what the sidecar carries', function () {
+    t('32. sidecar-resolved card: a stubbed table entry beats a different player.adp on the same fixture; flock/underdog absent from the sidecar entry always render the em-dash regardless of what player.adp carries', function () {
       var fixture = buildCompareFixture();
       var real = window.DC.adpData;
       try {
         var player = {
           id: 'v-sidecar-wins', rank: 1, name: 'V Sidecar Wins', team: 'AAA', position: 'WR', byeWeek: 5, tier: null,
-          adp: { espn: 999, yahoo: 999, sleeper: 999 }
+          adp: { espn: 999, flock: 999, sleeper: 999, underdog: 999 }
         };
-        window.DC.adpData = { players: { 'vsidecarwins|wr': { espn: 5, yahoo: 6, sleeper: 7 } } };
+        window.DC.adpData = { players: { 'vsidecarwins|wr': { espn: 5, sleeper: 7 } } };
         var state = buildVerdictFixtureState([player], [], null);
         var store = DC.state.createStore(state);
         DC.compare.mount(store);
@@ -10078,12 +10097,13 @@
 
         var root = fixture.querySelector('#compare-root');
         var vals = root.querySelectorAll('.compare-card[data-id="' + player.id + '"] .adp-val');
-        assertEq(vals[0].textContent, '5', 'espn cell should show the sidecar value, not the stale player.adp value');
-        assertEq(vals[1].textContent, '—', 'yahoo cell always renders the em-dash now -- adpForPlayer never reads shipped.yahoo, sidecar or not');
-        assertEq(vals[2].textContent, '7', 'sleeper cell should show the sidecar value, not the stale player.adp value');
+        assertEq(vals[0].textContent, '—', 'flock cell always renders the em-dash -- absent from this sidecar entry, and adpForPlayer never falls back to the stale player.adp value');
+        assertEq(vals[1].textContent, '7', 'sleeper cell should show the sidecar value, not the stale player.adp value');
+        assertEq(vals[2].textContent, '—', 'underdog cell always renders the em-dash -- absent from this sidecar entry');
+        assertEq(vals[3].textContent, '5', 'espn cell should show the sidecar value, not the stale player.adp value');
         // only espn(5) and sleeper(7) survive the merge (flock/underdog absent on this sidecar entry):
         // (0.15*5 + 0.30*7) / (0.15+0.30) = (0.75+2.1) / 0.45 = 2.85/0.45 = 6.333... -> 6.3
-        assertEq(vals[3].textContent, '6.3', 'Weighted cell should reflect the sidecar-resolved espn/sleeper values, not the stale player.adp value');
+        assertEq(vals[4].textContent, '6.3', 'Weighted cell should reflect the sidecar-resolved espn/sleeper values, not the stale player.adp value');
       } finally {
         window.DC.adpData = real;
         document.body.removeChild(fixture);
@@ -10245,10 +10265,10 @@
         '.meta-dot{font-size:10px;margin:0 1px}' +
         '.compare-card-name{font-size:17px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}' +
         '.compare-card-ranks{font-size:15px;font-weight:700;margin-top:8px}' +
-        '.compare-card-adp{margin-top:8px}' +
+        '.compare-card-adp{margin-top:8px;display:grid;grid-template-columns:1fr 1fr;column-gap:8px}' +
         '.adp-row{display:flex;justify-content:space-between;font-size:13px;line-height:20px}' +
         '.src-logo{width:14px;height:14px;border-radius:3px;margin-right:5px;vertical-align:-2px}' +
-        '.adp-row-weighted{border-top:1px solid rgba(255,255,255,0.12);margin-top:3px;padding-top:3px}' +
+        '.adp-row-weighted{grid-column:1 / -1;border-top:1px solid rgba(255,255,255,0.12);margin-top:3px;padding-top:3px}' +
         '.adp-row-weighted .adp-val{font-weight:800;font-size:15px}' +
         '.dk-proj-row{display:flex;justify-content:space-between;line-height:20px;margin-top:6px;font-size:13px}' +
         '.dk-proj-label{color:#FFFFFF;font-weight:700}' +
@@ -10359,11 +10379,11 @@
     function buildQuadWorstCaseCard(id) {
       var player = {
         id: id, rank: 1, name: 'Quad Worst Case Fixture Name', team: 'SEA', position: 'WR', byeWeek: 13, tier: 1,
-        adp: { espn: 130, yahoo: 150, sleeper: 140 }
+        adp: { flock: 150, sleeper: 140, underdog: 160, espn: 130 }
       };
       return {
         player: player,
-        adp: { espn: 130, yahoo: 150, sleeper: 140 },
+        adp: { flock: 150, sleeper: 140, underdog: 160, espn: 130 },
         posRank: 12,
         pickNumber: 12,
         marks: { target: false, avoid: false, drafted: true, mine: true },
@@ -10371,7 +10391,7 @@
       };
     }
 
-    t('compare quad no-clip (binding): a worst-case card (tier strip + drafted status row + X link + 4 adp rows + the DK proj row rendering a real value + the longest verdictFor text) never overflows its own box in the quad grid at 390x844', function () {
+    t('compare quad no-clip (binding): a worst-case card (tier strip + drafted status row + X link + 5 adp rows + the DK proj row rendering a real value + the longest verdictFor text) never overflows its own box in the quad grid at 390x844', function () {
       var fixture = buildCompareGeometryFixture();
       var styleTag = injectCompareGeometryCSS();
       var realDk = window.DC.dkData;
@@ -10399,7 +10419,7 @@
           assert(cardEl.querySelector('.tier-strip'), 'sanity: worst-case card ' + i + ' should carry a non-null tier strip');
           assertEq(cardEl.querySelectorAll('.compare-card-status-icons svg').length, 2, 'sanity: worst-case card ' + i + ' should carry exactly 2 status icons');
           assert(cardEl.querySelector('.compare-x-link'), 'sanity: worst-case card ' + i + ' should carry the X link');
-          assertEq(cardEl.querySelectorAll('.adp-val').length, 4, 'sanity: worst-case card ' + i + ' should carry all 4 adp rows');
+          assertEq(cardEl.querySelectorAll('.adp-val').length, 5, 'sanity: worst-case card ' + i + ' should carry all 5 adp rows');
           var dkRow = cardEl.querySelector('.dk-proj-row');
           assert(dkRow, 'sanity: worst-case card ' + i + ' should carry the DK proj row');
           assertEq(dkRow.querySelector('.dk-proj-val').textContent, '100', 'DK row should render the stubbed real value, not its em-dash fallback, in this pressure test');
@@ -10436,7 +10456,7 @@
       var fixture = buildCompareGeometryFixture();
       var styleTag = injectCompareGeometryCSS();
       try {
-        var probe = { id: 'logo-geo-probe', rank: 1, name: 'X', team: 'KC', position: 'RB', byeWeek: 9, tier: null, adp: { espn: 1234, yahoo: 5678, sleeper: 910 } };
+        var probe = { id: 'logo-geo-probe', rank: 1, name: 'X', team: 'KC', position: 'RB', byeWeek: 9, tier: null, adp: { flock: 1234, sleeper: 910, underdog: 5678, espn: 2345 } };
         var state = {
           schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
           players: [probe],
@@ -10456,13 +10476,13 @@
         var cardRect = card.getBoundingClientRect();
 
         var rows = card.querySelectorAll('.adp-row');
-        assertEq(rows.length, 4, 'sanity: expected 4 adp rows');
-        var weightedRow = rows[3];
+        assertEq(rows.length, 5, 'sanity: expected 5 adp rows');
+        var weightedRow = rows[4];
         var weightedValRect = weightedRow.querySelector('.adp-val').getBoundingClientRect();
         assert(weightedValRect.right <= cardRect.right + 0.5, 'Weighted .adp-val right edge should stay inside the card: valRight=' + weightedValRect.right + ' cardRight=' + cardRect.right);
 
         var logoRows = Array.prototype.filter.call(rows, function (row) { return row.querySelector('.src-logo'); });
-        assert(logoRows.length === 3, 'sanity: expected exactly 3 logo-bearing rows (ESPN/Yahoo/Sleeper): ' + logoRows.length);
+        assert(logoRows.length === 4, 'sanity: expected exactly 4 logo-bearing rows (Flock/Sleeper/Underdog/ESPN): ' + logoRows.length);
         var widest = null;
         logoRows.forEach(function (row) {
           var siteRect = row.querySelector('.adp-site').getBoundingClientRect();
@@ -11547,7 +11567,7 @@
         t('adp-refresh button: resolve restores the button and shows the success note', function () {
           assert(!refreshBtn.disabled, 'button should be re-enabled');
           assertEq(refreshBtn.textContent, 'Refresh ADP');
-          assertEq(statusEl.textContent, 'Sleeper + ESPN refreshed (Yahoo updates with deploys)');
+          assertEq(statusEl.textContent, 'Sleeper + ESPN refreshed (Flock + Underdog update with re-bakes)');
         });
 
         pending = [];

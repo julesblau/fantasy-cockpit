@@ -46,9 +46,10 @@
   // live-verified source logos, keyed by adpRowHTML label -- Weighted is ours, not a source, so
   // it's deliberately absent; DK's own logo is DK_LOGO_URL below (separate hardcoded row)
   var SRC_LOGOS = {
-    ESPN: 'https://a.espncdn.com/i/espn/misc_logos/500/espn.png',
-    Yahoo: 'https://s.yimg.com/rz/l/favicon.ico',
-    Sleeper: 'https://sleepercdn.com/favicon.ico'
+    Flock: 'https://flockfantasy.com/favicon.ico',
+    Sleeper: 'https://sleepercdn.com/favicon.ico',
+    Underdog: 'https://cdn.prod.website-files.com/67d86be30d981ef8b914a00d/67d86be30d981ef8b914a10e_small-fav.png',
+    ESPN: 'https://a.espncdn.com/i/espn/misc_logos/500/espn.png'
   };
   var DK_LOGO_URL = 'https://sportsbook.draftkings.com/apple-touch-icon.png';
 
@@ -174,9 +175,10 @@
     var player = card.player;
     var marks = card.marks || {};
     var adp = card.adp;
-    var espnVal = adp && isAdpNum(adp.espn) ? adp.espn : EMDASH;
-    var yahooVal = adp && isAdpNum(adp.yahoo) ? adp.yahoo : EMDASH;
+    var flockVal = adp && isAdpNum(adp.flock) ? adp.flock : EMDASH;
     var sleeperVal = adp && isAdpNum(adp.sleeper) ? adp.sleeper : EMDASH;
+    var underdogVal = adp && isAdpNum(adp.underdog) ? adp.underdog : EMDASH;
+    var espnVal = adp && isAdpNum(adp.espn) ? adp.espn : EMDASH;
     var weightedConsensus = DC.state.adpConsensus(player);
     var weightedVal = typeof weightedConsensus === 'number' ? weightedConsensus : EMDASH;
     var dkProj = DC.state.dkProjForPlayer(player);
@@ -211,9 +213,10 @@
           '<div class="compare-card-name">' + esc(player.name) + '</div>' +
           '<div class="compare-card-ranks">#' + player.rank + ' ' + MIDDOT + ' ' + esc(player.position) + card.posRank + '</div>' +
           '<div class="compare-card-adp">' +
-            adpRowHTML('ESPN', espnVal) +
-            adpRowHTML('Yahoo', yahooVal) +
+            adpRowHTML('Flock', flockVal) +
             adpRowHTML('Sleeper', sleeperVal) +
+            adpRowHTML('Underdog', underdogVal) +
+            adpRowHTML('ESPN', espnVal) +
             adpRowHTML('Weighted', weightedVal, 'adp-row-weighted') +
           '</div>' +
           '<div class="dk-proj-row"><span class="dk-proj-label">' + srcLogoHTML(DK_LOGO_URL) + 'DK Proj</span><span class="dk-proj-val">' + esc(dkProjVal) + '</span></div>' +

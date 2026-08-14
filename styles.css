@@ -1158,12 +1158,12 @@ button.player-rank {
 .meta-dot { font-size: 10px; margin: 0 1px; color: var(--text-3); }
 .compare-card-name { font-size: 17px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .compare-card-ranks { font-size: 15px; font-weight: 700; margin-top: 8px; font-variant-numeric: tabular-nums; }
-.compare-card-adp { margin-top: 8px; }
+.compare-card-adp { margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; }
 .adp-row { display: flex; justify-content: space-between; font-size: 13px; line-height: 20px; }
 .adp-site { color: var(--text-3); }
 .adp-val { font-variant-numeric: tabular-nums; }
 .src-logo { width: 14px; height: 14px; border-radius: 3px; margin-right: 5px; vertical-align: -2px; }
-.adp-row-weighted { border-top: 1px solid var(--hairline); margin-top: 3px; padding-top: 3px; }
+.adp-row-weighted { grid-column: 1 / -1; border-top: 1px solid var(--hairline); margin-top: 3px; padding-top: 3px; }
 .adp-row-weighted .adp-site { color: var(--text-1); font-weight: 700; }
 .adp-row-weighted .adp-val { font-weight: 800; font-size: 15px; }
 .dk-proj-row { display: flex; justify-content: space-between; line-height: 20px; margin-top: 6px; font-size: 13px; }
