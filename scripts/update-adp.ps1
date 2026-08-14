@@ -1,20 +1,21 @@
-# Fetches ESPN/Sleeper/Yahoo ADP, joins by normalized key, writes js/adp-data.js
+# Fetches ESPN/Sleeper live ADP + Flock/Underdog from scripts/board-source/adp.csv, joins by
+# normalized key, writes js/adp-data.js
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $outFile = Join-Path $repoRoot "js\adp-data.js"
 $dataJsPath = Join-Path $repoRoot "js\data.js"
+$adpCsvPath = Join-Path $repoRoot "scripts\board-source\adp.csv"
 
 $season = 2026
 $scoring = "ppr"
 $minUsablePerSource = 150
+$minFlockUsable = 250
+$minUnderdogUsable = 800
 $liveTop10Ceiling = 15
 $userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 
 $espnUrl = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/2026/segments/0/leaguedefaults/3?view=kona_player_info"
 $espnFilter = '{"players":{"limit":500,"sortDraftRanks":{"sortPriority":1,"sortAsc":true,"value":"PPR"}}}'
 $sleeperUrl = "https://api.sleeper.com/projections/nfl/2026?season_type=regular&position[]=QB&position[]=RB&position[]=WR&position[]=TE&position[]=K&position[]=DEF&order_by=adp_ppr"
-$yahooBaseUrl = "https://pub-api-ro.fantasysports.yahoo.com/fantasy/v2/game/nfl/players;position=ALL;start={0};count=100;sort=rank_season/draft_analysis?format=json_f"
-$yahooPageStarts = @(0, 100, 200, 300)
-$yahooPageDelayMs = 250
 
 # app's 32 team codes (the only valid join-key team tokens)
 $appTeams = @("ARI", "ATL", "BAL", "BUF", "CAR", "CHI", "CIN", "CLE", "DAL", "DEN", "DET", "GB", "HOU", "IND", "JAX", "KC", "LAC", "LAR", "LV", "MIA", "MIN", "NE", "NO", "NYG", "NYJ", "PHI", "PIT", "SEA", "SF", "TB", "TEN", "WAS")
@@ -33,8 +34,9 @@ $espnTeamMap = @{
 }
 $espnPositionMap = @{ 1 = "qb"; 2 = "rb"; 3 = "wr"; 4 = "te"; 5 = "k"; 16 = "dst" }
 $sleeperPositionMap = @{ "QB" = "qb"; "RB" = "rb"; "WR" = "wr"; "TE" = "te"; "K" = "k"; "DEF" = "dst" }
-$yahooPositionMap = @{ "QB" = "qb"; "RB" = "rb"; "WR" = "wr"; "TE" = "te"; "K" = "k"; "DEF" = "dst" }
-$sourceOrder = @("espn", "yahoo", "sleeper")
+
+# emit order for js/adp-data.js entries; alphabetical (also the order the join-liveness gate sums over)
+$sourceOrder = @("espn", "flock", "sleeper", "underdog")
 
 function Fail($msg) {
     Write-Host "ERROR: $msg"
@@ -216,75 +218,118 @@ $sleeperKeyFn = {
 }
 $sleeperTable = Build-SourceTable $sleeperJson "sleeper" $sleeperKeyFn
 
-# ---- Yahoo (paginated) ----------------------------------------------------------------------
+# ---- Flock/Underdog (static, from scripts/board-source/adp.csv) -----------------------------
 
-Write-Host "Fetching yahoo..."
-$yahooRows = New-Object System.Collections.ArrayList
-for ($i = 0; $i -lt $yahooPageStarts.Count; $i++) {
-    $start = $yahooPageStarts[$i]
-    $url = [string]::Format($yahooBaseUrl, $start)
-    try {
-        $yahooHeaders = @{ "User-Agent" = $userAgent }
-        $pageResp = Invoke-WebRequest -Uri $url -Headers $yahooHeaders -UseBasicParsing
-        $pageJson = $pageResp.Content | ConvertFrom-Json
+# posPrefix = POS column minus trailing digits ("RB1"->"rb", "DEF2"->"dst", "K3"->"k"); DEF folds to dst
+function Get-CsvPosPrefix($pos) {
+    $p = [regex]::Replace([string]$pos, '[0-9]+$', '').ToLowerInvariant()
+    if ($p -eq "def") {
+        return "dst"
     }
-    catch {
-        Fail("yahoo fetch failed at start=$start : $($_.Exception.Message)")
-    }
-    $pagePlayers = $pageJson.fantasy_content.game.players
-    if ($pagePlayers) {
-        foreach ($p in $pagePlayers) {
-            [void]$yahooRows.Add($p)
-        }
-    }
-    if ($i -lt ($yahooPageStarts.Count - 1)) {
-        Start-Sleep -Milliseconds $yahooPageDelayMs
-    }
-}
-if ($yahooRows.Count -eq 0) {
-    Fail("yahoo returned an empty player list")
+    return $p
 }
 
-$yahooKeyFn = {
-    param($row)
-    $pl = $row.player
-    if (-not $pl -or -not $pl.display_position) {
+# decimal parse that treats blank/unparseable as "skip this value", never zero
+function Parse-CsvDecimal($s) {
+    if ([string]::IsNullOrWhiteSpace($s)) {
         return $null
     }
-    $firstTok = ($pl.display_position -split ",")[0]
-    if (-not $yahooPositionMap.ContainsKey($firstTok)) {
+    $v = 0.0
+    $ok = [double]::TryParse($s, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$v)
+    if (-not $ok) {
         return $null
     }
-    $pos = $yahooPositionMap[$firstTok]
-    if (-not $pl.draft_analysis) {
-        return $null
+    return $v
+}
+
+Write-Host "Reading adp.csv..."
+$csvLines = [IO.File]::ReadAllLines($adpCsvPath)
+if ($csvLines.Count -lt 2) {
+    Fail("adp.csv has no data rows")
+}
+$expectedCsvHeader = @("Rank", "Player", "POS", "Team", "AVG", "Expert", "Sleeper", "ESPN", "Yahoo", "Underdog", "CBS", "FFPC")
+$csvHeader = $csvLines[0].Split(",")
+for ($h = 0; $h -lt $expectedCsvHeader.Count; $h++) {
+    if ($csvHeader[$h] -ne $expectedCsvHeader[$h]) {
+        Fail("adp.csv header column $h is '$($csvHeader[$h])', expected '$($expectedCsvHeader[$h])'")
     }
-    $apStr = $pl.draft_analysis.average_pick
-    if ([string]::IsNullOrEmpty($apStr) -or $apStr -eq "-") {
-        return $null
+}
+
+# group raw rows by join key first -- resolves the ~9 duplicate (Player, posPrefix) pairs in
+# adp.csv before either the flock or underdog table is built from the survivors (gate 2)
+$csvRowsByKey = @{}
+for ($li = 1; $li -lt $csvLines.Count; $li++) {
+    $line = $csvLines[$li]
+    if ([string]::IsNullOrWhiteSpace($line)) {
+        continue
     }
-    $apVal = 0.0
-    $ok = [double]::TryParse($apStr, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$apVal)
-    if (-not $ok -or $apVal -lt 1) {
-        return $null
+    $cols = $line.Split(",")
+    if ($cols.Count -lt $expectedCsvHeader.Count) {
+        Fail("adp.csv line $($li + 1) has $($cols.Count) columns, expected $($expectedCsvHeader.Count)")
     }
-    $rawTeam = $pl.editorial_team_abbr
-    $team = $null
-    if ($rawTeam) {
-        $team = Fold-TeamCode $rawTeam "yahoo"
-    }
-    if ($pos -eq "dst") {
-        if (-not $team) {
-            Fail("yahoo DEF row missing team code")
+    $posPrefix = Get-CsvPosPrefix $cols[2]
+    $team = $cols[3]
+    if ($posPrefix -eq "dst") {
+        $teamUpper = $team.ToUpperInvariant()
+        if (-not $appTeamSet.ContainsKey($teamUpper)) {
+            Fail("adp.csv DST row has team code '$team' not in the app's 32-code set")
         }
-        $key = Build-Key $null $team $pos
+    }
+    $key = Build-Key $cols[1] $team $posPrefix
+    $row = @{ Player = $cols[1]; Team = $team; Expert = $cols[5]; Underdog = $cols[9] }
+    if ($csvRowsByKey.ContainsKey($key)) {
+        [void]$csvRowsByKey[$key].Add($row)
     }
     else {
-        $key = Build-Key $pl.name.full $team $pos
+        $group = New-Object System.Collections.ArrayList
+        [void]$group.Add($row)
+        $csvRowsByKey[$key] = $group
     }
-    return @{ Key = $key; Value = $apVal }
 }
-$yahooTable = Build-SourceTable $yahooRows "yahoo" $yahooKeyFn
+
+$resolvedCsvRows = @{}
+foreach ($key in $csvRowsByKey.Keys) {
+    $group = $csvRowsByKey[$key]
+    if ($group.Count -eq 1) {
+        $resolvedCsvRows[$key] = $group[0]
+        continue
+    }
+    if ($group.Count -gt 2) {
+        Write-Host "ERROR: adp.csv join key '$key' has $($group.Count) rows (expected at most 2)"
+        exit 1
+    }
+    $a = $group[0]
+    $b = $group[1]
+    $aHasTeam = -not [string]::IsNullOrWhiteSpace($a.Team)
+    $bHasTeam = -not [string]::IsNullOrWhiteSpace($b.Team)
+    $winner = $a
+    if ($bHasTeam -and -not $aHasTeam) {
+        $winner = $b
+    }
+    Write-Host "WARN: adp.csv duplicate join key '$key' -- keeping Team='$($winner.Team)' | row A: Team='$($a.Team)' Expert='$($a.Expert)' Underdog='$($a.Underdog)' | row B: Team='$($b.Team)' Expert='$($b.Expert)' Underdog='$($b.Underdog)'"
+    $resolvedCsvRows[$key] = $winner
+}
+
+$flockTable = @{}
+$underdogTable = @{}
+foreach ($key in $resolvedCsvRows.Keys) {
+    $row = $resolvedCsvRows[$key]
+    $expertVal = Parse-CsvDecimal $row.Expert
+    if ($null -ne $expertVal) {
+        $flockTable[$key] = [Math]::Round($expertVal, 2)
+    }
+    $underdogVal = Parse-CsvDecimal $row.Underdog
+    if ($null -ne $underdogVal) {
+        $underdogTable[$key] = [Math]::Round($underdogVal, 2)
+    }
+}
+
+if ($flockTable.Count -lt $minFlockUsable) {
+    Fail("flock (adp.csv Expert column) parsed only $($flockTable.Count) usable players (minimum $minFlockUsable required)")
+}
+if ($underdogTable.Count -lt $minUnderdogUsable) {
+    Fail("underdog (adp.csv Underdog column) parsed only $($underdogTable.Count) usable players (minimum $minUnderdogUsable required)")
+}
 
 # ---- Join ----------------------------------------------------------------------------------
 
@@ -298,8 +343,9 @@ function Add-SourceToJoin($table, $srcName) {
     }
 }
 Add-SourceToJoin $espnTable "espn"
-Add-SourceToJoin $yahooTable "yahoo"
 Add-SourceToJoin $sleeperTable "sleeper"
+Add-SourceToJoin $flockTable "flock"
+Add-SourceToJoin $underdogTable "underdog"
 
 # liveness gate: the 10 lowest-consensus (best) entries must plausibly be early-round players (gate 5)
 $consensusRows = New-Object System.Collections.ArrayList
@@ -383,7 +429,7 @@ catch {
     Fail("failed to write $outFile : $($_.Exception.Message)")
 }
 
-# ---- Seed coverage report (js/data.js RAW_PLAYERS) ------------------------------------------
+# ---- Seed coverage report (js/data.js SEED_PLAYERS) ------------------------------------------
 
 try {
     $dataJsText = [IO.File]::ReadAllText($dataJsPath)
@@ -391,29 +437,26 @@ try {
 catch {
     Fail("failed to read $dataJsPath for coverage report: $($_.Exception.Message)")
 }
-$rawStart = $dataJsText.IndexOf("var RAW_PLAYERS = [")
+$rawStart = $dataJsText.IndexOf("var SEED_PLAYERS = [")
 if ($rawStart -lt 0) {
-    Fail("could not find 'var RAW_PLAYERS = [' in js/data.js for coverage report")
+    Fail("could not find 'var SEED_PLAYERS = [' in js/data.js for coverage report")
 }
 $rawEnd = $dataJsText.IndexOf("];", $rawStart)
 if ($rawEnd -lt 0) {
-    Fail("could not find closing '];' for RAW_PLAYERS in js/data.js")
+    Fail("could not find closing '];' for SEED_PLAYERS in js/data.js")
 }
 $rawBlock = $dataJsText.Substring($rawStart, $rawEnd - $rawStart)
-$rowPattern = '\[\s*(?:"([^"]+)"|''([^'']+)'')\s*,\s*''([A-Za-z]+)''\s*,\s*''([A-Za-z]+)''\s*\]'
+$rowPattern = 'name:\s*"([^"]*)"\s*,\s*team:\s*"([A-Za-z]+)"\s*,\s*position:\s*"([A-Za-z]+)"'
 $rowMatches = [regex]::Matches($rawBlock, $rowPattern)
 if ($rowMatches.Count -eq 0) {
-    Fail("parsed zero seed players from RAW_PLAYERS for coverage report")
+    Fail("parsed zero seed players from SEED_PLAYERS for coverage report")
 }
 
 $seedTuples = New-Object System.Collections.ArrayList
 foreach ($m in $rowMatches) {
     $name = $m.Groups[1].Value
-    if (-not $m.Groups[1].Success) {
-        $name = $m.Groups[2].Value
-    }
-    $team = $m.Groups[3].Value
-    $pos = $m.Groups[4].Value
+    $team = $m.Groups[2].Value
+    $pos = $m.Groups[3].Value
     [void]$seedTuples.Add(@{ Name = $name; Team = $team; Position = $pos })
 }
 
@@ -423,6 +466,7 @@ $totalHits = 0
 $dstTotal = 0
 $dstHits = 0
 $top100Misses = New-Object System.Collections.ArrayList
+$seedSourceHits = @{ espn = 0; flock = 0; sleeper = 0; underdog = 0 }
 
 for ($i = 0; $i -lt $seedTuples.Count; $i++) {
     $tuple = $seedTuples[$i]
@@ -436,6 +480,11 @@ for ($i = 0; $i -lt $seedTuples.Count; $i++) {
     $hit = $joined.ContainsKey($key)
     if ($hit) {
         $totalHits++
+        foreach ($src in $sourceOrder) {
+            if ($joined[$key].ContainsKey($src)) {
+                $seedSourceHits[$src]++
+            }
+        }
     }
     if ($pos -eq "dst") {
         $dstTotal++
@@ -455,8 +504,9 @@ for ($i = 0; $i -lt $seedTuples.Count; $i++) {
 
 Write-Host ""
 Write-Host "espn: $($espnTable.Count) usable players"
-Write-Host "yahoo: $($yahooTable.Count) usable players"
 Write-Host "sleeper: $($sleeperTable.Count) usable players"
+Write-Host "flock: $($flockTable.Count) usable players"
+Write-Host "underdog: $($underdogTable.Count) usable players"
 Write-Host "joined: $($joined.Count) entries"
 Write-Host "images: $($espnImages.Count) entries"
 Write-Host ""
@@ -466,6 +516,10 @@ $totalPct = [Math]::Round(100.0 * $totalHits / $seedTuples.Count, 1)
 Write-Host "  top-100 hit-rate: $top100Hits/$top100Total ($top100Pct%)"
 Write-Host "  TOTAL hit-rate: $totalHits/$($seedTuples.Count) ($totalPct%)"
 Write-Host "  DST coverage: $dstHits/$dstTotal"
+Write-Host "  per-source coverage against the $($seedTuples.Count)-player seed board:"
+foreach ($src in $sourceOrder) {
+    Write-Host "    $src : $($seedSourceHits[$src])/$($seedTuples.Count)"
+}
 Write-Host "  top-100 misses:"
 if ($top100Misses.Count -eq 0) {
     Write-Host "    (none)"

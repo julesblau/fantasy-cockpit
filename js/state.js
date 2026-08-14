@@ -252,15 +252,17 @@
     return typeof n === 'number' && isFinite(n) && n >= 1;
   }
 
-  /** @param {*} v @returns {{espn:number, yahoo:number, sleeper:number}|null} rebuilt in canonical key order */
+  /** @param {*} v @returns {{espn?:number, flock?:number, sleeper?:number, underdog?:number}|null} keeps whichever of the four survive isAdpNum, alphabetical key order; null when none do (or v itself isn't heal-able) */
   function healAdp(v) {
     if (!v || typeof v !== 'object' || Array.isArray(v)) {
       return null;
     }
-    if (!isAdpNum(v.espn) || !isAdpNum(v.yahoo) || !isAdpNum(v.sleeper)) {
-      return null;
-    }
-    return { espn: v.espn, yahoo: v.yahoo, sleeper: v.sleeper };
+    var out = {};
+    if (isAdpNum(v.espn)) { out.espn = v.espn; }
+    if (isAdpNum(v.flock)) { out.flock = v.flock; }
+    if (isAdpNum(v.sleeper)) { out.sleeper = v.sleeper; }
+    if (isAdpNum(v.underdog)) { out.underdog = v.underdog; }
+    return Object.keys(out).length > 0 ? out : null;
   }
 
   /** @param {number|null|undefined} tier @returns {string|null} CSS class for tiers 1-6, 'tier-cx' for >=7, null otherwise */
@@ -961,7 +963,7 @@
     return adpOverride;
   }
 
-  /** @param {*} player @returns {Object|null} sidecar+override merge first; player.adp fallback is the fixture/legacy seam */
+  /** @param {*} player @returns {Object|null} sidecar+override merge first; player.adp fallback is the fixture/legacy seam. espn/sleeper are override-eligible; flock/underdog are shipped-only (the refresh override layer never carries them) */
   function adpForPlayer(player) {
     var table = window.DC && DC.adpData && DC.adpData.players;
     var key = adpKey(player);
@@ -969,15 +971,17 @@
     var over = adpOverride && adpOverride.players && key ? adpOverride.players[key] : undefined;
     var merged = over || shipped ? {
       espn: over && isAdpNum(over.espn) ? over.espn : (shipped ? shipped.espn : undefined),
-      yahoo: shipped ? shipped.yahoo : undefined,
-      sleeper: over && isAdpNum(over.sleeper) ? over.sleeper : (shipped ? shipped.sleeper : undefined)
+      flock: shipped ? shipped.flock : undefined,
+      sleeper: over && isAdpNum(over.sleeper) ? over.sleeper : (shipped ? shipped.sleeper : undefined),
+      underdog: shipped ? shipped.underdog : undefined
     } : undefined;
     var hit;
     if (merged) {
       hit = {};
       if (isAdpNum(merged.espn)) { hit.espn = merged.espn; }
-      if (isAdpNum(merged.yahoo)) { hit.yahoo = merged.yahoo; }
+      if (isAdpNum(merged.flock)) { hit.flock = merged.flock; }
       if (isAdpNum(merged.sleeper)) { hit.sleeper = merged.sleeper; }
+      if (isAdpNum(merged.underdog)) { hit.underdog = merged.underdog; }
       if (Object.keys(hit).length === 0) { hit = undefined; }
     }
     return hit || (player && player.adp) || null;
@@ -988,7 +992,7 @@
     return adpOverride ? adpOverride.updatedAt : (DC.adpData ? DC.adpData.updatedAt : null);
   }
 
-  var ADP_WEIGHTS = { espn: 0.30, yahoo: 0.10, sleeper: 0.60 }; // market-sharpness weighting; sleeper heaviest
+  var ADP_WEIGHTS = { flock: 0.30, sleeper: 0.30, underdog: 0.25, espn: 0.15 }; // user-chosen blend; flock = expert consensus
 
   /**
    * @param {Player} player
@@ -998,7 +1002,7 @@
     var adp = adpForPlayer(player);
     if (!adp) { return null; }
     var sum = 0, wsum = 0;
-    var sites = ['espn', 'yahoo', 'sleeper'];
+    var sites = ['flock', 'sleeper', 'underdog', 'espn'];
     for (var i = 0; i < sites.length; i++) {
       if (isAdpNum(adp[sites[i]])) { sum += ADP_WEIGHTS[sites[i]] * adp[sites[i]]; wsum += ADP_WEIGHTS[sites[i]]; }
     }

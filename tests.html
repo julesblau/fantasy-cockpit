@@ -263,8 +263,8 @@
       });
     });
 
-    t('every entry has >=1 source, only espn/yahoo/sleeper keys, values finite numbers in [1, 500)', function () {
-      var validSources = { espn: true, yahoo: true, sleeper: true };
+    t('every entry has >=1 source, only espn/flock/sleeper/underdog keys, values finite numbers in [1, 2000)', function () {
+      var validSources = { espn: true, flock: true, sleeper: true, underdog: true };
       Object.keys(DC.adpData.players).forEach(function (k) {
         var entry = DC.adpData.players[k];
         var sourceKeys = Object.keys(entry);
@@ -272,7 +272,8 @@
         sourceKeys.forEach(function (src) {
           assert(validSources[src], 'unexpected source "' + src + '" on ' + k);
           var v = entry[src];
-          assert(typeof v === 'number' && isFinite(v) && v >= 1 && v < 500, 'bad value for ' + k + '.' + src + ': ' + v);
+          // underdog ranks deep camp bodies well past a 500-man draft pool (observed up to ~1450)
+          assert(typeof v === 'number' && isFinite(v) && v >= 1 && v < 2000, 'bad value for ' + k + '.' + src + ': ' + v);
         });
       });
     });
@@ -677,9 +678,9 @@
     t('adpForPlayer: sidecar hit wins over player.adp', function () {
       var real = window.DC.adpData;
       try {
-        window.DC.adpData = { players: { 'testhit|wr': { espn: 5, yahoo: 6, sleeper: 7 } } };
-        var player = { name: 'Test Hit', team: 'AAA', position: 'WR', adp: { espn: 90, yahoo: 90, sleeper: 90 } };
-        assertEq(DC.state.adpForPlayer(player), { espn: 5, yahoo: 6, sleeper: 7 });
+        window.DC.adpData = { players: { 'testhit|wr': { espn: 5, flock: 6, sleeper: 7, underdog: 8 } } };
+        var player = { name: 'Test Hit', team: 'AAA', position: 'WR', adp: { espn: 90, flock: 90, sleeper: 90, underdog: 90 } };
+        assertEq(DC.state.adpForPlayer(player), { espn: 5, flock: 6, sleeper: 7, underdog: 8 });
       } finally {
         window.DC.adpData = real;
       }
@@ -689,8 +690,8 @@
       var real = window.DC.adpData;
       try {
         window.DC.adpData = { players: {} };
-        var player = { name: 'Test Miss', team: 'AAA', position: 'WR', adp: { espn: 1, yahoo: 2, sleeper: 3 } };
-        assertEq(DC.state.adpForPlayer(player), { espn: 1, yahoo: 2, sleeper: 3 });
+        var player = { name: 'Test Miss', team: 'AAA', position: 'WR', adp: { espn: 1, flock: 2, sleeper: 3, underdog: 4 } };
+        assertEq(DC.state.adpForPlayer(player), { espn: 1, flock: 2, sleeper: 3, underdog: 4 });
       } finally {
         window.DC.adpData = real;
       }
@@ -700,8 +701,8 @@
       var real = window.DC.adpData;
       try {
         window.DC.adpData = undefined;
-        var player = { name: 'Test Undef', team: 'AAA', position: 'WR', adp: { espn: 8, yahoo: 8, sleeper: 8 } };
-        assertEq(DC.state.adpForPlayer(player), { espn: 8, yahoo: 8, sleeper: 8 });
+        var player = { name: 'Test Undef', team: 'AAA', position: 'WR', adp: { espn: 8, flock: 8, sleeper: 8, underdog: 8 } };
+        assertEq(DC.state.adpForPlayer(player), { espn: 8, flock: 8, sleeper: 8, underdog: 8 });
       } finally {
         window.DC.adpData = real;
       }
@@ -718,12 +719,28 @@
       }
     });
 
+    t('adpForPlayer: override layer only ever applies to espn/sleeper -- a hand-crafted override carrying flock/underdog keys is ignored; shipped flock/underdog values win instead', function () {
+      var realAdp = window.DC.adpData;
+      var OVERRIDE_KEY = DC.state.ADP_OVERRIDE_KEY;
+      try {
+        window.DC.adpData = { players: { 'overridefixture|wr': { espn: 1, flock: 2, sleeper: 3, underdog: 4 } } };
+        localStorage.setItem(OVERRIDE_KEY, JSON.stringify({ updatedAt: '2026-01-01', players: { 'overridefixture|wr': { espn: 99, sleeper: 98, flock: 97, underdog: 96 } } }));
+        DC.state.reloadAdpOverride();
+        var merged = DC.state.adpForPlayer({ name: 'Override Fixture', team: 'AAA', position: 'WR' });
+        assertEq(merged, { espn: 99, flock: 2, sleeper: 98, underdog: 4 }, 'espn/sleeper take the override value; flock/underdog stay shipped even though the override object carries them');
+      } finally {
+        localStorage.removeItem(OVERRIDE_KEY);
+        DC.state.reloadAdpOverride();
+        window.DC.adpData = realAdp;
+      }
+    });
+
     t('load(): a v5 payload with real adp objects migrates to schemaVersion 7 (through the v6 pass-through) with every player.adp forced null', function () {
       var payload = {
         schemaVersion: 5,
         players: [
-          { id: 'mv1', rank: 1, name: 'MV One', team: 'KC', position: 'QB', byeWeek: 9, tier: null, adp: { espn: 5, yahoo: 6, sleeper: 4 } },
-          { id: 'mv2', rank: 2, name: 'MV Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1, adp: { espn: 40, yahoo: 38, sleeper: 42 } }
+          { id: 'mv1', rank: 1, name: 'MV One', team: 'KC', position: 'QB', byeWeek: 9, tier: null, adp: { espn: 5, flock: 6, sleeper: 4, underdog: 7 } },
+          { id: 'mv2', rank: 2, name: 'MV Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1, adp: { espn: 40, flock: 38, sleeper: 42, underdog: 39 } }
         ],
         marks: {
           mv1: { drafted: false, target: false, avoid: false, mine: false },
@@ -1618,7 +1635,7 @@
 
     // ---- Round 8 Task 2: schema v5 — adp field healing ----
 
-    t('load(): healAdp matrix — valid object heals with canonical key order regardless of input order; array/string/partial/NaN-member/zero/negative/missing all heal to null', function () {
+    t('load(): healAdp matrix — canonical (alphabetical) key order; keeps whichever of espn/flock/sleeper/underdog survive isAdpNum, dropping the rest (an old yahoo-shaped backup partial-heals instead of nulling); null only when zero keys survive or the shape itself is unheal-able', function () {
       function loadWithAdp(adp) {
         var payload = {
           schemaVersion: 7,
@@ -1637,17 +1654,26 @@
         }
       }
 
-      var healedValid = loadWithAdp({ sleeper: 3, espn: 1, yahoo: 2 });
-      assertEq(healedValid.players[0].adp, { espn: 1, yahoo: 2, sleeper: 3 }, 'valid adp heals with canonical key order regardless of input order');
+      // new 4-key shape survives intact, alphabetical order regardless of input order
+      var healedFull = loadWithAdp({ underdog: 4, sleeper: 3, espn: 1, flock: 2 });
+      assertEq(healedFull.players[0].adp, { espn: 1, flock: 2, sleeper: 3, underdog: 4 }, 'new 4-key shape survives intact in canonical alphabetical order regardless of input order (pressure-test: not silently nulled by normalize)');
+
+      // an old backup's {espn,yahoo,sleeper} shape partial-heals: yahoo is an unrecognized key
+      // and is silently dropped (never examined), espn/sleeper survive as a 2-key subset
+      var healedOldShape = loadWithAdp({ sleeper: 3, espn: 1, yahoo: 2 });
+      assertEq(healedOldShape.players[0].adp, { espn: 1, sleeper: 3 }, 'old yahoo-shaped backup partial-heals to the espn/sleeper subset instead of nulling');
+
+      // a single valid key alone survives as a one-key object -- "≥1 survives" is the bar, not "all four"
+      var healedPartial = loadWithAdp({ flock: 12 });
+      assertEq(healedPartial.players[0].adp, { flock: 12 }, 'a lone valid key survives as a one-key object, not nulled');
 
       var invalidCases = [
         [1, 2, 3],
         'not an object',
-        { espn: 1, yahoo: 2 },
-        { espn: NaN, yahoo: 2, sleeper: 3 },
-        { espn: 0, yahoo: 2, sleeper: 3 },
-        { espn: -1, yahoo: 2, sleeper: 3 },
-        undefined
+        { yahoo: 5 }, // legacy-only key, never examined -> zero valid keys -> null
+        { espn: NaN, flock: 'x', sleeper: 0, underdog: -1 }, // all four keys present but every one fails isAdpNum
+        undefined,
+        null
       ];
       invalidCases.forEach(function (bad, i) {
         var loaded = loadWithAdp(bad);
@@ -1686,8 +1712,8 @@
       var payload = {
         schemaVersion: 7,
         players: [
-          { id: 'cp1', rank: 1, name: 'CP One', team: 'KC', position: 'RB', byeWeek: 9, tier: 3, adp: { espn: 5, yahoo: 6, sleeper: 4 } },
-          { id: 'cp2', rank: 2, name: 'CP Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1, adp: { espn: 40, yahoo: 38, sleeper: 42 } }
+          { id: 'cp1', rank: 1, name: 'CP One', team: 'KC', position: 'RB', byeWeek: 9, tier: 3, adp: { espn: 5, flock: 6, sleeper: 4, underdog: 7 } },
+          { id: 'cp2', rank: 2, name: 'CP Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1, adp: { espn: 40, flock: 38, sleeper: 42, underdog: 39 } }
         ],
         marks: {
           cp1: { drafted: false, target: false, avoid: false, mine: false },
@@ -1699,7 +1725,7 @@
       var loaded = DC.state.load();
       var cp2 = loaded.players.filter(function (p) { return p.id === 'cp2'; })[0];
       assertEq(cp2.tier, 3, 'cp2 (RB) clamped up to running max 3 from same-position cp1');
-      assertEq(cp2.adp, { espn: 40, yahoo: 38, sleeper: 42 }, 'adp survives the heal + tier-clamp compose untouched');
+      assertEq(cp2.adp, { espn: 40, flock: 38, sleeper: 42, underdog: 39 }, 'adp survives the heal + tier-clamp compose untouched');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
   })();
@@ -5200,9 +5226,9 @@
       var real = window.DC.adpData;
       try {
         window.DC.adpData = { players: {} };
-        var withAdp = { id: 'ma1', rank: 6, name: 'Meta Fixture One', team: 'KC', position: 'RB', byeWeek: 9, drafted: false, target: false, avoid: false, tier: null, adp: { espn: 4, yahoo: 6, sleeper: 5 } };
+        var withAdp = { id: 'ma1', rank: 6, name: 'Meta Fixture One', team: 'KC', position: 'RB', byeWeek: 9, drafted: false, target: false, avoid: false, tier: null, adp: { espn: 4.8, flock: 4.8, sleeper: 4.8, underdog: 4.8 } };
         var withAdpHtml = DC.ui.templates.playerRowHTML(withAdp, { posRanks: { ma1: 2 } });
-        // 0.30*4 + 0.10*6 + 0.60*5 = 4.8 (weighted ADP resolves to tenths)
+        // equal-value fixture: all four sources are 4.8, so the weighted mean is 4.8 under ANY ADP_WEIGHTS blend
         assert(withAdpHtml.indexOf('<div class="player-meta player-meta-card"><span class="meta-main"><b>RB2</b> · KC · B9</span><span class="adp-badge">4.8</span></div>') !== -1, withAdpHtml);
 
         var noAdp = Object.assign({}, withAdp, { id: 'ma2', name: 'Meta Fixture Two', adp: null });
@@ -5222,11 +5248,11 @@
 
         var base = { id: 'pbf1', rank: 6, name: 'Proj Badge Fixture', team: 'KC', position: 'QB', byeWeek: 9, drafted: false, target: false, avoid: false, tier: null };
 
-        var both = Object.assign({}, base, { adp: { espn: 4, yahoo: 6, sleeper: 5 } }); // consensus 4.8; name keys into dkData -> 160
+        var both = Object.assign({}, base, { adp: { espn: 4.8, flock: 4.8, sleeper: 4.8, underdog: 4.8 } }); // equal-value fixture: consensus 4.8 under any weights; name keys into dkData -> 160
         var bothHtml = DC.ui.templates.playerRowHTML(both, {});
         assert(bothHtml.indexOf('<span class="adp-badge">4.8</span><span class="proj-badge">160</span>') !== -1, 'both badges: adp then proj, no separator between them: ' + bothHtml);
 
-        var adpOnly = Object.assign({}, base, { id: 'pbf2', name: 'Adp Only Fixture', adp: { espn: 4, yahoo: 6, sleeper: 5 } }); // name not in dkData -> proj null
+        var adpOnly = Object.assign({}, base, { id: 'pbf2', name: 'Adp Only Fixture', adp: { espn: 4.8, flock: 4.8, sleeper: 4.8, underdog: 4.8 } }); // name not in dkData -> proj null
         var adpOnlyHtml = DC.ui.templates.playerRowHTML(adpOnly, {});
         assert(adpOnlyHtml.indexOf('<span class="adp-badge">4.8</span></div>') !== -1, 'adp-only: badge is the last thing before .player-meta-card closes: ' + adpOnlyHtml);
         assert(adpOnlyHtml.indexOf('proj-badge') === -1, 'no proj badge when dk is null: ' + adpOnlyHtml);
@@ -5772,9 +5798,9 @@
 
     t('REORDER_PLAYERS: a tier clamp that rebuilds a player carries its adp object through untouched (CARRY, not heal)', function () {
       var players = [
-        { id: 'a', rank: 1, name: 'Aaron Ace', team: 'KC', position: 'QB', byeWeek: 9, tier: 1, adp: { espn: 1, yahoo: 1, sleeper: 1 } },
-        { id: 'b', rank: 2, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7, tier: 2, adp: { espn: 12, yahoo: 14, sleeper: 10 } },
-        { id: 'e', rank: 3, name: 'Erik End', team: 'SEA', position: 'RB', byeWeek: 13, tier: 1, adp: { espn: 30, yahoo: 28, sleeper: 33 } }
+        { id: 'a', rank: 1, name: 'Aaron Ace', team: 'KC', position: 'QB', byeWeek: 9, tier: 1, adp: { espn: 1, flock: 1, sleeper: 1, underdog: 1 } },
+        { id: 'b', rank: 2, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7, tier: 2, adp: { espn: 12, flock: 14, sleeper: 10, underdog: 13 } },
+        { id: 'e', rank: 3, name: 'Erik End', team: 'SEA', position: 'RB', byeWeek: 13, tier: 1, adp: { espn: 30, flock: 28, sleeper: 33, underdog: 29 } }
       ];
       var marks = {};
       players.forEach(function (p) { marks[p.id] = { drafted: false, target: false, avoid: false, mine: false }; });
@@ -5785,7 +5811,7 @@
       var next = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['a', 'b', 'e'] });
       var e = next.players.filter(function (p) { return p.id === 'e'; })[0];
       assertEq(e.tier, 2, 'precondition: e (RB) got clamped up to running max 2 from same-position b');
-      assertEq(e.adp, { espn: 30, yahoo: 28, sleeper: 33 }, 'adp survives the tier-clamp rebuild untouched');
+      assertEq(e.adp, { espn: 30, flock: 28, sleeper: 33, underdog: 29 }, 'adp survives the tier-clamp rebuild untouched');
     });
 
     t('IMPORT_PLAYERS: non-monotone tiers force a clamp rebuild — every result player keeps the adp KEY (not merely a falsy value) through the rebuild', function () {
@@ -6132,16 +6158,15 @@
       assert(result.following > result.next, 'following (' + result.following + ') must exceed next (' + result.next + ')');
     });
 
-    t('adpConsensus: fixture player — weighted mean of espn/yahoo/sleeper (0.30/0.10/0.60), rounded to one decimal', function () {
-      // 0.30*4 + 0.10*10 + 0.60*7 = 6.4
-      var player = { adp: { espn: 4, yahoo: 10, sleeper: 7 } };
-      assertEq(DC.state.adpConsensus(player), 6.4);
+    t('adpConsensus: fixture player — weighted mean of flock/sleeper/underdog/espn (0.30/0.30/0.25/0.15), rounded to one decimal', function () {
+      // 0.30*4 + 0.30*10 + 0.25*8 + 0.15*6 = 1.2 + 3.0 + 2.0 + 0.9 = 7.1
+      var player = { adp: { flock: 4, sleeper: 10, underdog: 8, espn: 6 } };
+      assertEq(DC.state.adpConsensus(player), 7.1);
     });
 
-    t('adpConsensus: rounds the weighted mean — {espn:1.9,yahoo:2,sleeper:2} (weighted 1.97) -> 2', function () {
-      // integer sources always land on exact tenths under the 30/10/60 weights, so the
-      // rounding case needs a decimal source (source ADPs are decimals in the live sidecar)
-      assertEq(DC.state.adpConsensus({ adp: { espn: 1.9, yahoo: 2, sleeper: 2 } }), 2);
+    t('adpConsensus: rounds the weighted mean — {flock:2,sleeper:2,underdog:2,espn:1.9} (weighted 1.985) -> 2', function () {
+      // 0.30*2 + 0.30*2 + 0.25*2 + 0.15*1.9 = 0.6 + 0.6 + 0.5 + 0.285 = 1.985 -> rounds to 2
+      assertEq(DC.state.adpConsensus({ adp: { flock: 2, sleeper: 2, underdog: 2, espn: 1.9 } }), 2);
     });
 
     t('adpConsensus: null when adp is null', function () {
@@ -6152,20 +6177,20 @@
       assertEq(DC.state.adpConsensus({}), null);
     });
 
-    t('adpConsensus: partial-source weighted math via stubbed sidecar — espn 10 + sleeper 20, yahoo absent -> 16.7', function () {
+    t('adpConsensus: partial-source weighted math via stubbed sidecar — flock 10 + espn 20, sleeper/underdog absent -> 13.3', function () {
       var real = window.DC.adpData;
       try {
-        window.DC.adpData = { players: { 'partialkey|rb': { espn: 10, sleeper: 20 } } };
+        window.DC.adpData = { players: { 'partialkey|rb': { flock: 10, espn: 20 } } };
         var player = { name: 'Partial Key', team: 'KC', position: 'RB' };
-        // (0.30*10 + 0.60*20) / 0.90 = 16.666... -> 16.7
-        assertEq(DC.state.adpConsensus(player), 16.7);
+        // (0.30*10 + 0.15*20) / 0.45 = (3 + 3) / 0.45 = 6 / 0.45 = 13.333... -> 13.3
+        assertEq(DC.state.adpConsensus(player), 13.3);
       } finally {
         window.DC.adpData = real;
       }
     });
 
     t('adpConsensus: adp object present but zero valid sources -> null', function () {
-      assertEq(DC.state.adpConsensus({ adp: { espn: 0, yahoo: -3, sleeper: NaN } }), null);
+      assertEq(DC.state.adpConsensus({ adp: { flock: -3, sleeper: NaN, underdog: 0, espn: 0 } }), null);
     });
 
     function makeTierGroupPlayers() {
@@ -7879,8 +7904,8 @@
       var fixture = buildPinned390FixtureCard();
       var styleTag = injectRowGeometryCSS();
       try {
-        // 0.30*99 + 0.10*100 + 0.60*99 = 99.1 (a clean, non-boundary tenths value)
-        var view = { id: 'long1', rank: 9, name: 'Long Metrics Fixture', team: 'KC', position: 'RB', byeWeek: 9, tier: null, drafted: false, target: false, avoid: false, adp: { espn: 99, yahoo: 100, sleeper: 99 } };
+        // equal-value fixture: all sources 99.1, so the weighted mean is 99.1 under ANY ADP_WEIGHTS blend
+        var view = { id: 'long1', rank: 9, name: 'Long Metrics Fixture', team: 'KC', position: 'RB', byeWeek: 9, tier: null, drafted: false, target: false, avoid: false, adp: { espn: 99.1, flock: 99.1, sleeper: 99.1, underdog: 99.1 } };
         fixture.querySelector('#player-list').innerHTML = DC.ui.templates.availableRowHTML(view, { posRanks: { long1: 9 } });
         var metaEl = fixture.querySelector('#player-list .player-meta-card');
         assert(metaEl, 'expected the metrics line to render');
@@ -7931,8 +7956,8 @@
       var fixture = buildPinned390FixtureCard();
       var styleTag = injectRowGeometryCSS();
       try {
-        // 0.30*199 + 0.10*199 + 0.60*200 = 199.6 -- the widest realistic badge shape (5 chars)
-        var view = { id: 'spot1', rank: 40, name: 'Spot Check Fixture', team: 'SEA', position: 'WR', byeWeek: 11, tier: null, drafted: false, target: false, avoid: false, adp: { espn: 199, yahoo: 199, sleeper: 200 } };
+        // equal-value fixture: all sources 199.6, so the weighted mean is 199.6 under ANY ADP_WEIGHTS blend -- the widest realistic badge shape (5 chars)
+        var view = { id: 'spot1', rank: 40, name: 'Spot Check Fixture', team: 'SEA', position: 'WR', byeWeek: 11, tier: null, drafted: false, target: false, avoid: false, adp: { espn: 199.6, flock: 199.6, sleeper: 199.6, underdog: 199.6 } };
         // a VALUE tag cannot actually co-occur with ADP ~199 in production (valueFlagIds requires
         // consensus <= VALUE_RANK_CEILING, 75) — CLIFF (lastInTierIds) carries no such ADP
         // constraint, so it's the sig tag that can genuinely reach this combination.
@@ -7980,7 +8005,8 @@
       var realDk = window.DC.dkData;
       try {
         window.DC.dkData = { players: { 'fixturecomboa': { rec: 0, recYds: 1000, recTds: 0 } } }; // full 3/3 required set, 0 + 1000/10 + 0 = 100
-        var view = { id: 'fita', rank: 40, name: 'Fixture Combo A', team: 'SEA', position: 'WR', byeWeek: 11, tier: null, drafted: false, target: false, avoid: false, adp: { espn: 199, yahoo: 199, sleeper: 200 } };
+        // equal-value fixture: all sources 199.6, so the weighted mean is 199.6 under ANY ADP_WEIGHTS blend
+        var view = { id: 'fita', rank: 40, name: 'Fixture Combo A', team: 'SEA', position: 'WR', byeWeek: 11, tier: null, drafted: false, target: false, avoid: false, adp: { espn: 199.6, flock: 199.6, sleeper: 199.6, underdog: 199.6 } };
         var ctx = { posRanks: { fita: 15 }, signals: { value: {}, cliff: { fita: true } } }; // ONE tag
         assert(typeof DC.state.dkProjForPlayer(view) === 'number', 'sanity: this fixture\'s DK value should resolve');
         fixture.querySelector('#player-list').innerHTML = DC.ui.templates.availableRowHTML(view, ctx);
@@ -8023,7 +8049,8 @@
       var realDk = window.DC.dkData;
       try {
         window.DC.dkData = { players: { 'fixturecombob': { rec: 0, recYds: 1000, recTds: 0 } } }; // full 3/3 required set, resolves to 100
-        var view = { id: 'fitb', rank: 40, name: 'Fixture Combo B', team: 'SEA', position: 'WR', byeWeek: 11, tier: null, drafted: false, target: false, avoid: false, adp: { espn: 199, yahoo: 199, sleeper: 200 } };
+        // equal-value fixture: all sources 199.6, so the weighted mean is 199.6 under ANY ADP_WEIGHTS blend
+        var view = { id: 'fitb', rank: 40, name: 'Fixture Combo B', team: 'SEA', position: 'WR', byeWeek: 11, tier: null, drafted: false, target: false, avoid: false, adp: { espn: 199.6, flock: 199.6, sleeper: 199.6, underdog: 199.6 } };
         // synthetic: VALUE + ADP~199 can't co-occur in real production data (valueFlagIds needs
         // consensus <= 75, see the CLIFF-only pathological test above) -- this fixture only needs
         // to prove the suppression MECHANISM: 2 tags rendering together must drop the proj badge
@@ -9051,7 +9078,7 @@
         // full 5/5 RB required set: 1000/10=100 + 5*6=30 + 20*1=20 + 100/10=10 + 5*6=30 -> 190
         window.DC.dkData = { players: { 'cardcontentone': { rushYds: 1000, rushTds: 5, rec: 20, recYds: 100, recTds: 5 } } };
         var players = [
-          { id: 'cc-1', rank: 3, name: 'Card Content One', team: 'AAA', position: 'RB', byeWeek: 5, tier: 2, adp: { espn: 4, yahoo: 6, sleeper: 5 } },
+          { id: 'cc-1', rank: 3, name: 'Card Content One', team: 'AAA', position: 'RB', byeWeek: 5, tier: 2, adp: { espn: 4.8, yahoo: 6, sleeper: 4.8 } },
           { id: 'cc-2', rank: 4, name: 'Card Content Two', team: 'AAA', position: 'RB', byeWeek: 5, tier: null, adp: null } // name unkeyed in dkData -> null dk
         ];
         var marks = {
@@ -9100,7 +9127,8 @@
         assertEq(adpVals[0].textContent, String(p.adp.espn), 'ESPN adp value should match fixture');
         assertEq(adpVals[1].textContent, String(p.adp.yahoo), 'Yahoo adp value should match fixture');
         assertEq(adpVals[2].textContent, String(p.adp.sleeper), 'Sleeper adp value should match fixture');
-        // 0.30*4 + 0.10*6 + 0.60*5 = 4.8
+        // equal-value fixture: espn=sleeper=4.8 -> weighted=4.8 under any ADP_WEIGHTS blend (yahoo
+        // is a dead legacy key here -- adpConsensus no longer weights it, only displays it raw above)
         assertEq(adpVals[3].textContent, '4.8', 'Weighted adp value should equal the weighted consensus');
 
         var weightedRow = card.querySelectorAll('.compare-card-adp .adp-row')[3];
@@ -10006,7 +10034,7 @@
       }
     });
 
-    t('32. sidecar-resolved card: a stubbed table entry beats a different player.adp on the same fixture', function () {
+    t('32. sidecar-resolved card: a stubbed table entry beats a different player.adp on the same fixture; the yahoo key is dead (never read by adpForPlayer) and always renders the em-dash regardless of what the sidecar carries', function () {
       var fixture = buildCompareFixture();
       var real = window.DC.adpData;
       try {
@@ -10023,10 +10051,11 @@
         var root = fixture.querySelector('#compare-root');
         var vals = root.querySelectorAll('.compare-card[data-id="' + player.id + '"] .adp-val');
         assertEq(vals[0].textContent, '5', 'espn cell should show the sidecar value, not the stale player.adp value');
-        assertEq(vals[1].textContent, '6', 'yahoo cell should show the sidecar value, not the stale player.adp value');
+        assertEq(vals[1].textContent, '—', 'yahoo cell always renders the em-dash now -- adpForPlayer never reads shipped.yahoo, sidecar or not');
         assertEq(vals[2].textContent, '7', 'sleeper cell should show the sidecar value, not the stale player.adp value');
-        // 0.30*5 + 0.10*6 + 0.60*7 = 6.3
-        assertEq(vals[3].textContent, '6.3', 'Weighted cell should reflect the sidecar-resolved values, not the stale player.adp value');
+        // only espn(5) and sleeper(7) survive the merge (flock/underdog absent on this sidecar entry):
+        // (0.15*5 + 0.30*7) / (0.15+0.30) = (0.75+2.1) / 0.45 = 2.85/0.45 = 6.333... -> 6.3
+        assertEq(vals[3].textContent, '6.3', 'Weighted cell should reflect the sidecar-resolved espn/sleeper values, not the stale player.adp value');
       } finally {
         window.DC.adpData = real;
         document.body.removeChild(fixture);
@@ -11091,7 +11120,7 @@
       var goodEspn = buildEspnPayload(155, { includeDst: true, includeSkip: true, includeFixture: true });
       var unstub = stubFetch(goodSleeper, goodEspn);
       var realAdpData = window.DC.adpData;
-      window.DC.adpData = { updatedAt: '2020-05-05', players: { 'zeketestplayer|rb': { yahoo: 42 } } };
+      window.DC.adpData = { updatedAt: '2020-05-05', players: { 'zeketestplayer|rb': { flock: 42, underdog: 44 } } };
 
       return DC.adpRefresh.run().then(function (result) {
         t('adp-refresh success: run() resolves ok with exact per-source usable counts (skip-row excluded)', function () {
@@ -11113,9 +11142,9 @@
           assert(parsed.players['jax|dst'], 'JAC should fold to jax|dst');
           assert(parsed.players['buf|dst'], 'ESPN proTeamId 2 should key to buf|dst');
         });
-        t('adp-refresh success: adpForPlayer merges override espn/sleeper with shipped yahoo (run() already called reloadAdpOverride)', function () {
+        t('adp-refresh success: adpForPlayer merges override espn/sleeper with shipped flock/underdog (run() already called reloadAdpOverride)', function () {
           var merged = DC.state.adpForPlayer({ name: 'Zeke Testplayer', team: 'KC', position: 'RB' });
-          assertEq(merged, { espn: 15.5, yahoo: 42, sleeper: 16.75 });
+          assertEq(merged, { espn: 15.5, flock: 42, sleeper: 16.75, underdog: 44 });
         });
       }, function (err) {
         t('adp-refresh success: run() should not have rejected', function () {
@@ -11166,8 +11195,8 @@
           assertEq(result, null, 'bad shape should reload to null');
           assertEq(localStorage.getItem(OVERRIDE_KEY), null, 'bad-shape key should be removed');
 
-          window.DC.adpData = { players: { 'malformedfallback|wr': { espn: 11, yahoo: 12, sleeper: 13 } } };
-          assertEq(DC.state.adpForPlayer({ name: 'Malformed Fallback', team: 'KC', position: 'WR' }), { espn: 11, yahoo: 12, sleeper: 13 }, 'falls through to shipped');
+          window.DC.adpData = { players: { 'malformedfallback|wr': { espn: 11, flock: 12, sleeper: 13, underdog: 14 } } };
+          assertEq(DC.state.adpForPlayer({ name: 'Malformed Fallback', team: 'KC', position: 'WR' }), { espn: 11, flock: 12, sleeper: 13, underdog: 14 }, 'falls through to shipped');
         } finally {
           localStorage.removeItem(OVERRIDE_KEY);
           DC.state.reloadAdpOverride();
