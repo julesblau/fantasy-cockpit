@@ -1054,16 +1054,15 @@
       assertEq(DC.state.pickNumber(next, 'c'), 2, 'pick number unaffected by reorder');
     });
 
-    t('IMPORT_PLAYERS clears manuallyEdited to false', function () {
+    t('IMPORT_PLAYERS sets manuallyEdited:true and stamps the current seedFingerprint -- an imported board is a protected, user-authored board, never silently replaced by adoption on the next load or re-bake', function () {
       var state = makeBaseState();
-      state = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['e', 'd', 'c', 'b', 'a'] });
-      assertEq(state.manuallyEdited, true, 'precondition: manuallyEdited set by reorder');
       var newPlayers = [
         { id: 'b', rank: 1, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7 },
         { id: 'z', rank: 2, name: 'Zeke New', team: 'NYG', position: 'RB', byeWeek: 12 }
       ];
       var next = DC.state.reduce(state, { type: 'IMPORT_PLAYERS', players: newPlayers });
-      assertEq(next.manuallyEdited, false);
+      assertEq(next.manuallyEdited, true);
+      assertEq(next.seedFingerprint, DC.state.createSeedState().seedFingerprint);
     });
   })();
   </script>
@@ -2950,7 +2949,7 @@
       '5. Erik End BUF QB'
     ].join('\n');
 
-    t('shouldAutoBackupBeforeImport: false for seed; true after REORDER_PLAYERS; false again after IMPORT_PLAYERS', function () {
+    t('shouldAutoBackupBeforeImport: false for seed; true after REORDER_PLAYERS; still true after IMPORT_PLAYERS (imports are protected like edits)', function () {
       var seed = DC.state.createSeedState();
       assertEq(DC.ui.templates.shouldAutoBackupBeforeImport(seed), false, 'seed state should not require a backup');
 
@@ -2958,8 +2957,10 @@
       var reordered = DC.state.reduce(seed, { type: 'REORDER_PLAYERS', order: order });
       assertEq(DC.ui.templates.shouldAutoBackupBeforeImport(reordered), true, 'a manual reorder should require a backup before the next import');
 
+      // deliberate: IMPORT_PLAYERS sets manuallyEdited:true (imports are protected like edits), so
+      // a later import auto-backs-up the current (imported) board first, same as after a manual edit
       var imported = DC.state.reduce(reordered, { type: 'IMPORT_PLAYERS', players: reordered.players });
-      assertEq(DC.ui.templates.shouldAutoBackupBeforeImport(imported), false, 'a fresh import clears manuallyEdited, so no backup should be required right after');
+      assertEq(DC.ui.templates.shouldAutoBackupBeforeImport(imported), true, 'a fresh import sets manuallyEdited:true, so a subsequent import still auto-backs-up first');
     });
 
     t('sheet: Edit Rankings row sits above Import Rankings, closes the sheet, and calls DC.edit.open', function () {
@@ -11114,6 +11115,9 @@
       assertEq(loaded.undoStack, []);
       assertEq(loaded.manuallyEdited, false);
       assertEq(loaded.seedFingerprint, freshSeed.seedFingerprint);
+      // the fingerprintHandled immediate-save path: adoption is persisted now, not deferred to the next dispatch
+      var storedAfter = JSON.parse(localStorage.getItem(DC.state.STORAGE_KEY));
+      assertEq(storedAfter, loaded, 'the adopted state must be persisted immediately, matching the exact returned state');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
@@ -11141,6 +11145,9 @@
       assertEq(loaded.undoStack, payload.undoStack, 'undoStack untouched -- no adoption happened');
       assertEq(loaded.manuallyEdited, true);
       assertEq(loaded.seedFingerprint, DC.state.createSeedState().seedFingerprint, 'fingerprint stamped to current even though the board was kept');
+      // the fingerprintHandled immediate-save path fires here too (a re-stamp, not just an adopt)
+      var storedAfter = JSON.parse(localStorage.getItem(DC.state.STORAGE_KEY));
+      assertEq(storedAfter, loaded, 'the re-stamped state must be persisted immediately, matching the exact returned state');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
@@ -11172,6 +11179,50 @@
       var loaded = DC.state.load();
       assertEq(loaded, DC.state.createSeedState(), 'a non-string seedFingerprint fails isValidState -- full seed fallback, board NOT kept');
       localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('Fix round 1 (Critical): IMPORT_PLAYERS -> save() -> load() -- the imported board survives verbatim (ids/order intact, no adoption), fingerprint present and matching current, manuallyEdited true', function () {
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+      var seed = DC.state.createSeedState();
+      var importedPlayers = [
+        { id: 'imp-x', rank: 1, name: 'Import X', team: 'AAA', position: 'RB', byeWeek: 5, tier: null, adp: null },
+        { id: 'imp-y', rank: 2, name: 'Import Y', team: 'BBB', position: 'WR', byeWeek: 6, tier: null, adp: null }
+      ];
+      var afterImport = DC.state.reduce(seed, { type: 'IMPORT_PLAYERS', players: importedPlayers });
+      assertEq(afterImport.manuallyEdited, true, 'precondition: import is a protected board');
+
+      DC.state.save(afterImport);
+      var loaded = DC.state.load();
+
+      assertEq(loaded.players.map(function (p) { return p.id; }), ['imp-x', 'imp-y'], 'imported board survives verbatim -- no adoption on the very next load');
+      assertEq(loaded.manuallyEdited, true);
+      assertEq(loaded.seedFingerprint, DC.state.createSeedState().seedFingerprint, 'fingerprint present and matching current');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('Fix round 1 (Critical): after an import, a SUBSEQUENT board re-bake (new SEED_PLAYERS, no schema bump) still does NOT adopt over the imported board -- manuallyEdited:true takes the keep-and-restamp branch', function () {
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+      var seed = DC.state.createSeedState();
+      var importedPlayers = [
+        { id: 'imp-x', rank: 1, name: 'Import X', team: 'AAA', position: 'RB', byeWeek: 5, tier: null, adp: null },
+        { id: 'imp-y', rank: 2, name: 'Import Y', team: 'BBB', position: 'WR', byeWeek: 6, tier: null, adp: null }
+      ];
+      var afterImport = DC.state.reduce(seed, { type: 'IMPORT_PLAYERS', players: importedPlayers });
+      DC.state.save(afterImport);
+
+      var realSeed = DC.data.SEED_PLAYERS;
+      try {
+        DC.data.SEED_PLAYERS = [
+          { id: 'rebaked-1', rank: 1, name: 'Rebaked One', team: 'ZZZ', position: 'QB', byeWeek: 3, tier: null, adp: null }
+        ];
+        var loaded = DC.state.load();
+        assertEq(loaded.players.map(function (p) { return p.id; }), ['imp-x', 'imp-y'], 'imported board kept verbatim through a re-bake -- not adopted');
+        assertEq(loaded.manuallyEdited, true);
+        assertEq(loaded.seedFingerprint, DC.state.createSeedState().seedFingerprint, 'fingerprint re-stamped to the (stubbed) current one, still under the stub');
+      } finally {
+        DC.data.SEED_PLAYERS = realSeed;
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
     });
   })();
   </script>

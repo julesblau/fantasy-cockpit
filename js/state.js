@@ -572,8 +572,12 @@
           undoStack: newUndoStack,
           filters: { position: 'ALL', status: 'AVAILABLE' },
           searchText: '',
-          manuallyEdited: false,
-          league: state.league
+          // an imported board is user-authored -- same protected class as a manual reorder, so it
+          // must never be silently replaced by adoption: stamp the current fingerprint (a missing
+          // one is a mismatch) and set manuallyEdited so a future re-bake keeps this board too
+          manuallyEdited: true,
+          league: state.league,
+          seedFingerprint: currentFingerprint()
         };
       }
 
