@@ -1,0 +1,61 @@
+{
+  "updated": "2026-08-14",
+  "source": "user tier screenshots (Flock)",
+  "tiers": {
+    "QB": {
+      "Josh Allen": "S",
+      "Lamar Jackson": "A", "Drake Maye": "A",
+      "Jayden Daniels": "B", "Joe Burrow": "B", "Caleb Williams": "B", "Jalen Hurts": "B",
+      "Trevor Lawrence": "C", "Justin Herbert": "C", "Dak Prescott": "C", "Jaxson Dart": "C", "Brock Purdy": "C",
+      "Bo Nix": "D", "Patrick Mahomes": "D", "Matthew Stafford": "D", "Jared Goff": "D", "Kyler Murray": "D", "Baker Mayfield": "D",
+      "Tyler Shough": "E", "Jordan Love": "E", "Malik Willis": "E", "C.J. Stroud": "E", "Sam Darnold": "E",
+      "Cam Ward": "F", "Daniel Jones": "F", "Bryce Young": "F", "Aaron Rodgers": "F", "Jacoby Brissett": "F", "Geno Smith": "F", "Fernando Mendoza": "F", "Tua Tagovailoa": "F",
+      "Shedeur Sanders": "G", "Deshaun Watson": "G", "Michael Penix": "G", "Kirk Cousins": "G",
+      "Carson Beck": "H", "Anthony Richardson": "H", "J.J. McCarthy": "H", "Mac Jones": "H", "Justin Fields": "H", "Ty Simpson": "H",
+      "Drew Allar": "I", "Cade Klubnik": "I", "Jameis Winston": "I", "Marcus Mariota": "I", "Joe Flacco": "I",
+      "Riley Leonard": "J", "Gardner Minshew": "J", "Tyrod Taylor": "J"
+    },
+    "RB": {
+      "Jahmyr Gibbs": "S", "Bijan Robinson": "S",
+      "Christian McCaffrey": "A", "Jonathan Taylor": "A",
+      "James Cook": "B", "Ashton Jeanty": "B", "Chase Brown": "B", "Omarion Hampton": "B", "Devon Achane": "B",
+      "Saquon Barkley": "C", "Kenneth Walker": "C", "Derrick Henry": "C", "Jeremiyah Love": "C",
+      "Breece Hall": "D", "Kyren Williams": "D", "Javonte Williams": "D", "Josh Jacobs": "D",
+      "Cam Skattebo": "E", "Travis Etienne": "E", "Bucky Irving": "E", "Bhayshul Tuten": "E", "David Montgomery": "E",
+      "D'Andre Swift": "F", "Quinshon Judkins": "F", "TreVeyon Henderson": "F", "Jadarian Price": "F", "Jaylen Warren": "F",
+      "Tony Pollard": "G", "Jonathon Brooks": "G", "Rhamondre Stevenson": "G", "RJ Harvey": "G", "J.K. Dobbins": "G",
+      "Rachaad White": "H", "Rico Dowdle": "H", "Chuba Hubbard": "H", "Blake Corum": "H", "Jordan Mason": "H", "Kyle Monangai": "H", "Jacory Croskey-Merritt": "H", "Kenneth Gainwell": "H",
+      "Aaron Jones": "I", "Chris Rodriguez": "I", "Tyrone Tracy": "I", "Woody Marks": "I", "Jonah Coleman": "I", "Keaton Mitchell": "I", "Isiah Pacheco": "I", "Tank Bigsby": "I", "Tyler Allgeier": "I", "Alvin Kamara": "I", "Dylan Sampson": "I", "Zach Charbonnet": "I",
+      "Tyjae Spears": "J", "Brian Robinson": "J", "Sean Tucker": "J", "Kaytron Allen": "J", "MarShawn Lloyd": "J", "Nicholas Singleton": "J", "Emmett Johnson": "J", "Mike Washington Jr.": "J", "Ray Davis": "J", "Demond Claiborne": "J", "Chris Brooks": "J", "Devin Singletary": "J", "Brashard Smith": "J", "Braelon Allen": "J", "Jaydon Blue": "J", "Ollie Gordon II": "J", "Kimani Vidal": "J", "Najee Harris": "J", "George Holani": "J", "Jordan James": "J", "Adam Randall": "J",
+      "James Conner": "K", "Samaje Perine": "K", "Ty Johnson": "K", "Justice Hill": "K", "DJ Giddens": "K", "Isaiah Davis": "K", "Kendre Miller": "K", "Isaac Guerendo": "K", "Kaelon Black": "K", "Seth McGowan": "K", "Kaleb Johnson": "K", "Emanuel Wilson": "K", "Trey Benson": "K", "Jaylen Wright": "K", "Devin Neal": "K", "LeQuint Allen": "K", "Trevor Etienne": "K", "Malik Davis": "K", "Emari Demercado": "K", "Jerome Ford": "K", "Tahj Brooks": "K", "Jarquez Hunter": "K",
+      "Jaleel McLaughlin": "L", "Audric Estime": "L", "Will Shipley": "L", "Kareem Hunt": "L", "Eli Heidenreich": "L", "Jawhar Jordan": "L",
+      "Dameon Pierce": "M", "Zonovan Knight": "M", "Raheim Sanders": "M"
+    },
+    "WR": {
+      "Ja'Marr Chase": "S", "Puka Nacua": "S", "Jaxon Smith-Njigba": "S", "Amon-Ra St. Brown": "S", "CeeDee Lamb": "S", "Justin Jefferson": "S", "Drake London": "S", "A.J. Brown": "S", "Malik Nabers": "S", "Nico Collins": "S", "Rashee Rice": "S", "George Pickens": "S", "DeVonta Smith": "S", "Chris Olave": "S", "Zay Flowers": "S", "Tee Higgins": "S", "Jaylen Waddle": "S", "Emeka Egbuka": "S",
+      "Ladd McConkey": "A", "Garrett Wilson": "A", "Tetairoa McMillan": "A",
+      "Davante Adams": "B", "Terry McLaurin": "B", "Jameson Williams": "B", "Luther Burden": "B", "Mike Evans": "B",
+      "Carnell Tate": "C", "Rome Odunze": "C", "Brian Thomas": "C", "DJ Moore": "C", "Christian Watson": "C", "Marvin Harrison": "C", "Jordyn Tyson": "C", "Parker Washington": "C",
+      "Makai Lemon": "D", "Quentin Johnston": "D", "Jordan Addison": "D", "Michael Pittman": "D", "Alec Pierce": "D", "DK Metcalf": "D", "Chris Godwin": "D", "Courtland Sutton": "D", "Stefon Diggs": "D", "Michael Wilson": "D", "Josh Downs": "D", "Wan'Dale Robinson": "D", "KC Concepcion": "D", "Jayden Reed": "D", "Xavier Worthy": "D", "Deebo Samuel": "D", "Jakobi Meyers": "D", "Matthew Golden": "D", "Travis Hunter": "D", "Romeo Doubs": "D", "Jalen Coker": "D", "Jayden Higgins": "D", "Khalil Shakir": "D", "Rashid Shaheed": "D", "Denzel Boston": "D", "Omar Cooper Jr.": "D", "De'Zhaun Stribling": "D",
+      "Jalen McMillan": "E", "Tre Tucker": "E", "Jalen Nailor": "E", "Tre Harris": "E", "Antonio Williams": "E", "Darnell Mooney": "E", "Ryan Flournoy": "E",
+      "Calvin Ridley": "F", "Malik Washington": "F", "Tank Dell": "F", "Jerry Jeudy": "F", "Zachariah Branch": "F", "Jauan Jennings": "F", "Isaac TeSlaa": "F", "Germie Bernard": "F", "Elijah Sarratt": "F",
+      "Kayshon Boutte": "G", "Ja'Kobi Lane": "G", "Chris Bell": "G", "Troy Franklin": "G", "Adonai Mitchell": "G", "Ted Hurst": "G", "Elic Ayomanor": "G", "Dontayvion Wicks": "G", "Calvin Austin": "G",
+      "Darius Slayton": "H", "Caleb Douglas": "H", "Malachi Fields": "H", "Luke McCaffrey": "H", "Cyrus Allen": "H", "Keon Coleman": "H", "Chimere Dike": "H", "Jack Bech": "H", "Tory Horton": "H", "Christian Kirk": "H", "Tez Johnson": "H", "Bryce Lance": "H", "Jaylin Noel": "H", "Tyquan Thornton": "H", "Pat Bryant": "H", "Skyler Bell": "H", "Rashod Bateman": "H",
+      "Cedric Tillman": "I", "Chris Brazzell II": "I", "Devaughn Vele": "I", "Cooper Kupp": "I", "Xavier Legette": "I", "Brandon Aiyuk": "I", "Andrei Iosivas": "I", "Hollywood Brown": "I", "Mack Hollins": "I", "Konata Mumpfield": "I", "Keenan Allen": "I", "Olamide Zaccheaus": "I", "Tyreek Hill": "I",
+      "Jaylin Lane": "J", "Joshua Palmer": "J", "Dont'e Thornton Jr.": "J", "Jalen Tolbert": "J", "Isaiah Bond": "J", "Marvin Mims": "J", "Treylon Burks": "J", "Kendrick Bourne": "J", "Zavion Thomas": "J", "Kyle Williams": "J", "Brenen Thompson": "J", "Tutu Atwell": "J",
+      "Jordan Whittington": "K", "DeMario Douglas": "K", "Jahan Dotson": "K", "Savion Williams": "K", "Xavier Hutchinson": "K", "Kevin Coleman Jr.": "K", "KaVontae Turpin": "K", "Kalif Raymond": "K", "Nick Westbrook-Ikhine": "K", "Ashton Dulin": "K", "Devontez Walker": "K", "Roman Wilson": "K", "Dyami Brown": "K", "Greg Dortch": "K", "Demarcus Robinson": "K", "Theo Wease Jr.": "K", "DeAndre Hopkins": "K", "JuJu Smith-Schuster": "K"
+    },
+    "TE": {
+      "Brock Bowers": "S", "Trey McBride": "S",
+      "Colston Loveland": "A",
+      "Tyler Warren": "B",
+      "Tucker Kraft": "C", "Sam LaPorta": "C", "Harold Fannin": "C", "Kyle Pitts": "C",
+      "George Kittle": "D", "Travis Kelce": "D", "Jake Ferguson": "D", "Isaiah Likely": "D",
+      "Mark Andrews": "E", "Dalton Kincaid": "E", "Dallas Goedert": "E", "Chig Okonkwo": "E", "Oronde Gadsden": "E",
+      "Brenton Strange": "F", "Hunter Henry": "F", "Kenyon Sadiq": "F", "T.J. Hockenson": "F", "Juwan Johnson": "F", "AJ Barner": "F", "Dalton Schultz": "F",
+      "Gunnar Helm": "G", "Terrance Ferguson": "G", "David Njoku": "G", "Pat Freiermuth": "G", "Greg Dulcich": "G", "Cade Otton": "G", "Eli Stowers": "G",
+      "Mike Gesicki": "H", "Evan Engram": "H", "Colby Parkinson": "H", "Max Klare": "H", "Eli Raridon": "H", "Jake Tonges": "H", "Charlie Kolar": "H", "Erick All": "H", "Darnell Washington": "H", "Theo Johnson": "H", "Mason Taylor": "H", "Michael Mayer": "H", "Elijah Arroyo": "H", "Dawson Knox": "H", "Cole Kmet": "H", "Oscar Delp": "H", "Ja'Tavion Sanders": "H", "Noah Gray": "H",
+      "Justin Joly": "I", "Noah Fant": "I", "Luke Musgrave": "I", "Tyler Higbee": "I", "Luke Schoonmaker": "I", "Darren Waller": "I", "Mo Alie-Cox": "I", "Taysom Hill": "I"
+    }
+  }
+}

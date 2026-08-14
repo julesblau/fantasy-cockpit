@@ -115,9 +115,9 @@
   <script>
     section('data');
 
-    t('SEED_PLAYERS.length is between 265 and 295', function () {
+    t('SEED_PLAYERS.length is between 410 and 440', function () {
       var n = DC.data.SEED_PLAYERS.length;
-      assert(n >= 265 && n <= 295, 'length=' + n);
+      assert(n >= 410 && n <= 440, 'length=' + n);
     });
 
     t('all player ids are unique', function () {
@@ -134,8 +134,12 @@
       });
     });
 
-    t('every player team exists in TEAM_BYE_WEEKS and byeWeek matches', function () {
+    t('every player team exists in TEAM_BYE_WEEKS (byeWeek matches), or is FA (byeWeek 0)', function () {
       DC.data.SEED_PLAYERS.forEach(function (p) {
+        if (p.team === 'FA') {
+          assertEq(p.byeWeek, 0, 'FA byeWeek for ' + p.id);
+          return;
+        }
         assert(Object.prototype.hasOwnProperty.call(DC.data.TEAM_BYE_WEEKS, p.team), 'unknown team: ' + p.team);
         assertEq(p.byeWeek, DC.data.TEAM_BYE_WEEKS[p.team], 'byeWeek for ' + p.id);
       });
@@ -161,12 +165,12 @@
       assert(counts.DST >= 8, 'DST=' + counts.DST);
     });
 
-    t('TEAM_BYE_WEEKS has exactly 32 keys, all byes ints 5-14', function () {
+    t('TEAM_BYE_WEEKS has exactly 32 keys, all byes ints 1-18', function () {
       var keys = Object.keys(DC.data.TEAM_BYE_WEEKS);
       assertEq(keys.length, 32, 'key count');
       keys.forEach(function (k) {
         var w = DC.data.TEAM_BYE_WEEKS[k];
-        assert(Number.isInteger(w) && w >= 5 && w <= 14, k + ' bye=' + w);
+        assert(Number.isInteger(w) && w >= 1 && w <= 18, k + ' bye=' + w);
       });
     });
 
@@ -196,6 +200,39 @@
         }
       });
       assert(maxRun <= 7, 'max run=' + maxRun + (firstViolation ? '; ' + firstViolation : ''));
+    });
+
+    t('SEED_PLAYERS.length is >=420 (real big board bake)', function () {
+      assert(DC.data.SEED_PLAYERS.length >= 420, 'length=' + DC.data.SEED_PLAYERS.length);
+    });
+
+    t('all six positions (QB, RB, WR, TE, DST, K) are present in SEED_PLAYERS', function () {
+      var seen = {};
+      DC.data.SEED_PLAYERS.forEach(function (p) { seen[p.position] = true; });
+      ['QB', 'RB', 'WR', 'TE', 'DST', 'K'].forEach(function (pos) {
+        assert(seen[pos], 'position missing from seed: ' + pos);
+      });
+    });
+
+    t('canonical seed key order: id, rank, name, team, position, byeWeek, tier, adp', function () {
+      var p = DC.data.SEED_PLAYERS[0];
+      assertEq(Object.keys(p), ['id', 'rank', 'name', 'team', 'position', 'byeWeek', 'tier', 'adp'], 'key order');
+    });
+
+    t('every SEED_PLAYERS byeWeek is an int 0..18', function () {
+      DC.data.SEED_PLAYERS.forEach(function (p) {
+        assert(Number.isInteger(p.byeWeek) && p.byeWeek >= 0 && p.byeWeek <= 18, p.id + ' byeWeek=' + p.byeWeek);
+      });
+    });
+
+    t('every QB/RB/WR/TE has an integer tier >=1; every K/DST has tier === null', function () {
+      DC.data.SEED_PLAYERS.forEach(function (p) {
+        if (p.position === 'K' || p.position === 'DST') {
+          assertEq(p.tier, null, p.id + ' should be untiered');
+        } else {
+          assert(Number.isInteger(p.tier) && p.tier >= 1, p.id + ' tier=' + p.tier);
+        }
+      });
     });
   </script>
 
@@ -240,7 +277,7 @@
       });
     });
 
-    t('join-liveness: >=80 of the first 100 SEED_PLAYERS resolve via adpKey', function () {
+    t('join-liveness: >=90 of the first 100 SEED_PLAYERS resolve via adpKey (measured 100/100 against the real big board)', function () {
       var first100 = DC.data.SEED_PLAYERS.slice(0, 100);
       var hits = 0;
       first100.forEach(function (p) {
@@ -249,10 +286,10 @@
           hits++;
         }
       });
-      assert(hits >= 80, 'hits=' + hits + '/100');
+      assert(hits >= 90, 'hits=' + hits + '/100');
     });
 
-    t('DST liveness: >=10 of the seed DSTs resolve via adpKey', function () {
+    t('DST liveness: >=28 of the seed DSTs resolve via adpKey (measured 32/32 against the real big board)', function () {
       var dsts = DC.data.SEED_PLAYERS.filter(function (p) { return p.position === 'DST'; });
       var hits = 0;
       dsts.forEach(function (p) {
@@ -261,7 +298,7 @@
           hits++;
         }
       });
-      assert(hits >= 10, 'hits=' + hits + '/' + dsts.length);
+      assert(hits >= 28, 'hits=' + hits + '/' + dsts.length);
     });
 
     t('DC.adpData.images exists, is a plain object, >=200 entries', function () {
@@ -338,7 +375,7 @@
       });
     });
 
-    t('join-liveness: >=40 of the first 60 SEED_PLAYERS resolve via normalizeAdpName', function () {
+    t('join-liveness: >=48 of the first 60 SEED_PLAYERS resolve via normalizeAdpName (measured 57/60 against the real big board)', function () {
       var first60 = DC.data.SEED_PLAYERS.slice(0, 60);
       var hits = 0;
       first60.forEach(function (p) {
@@ -347,7 +384,7 @@
           hits++;
         }
       });
-      assert(hits >= 40, 'hits=' + hits + '/60');
+      assert(hits >= 48, 'hits=' + hits + '/60');
     });
   })();
   </script>
@@ -496,7 +533,7 @@
       }
     });
 
-    t('seam-level liveness (binding, real data): >=25 of the first 60 SEED_PLAYERS resolve a finite dkProjForPlayer under the strict completeness gate (measured 34/60)', function () {
+    t('seam-level liveness (binding, real data): >=25 of the first 60 SEED_PLAYERS resolve a finite dkProjForPlayer under the strict completeness gate (measured 31/60 against the real big board -- the new top-60 carries more line-gap players than the old one, expected)', function () {
       var first60 = DC.data.SEED_PLAYERS.slice(0, 60);
       var hits = 0;
       first60.forEach(function (p) {
@@ -562,22 +599,21 @@
       });
     });
 
-    t('seed tier banding: boundary and tail spot-checks per position', function () {
+    t('seed tier assignment: first player of each skill position is tier 1 (ordinal-by-first-appearance is a structural guarantee, not a value pin); K/DST are always untiered', function () {
       var byPosition = {};
       DC.data.SEED_PLAYERS.forEach(function (p) {
         byPosition[p.position] = byPosition[p.position] || [];
         byPosition[p.position].push(p);
       });
-      assertEq(byPosition.QB[0].tier, 1, '1st QB should be tier 1');
-      assertEq(byPosition.QB[3].tier, 2, '4th QB should be tier 2 (band boundary)');
-      assertEq(byPosition.QB[21].tier, 7, '22nd QB should be tier 7 (tail)');
-      assertEq(byPosition.RB[3].tier, 1, '4th RB should be tier 1');
-      assertEq(byPosition.RB[4].tier, 2, '5th RB should be tier 2');
-      for (var i = 54; i < byPosition.RB.length; i++) {
-        assertEq(byPosition.RB[i].tier, 7, '55th RB and later should be tier 7 (index ' + i + ')');
-      }
-      assertEq(byPosition.K[10].tier, 4, '11th K should be tier 4');
-      assertEq(byPosition.K[11].tier, 4, '12th K should be tier 4');
+      ['QB', 'RB', 'WR', 'TE'].forEach(function (pos) {
+        assert(byPosition[pos] && byPosition[pos].length > 0, 'position missing: ' + pos);
+        assertEq(byPosition[pos][0].tier, 1, '1st ' + pos + ' should be tier 1');
+      });
+      ['K', 'DST'].forEach(function (pos) {
+        (byPosition[pos] || []).forEach(function (p) {
+          assertEq(p.tier, null, pos + ' ' + p.id + ' should be untiered');
+        });
+      });
     });
 
     t('seed tier banding: monotone non-decreasing per position, and normalizeTiers is a no-op on the seed', function () {
@@ -593,8 +629,21 @@
       assert(DC.state.normalizeTiers(seedState.players) === seedState.players, 'normalizeTiers should return the SAME reference — the seed is already normalized');
     });
 
-    t('seed tier banding: no singleton (position,tier) groups at boot — no CLIFF tag fires', function () {
-      assertEq(DC.state.lastInTierIds(DC.state.createSeedState()), {});
+    t('lastInTierIds at boot matches an independently-recomputed (position,tier) singleton set — real manual tiers legitimately include singleton groups now (unlike the old evenly-banded seed), so this recomputes from the seed itself rather than pinning names/counts', function () {
+      var seedState = DC.state.createSeedState();
+      var counts = {};
+      seedState.players.forEach(function (p) {
+        if (p.tier === null || p.tier === undefined) { return; }
+        var key = p.position + '|' + p.tier;
+        counts[key] = (counts[key] || 0) + 1;
+      });
+      var expected = {};
+      seedState.players.forEach(function (p) {
+        if (p.tier === null || p.tier === undefined) { return; }
+        var key = p.position + '|' + p.tier;
+        if (counts[key] === 1) { expected[p.id] = true; }
+      });
+      assertEq(DC.state.lastInTierIds(seedState), expected);
     });
 
     // ---- adp sidecar lookup + weighted consensus ----
@@ -5117,6 +5166,28 @@
       var draftedSearchHtml = DC.ui.templates.playerRowHTML(draftedView, { searching: true });
       assert(draftedSearchHtml.indexOf('<div class="tier-strip tier-c1"><span>TIER 1</span></div>') !== -1, draftedSearchHtml);
       assert(draftedSearchHtml.indexOf('is-drafted-search') !== -1, draftedSearchHtml);
+    });
+
+    t('null-tier tolerance with a REAL seed K/DST player (never true of the seed before this board): createSeedState -> load()\'s normalize pass -> playerRowHTML all handle tier:null without throwing, and render no .tier-strip', function () {
+      var seedState = DC.state.createSeedState();
+      var realKOrDst = seedState.players.filter(function (p) { return p.position === 'K' || p.position === 'DST'; })[0];
+      assert(realKOrDst, 'seed should include at least one K or DST');
+      assertEq(realKOrDst.tier, null, 'real seed K/DST should be untiered');
+
+      var marks = {};
+      marks[realKOrDst.id] = { drafted: false, target: false, avoid: false, mine: false };
+      var payload = {
+        schemaVersion: 7, players: [realKOrDst], marks: marks, undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.players[0].tier, null, 'load()\'s normalize pass must not fabricate a tier for a real null-tier player');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+
+      var view = Object.assign({}, realKOrDst, { drafted: false, target: false, avoid: false, mine: false });
+      var html = DC.ui.templates.playerRowHTML(view, {});
+      assert(html.indexOf('tier-strip') === -1, 'no tier-strip for a real untiered K/DST: ' + html);
     });
 
     t('playerRowHTML: tier strip class falls back to tier-cx for tiers >= 7', function () {
@@ -10914,13 +10985,13 @@
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
-    t('load(): migrations[6] non-legacy branch — a v6 payload built from the NEW post-reorder createSeedState() has the legacy LENGTH but not the legacy HASH, so it is stamped to v7 with order untouched', function () {
+    t('load(): migrations[6] non-legacy branch — a v6 payload built from the CURRENT createSeedState() never fingerprint-matches the frozen pre-reorder legacy hash (different length now, not just a different hash), so it is stamped to v7 with order untouched', function () {
       var seedState = DC.state.createSeedState();
       var payload = Object.assign({}, seedState, { schemaVersion: 6 });
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
       assertEq(loaded.schemaVersion, 7, 'stamped to current version');
-      assertEq(loaded.players.map(function (p) { return p.id; }), seedState.players.map(function (p) { return p.id; }), 'same 276 ids as the legacy seed (same length) but a different permutation (different hash) — never reordered again');
+      assertEq(loaded.players.map(function (p) { return p.id; }), seedState.players.map(function (p) { return p.id; }), 'same ids as the current seed, order untouched — never reordered again');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
   })();
