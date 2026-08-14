@@ -22,7 +22,7 @@
    * }} State
    */
 
-  var CURRENT_SCHEMA_VERSION = 7;
+  var CURRENT_SCHEMA_VERSION = 8;
   var STORAGE_KEY = 'draft-cockpit/state';
   var ADP_OVERRIDE_KEY = 'draft-cockpit/adp-override';
   var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true, DST: true, K: true };
@@ -48,6 +48,11 @@
       h = ((h << 5) + h + str.charCodeAt(i)) | 0;
     }
     return h;
+  }
+
+  /** @returns {string} live fingerprint of the current board bake; not cached, so a re-baked/stubbed SEED_PLAYERS is picked up immediately */
+  function currentFingerprint() {
+    return String(DC.data.SEED_PLAYERS.length) + ':' + hashIdList(DC.data.SEED_PLAYERS);
   }
 
   /** @type {Object<number, function(*): State>} old-version-number -> upgrader to next version */
@@ -108,6 +113,12 @@
              filters: v6.filters, searchText: v6.searchText, manuallyEdited: v6.manuallyEdited, league: v6.league };
   };
 
+  // v8 force-adopt: explicit user-directed board replacement (owner asked for this board),
+  // hence no manuallyEdited guard -- every phone gets the new board once on this upgrade.
+  migrations[7] = function (v7) {
+    return adoptSeed(v7);
+  };
+
   /** @returns {State} */
   function createSeedState() {
     var players = DC.data.SEED_PLAYERS.map(function (p) {
@@ -125,7 +136,45 @@
       filters: { position: 'ALL', status: 'AVAILABLE' },
       searchText: '',
       manuallyEdited: false,
-      league: null
+      league: null,
+      seedFingerprint: currentFingerprint()
+    };
+  }
+
+  /**
+   * Explicit board replacement, used by both the v8 force-adopt migration and the load-time
+   * re-adopt check: new players from the live SEED_PLAYERS; marks carried onto the matching
+   * new player by (normalizeAdpName(name) + position) identity -- team deliberately excluded,
+   * since a team move changes the slug id but not who the player is. An old player with no
+   * new match has its mark dropped silently; a new player with no old match gets a fresh
+   * all-false mark. undoStack is cleared (old-id pick references are unsafe); filters/
+   * searchText/league carry over from the old state.
+   * @param {State} oldState @returns {State}
+   */
+  function adoptSeed(oldState) {
+    var oldMarkByIdentity = {};
+    oldState.players.forEach(function (p) {
+      oldMarkByIdentity[normalizeAdpName(p.name) + '|' + p.position] = oldState.marks[p.id];
+    });
+    var newPlayers = DC.data.SEED_PLAYERS.map(function (p) {
+      return { id: p.id, rank: p.rank, name: p.name, team: p.team, position: p.position, byeWeek: p.byeWeek, tier: typeof p.tier === 'number' ? p.tier : null, adp: p.adp === undefined ? null : p.adp };
+    });
+    var marks = {};
+    newPlayers.forEach(function (p) {
+      var carried = oldMarkByIdentity[normalizeAdpName(p.name) + '|' + p.position];
+      marks[p.id] = carried || { drafted: false, target: false, avoid: false, mine: false };
+    });
+    return {
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      players: newPlayers,
+      marks: marks,
+      undoStack: [],
+      filters: oldState.filters,
+      searchText: oldState.searchText,
+      // adoption yields a pristine seed; edit flag re-arms on the next real edit
+      manuallyEdited: false,
+      league: oldState.league,
+      seedFingerprint: currentFingerprint()
     };
   }
 
@@ -484,8 +533,24 @@
         return Object.assign({}, state, { marks: resetTAMarks });
       }
 
-      case 'CLEAR_ALL_DATA':
-        return createSeedState();
+      case 'CLEAR_ALL_DATA': {
+        // board arrangement is never reset by clear (user directive): players stay verbatim
+        var clearedMarks = {};
+        state.players.forEach(function (p) {
+          clearedMarks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+        });
+        return {
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          players: state.players,
+          marks: clearedMarks,
+          undoStack: [],
+          filters: { position: 'ALL', status: 'AVAILABLE' },
+          searchText: '',
+          manuallyEdited: state.manuallyEdited,
+          league: null,
+          seedFingerprint: state.seedFingerprint
+        };
+      }
 
       case 'IMPORT_PLAYERS': {
         var newPlayers = normalizeTiers(action.players);
@@ -1098,6 +1163,9 @@
     if (typeof obj.searchText !== 'string') {
       return false;
     }
+    if (obj.seedFingerprint !== undefined && typeof obj.seedFingerprint !== 'string') {
+      return false;
+    }
     return true;
   }
 
@@ -1152,7 +1220,8 @@
       filters: state.filters,
       searchText: state.searchText,
       manuallyEdited: (typeof state.manuallyEdited === 'boolean' ? state.manuallyEdited : false),
-      league: healLeague(state.league)
+      league: healLeague(state.league),
+      seedFingerprint: state.seedFingerprint
     };
   }
 
@@ -1201,9 +1270,19 @@
         return createSeedState();
       }
 
+      // data-only re-bakes reach phones without a schema bump: a mismatched fingerprint on an
+      // already-v8 state either re-adopts (unedited board) or is kept and re-stamped so this
+      // check doesn't re-fire every load (adopt-once-declined semantics for an edited board).
+      var fp = currentFingerprint();
+      var fingerprintHandled = false;
+      if (parsed.seedFingerprint !== fp) {
+        fingerprintHandled = true;
+        parsed = parsed.manuallyEdited ? Object.assign({}, parsed, { seedFingerprint: fp }) : adoptSeed(parsed);
+      }
+
       var result = normalize(parsed);
-      if (version !== initialVersion) {
-        // migration ran: persist the upgraded shape now instead of waiting for the next dispatch
+      if (version !== initialVersion || fingerprintHandled) {
+        // migration or re-adopt ran: persist the upgraded shape now instead of waiting for the next dispatch
         save(result);
       }
       return result;

@@ -586,7 +586,7 @@
 
     t('createSeedState: correct shape from DC.data.SEED_PLAYERS', function () {
       var s = DC.state.createSeedState();
-      assertEq(s.schemaVersion, 7);
+      assertEq(s.schemaVersion, 8);
       s.players.forEach(function (p, i) {
         var seed = DC.data.SEED_PLAYERS[i];
         assertEq(p, { id: seed.id, rank: seed.rank, name: seed.name, team: seed.team, position: seed.position, byeWeek: seed.byeWeek, tier: seed.tier, adp: seed.adp }, 'seed player ' + i);
@@ -735,7 +735,7 @@
       }
     });
 
-    t('load(): a v5 payload with real adp objects migrates to schemaVersion 7 (through the v6 pass-through) with every player.adp forced null', function () {
+    t('load(): a v5 payload with real adp objects migrates through the v6 pass-through (adp forced null internally) then the v8 force-adopt step replaces the board wholesale — the v5/v6 fixture players never survive to the final result', function () {
       var payload = {
         schemaVersion: 5,
         players: [
@@ -750,10 +750,8 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 7);
-      loaded.players.forEach(function (p) {
-        assertEq(p.adp, null, 'adp for ' + p.id + ' must be forced null by the v6 migration');
-      });
+      assertEq(loaded.schemaVersion, 8);
+      assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v5->v6 adp-nulling step is superseded for any pre-v8 payload');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
@@ -910,11 +908,32 @@
       assertEq(state.undoStack, stackBefore);
     });
 
-    t('CLEAR_ALL_DATA returns a fresh seed state', function () {
+    t('CLEAR_ALL_DATA: board arrangement is never reset (user directive) -- players array identical, marks reset all-false, undo/search/filters/league reset, manuallyEdited and seedFingerprint preserved untouched', function () {
       var state = makeBaseState();
+      state = DC.state.reduce(state, { type: 'REORDER_PLAYERS', order: ['e', 'c', 'a', 'd', 'b'] }); // custom/reordered board
       state = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'a' });
+      state = DC.state.reduce(state, { type: 'TOGGLE_TARGET', playerId: 'b' });
+      state = DC.state.reduce(state, { type: 'SET_SEARCH', text: 'foo' });
+      state = DC.state.reduce(state, { type: 'SET_POSITION_FILTER', position: 'RB' });
+      state = Object.assign({}, state, {
+        league: { size: 10, slot: 1, snake: true, roster: DC.state.DEFAULT_ROSTER },
+        seedFingerprint: 'fixture-fp-1'
+      });
+      var playersBefore = state.players;
+
       var next = DC.state.reduce(state, { type: 'CLEAR_ALL_DATA' });
-      assertEq(next, DC.state.createSeedState());
+
+      assertEq(next.players, playersBefore, 'players array identical -- board arrangement never reset by clear');
+      Object.keys(next.marks).forEach(function (id) {
+        assertEq(next.marks[id], { drafted: false, target: false, avoid: false, mine: false }, 'mark for ' + id + ' reset all-false');
+      });
+      assertEq(next.undoStack, []);
+      assertEq(next.filters, { position: 'ALL', status: 'AVAILABLE' });
+      assertEq(next.searchText, '');
+      assertEq(next.league, null);
+      assertEq(next.manuallyEdited, true, 'manuallyEdited preserved untouched (the reorder above had set it true)');
+      assertEq(next.seedFingerprint, 'fixture-fp-1', 'seedFingerprint preserved untouched');
+      assertEq(next.schemaVersion, DC.state.CURRENT_SCHEMA_VERSION);
     });
 
     t('IMPORT_PLAYERS reconciles marks and undoStack, resets filters/search', function () {
@@ -1255,7 +1274,7 @@
 
     t('STORAGE_KEY and CURRENT_SCHEMA_VERSION constants', function () {
       assertEq(DC.state.STORAGE_KEY, 'draft-cockpit/state');
-      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 7);
+      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 8);
     });
 
     t('load(): missing key falls back to a fresh seed state', function () {
@@ -1327,7 +1346,8 @@
 
     t('load(): heals empty marks object instead of crashing selectors', function () {
       var payload = {
-        schemaVersion: 1,
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION, // current version + matching fingerprint: bypasses v8 force-adopt so this normalize-only heal is actually observable on fixture players
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
         players: makeHealPlayers(),
         marks: {},
         undoStack: [],
@@ -1346,7 +1366,8 @@
 
     t('load(): heals a mark entry with a wrong-typed field, preserving valid booleans', function () {
       var payload = {
-        schemaVersion: 1,
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION, // current version + matching fingerprint: bypasses v8 force-adopt so this normalize-only heal is actually observable on fixture players
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
         players: makeHealPlayers(),
         marks: {
           x1: { drafted: 'yes', target: true, avoid: false },
@@ -1364,7 +1385,8 @@
 
     t('load(): drops orphan mark keys not present in players', function () {
       var payload = {
-        schemaVersion: 1,
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION, // current version + matching fingerprint: bypasses v8 force-adopt so this normalize-only heal is actually observable on fixture players
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
         players: makeHealPlayers(),
         marks: {
           x1: { drafted: false, target: false, avoid: false },
@@ -1384,7 +1406,8 @@
 
     t('load(): drops undoStack entries whose playerId is not in players', function () {
       var payload = {
-        schemaVersion: 1,
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION, // current version + matching fingerprint: bypasses v8 force-adopt so this normalize-only heal is actually observable on fixture players
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
         players: makeHealPlayers(),
         marks: {
           x1: { drafted: true, target: false, avoid: false },
@@ -1405,7 +1428,8 @@
 
     t('load(): heals both target and avoid true by keeping target and clearing avoid', function () {
       var payload = {
-        schemaVersion: 1,
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION, // current version + matching fingerprint: bypasses v8 force-adopt so this normalize-only heal is actually observable on fixture players
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
         players: makeHealPlayers(),
         marks: {
           x1: { drafted: false, target: true, avoid: true },
@@ -1423,7 +1447,8 @@
 
     t('load(): drops a null undoStack entry instead of throwing on poisoned localStorage', function () {
       var payload = {
-        schemaVersion: 1,
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION, // current version + matching fingerprint: bypasses v8 force-adopt so this normalize-only heal is actually observable on fixture players
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
         players: makeHealPlayers(),
         marks: {
           x1: { drafted: true, target: false, avoid: false },
@@ -1473,7 +1498,7 @@
       }
     });
 
-    t('load(): v1 payload (no manuallyEdited field) migrates through v2/v3/v4, adding manuallyEdited:false, mine:false, tier:null, league:null, preserving everything else', function () {
+    t('load(): v1 payload chains through v2/v3/v4 (adding manuallyEdited/mine/tier/league) then the v8 force-adopt step replaces players/marks/undoStack wholesale; filters/searchText/league still carry through from the original v1 payload', function () {
       var payload = {
         schemaVersion: 1,
         players: makeHealPlayers(),
@@ -1487,17 +1512,13 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 7);
+      assertEq(loaded.schemaVersion, 8);
       assertEq(loaded.manuallyEdited, false);
-      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null, adp: null }); }), 'players preserved, tier and adp healed null onto each');
-      assertEq(loaded.marks, {
-        x1: { drafted: false, target: true, avoid: false, mine: false },
-        x2: { drafted: true, target: false, avoid: false, mine: false }
-      }, 'v1 marks carry no mine field; healed in as false (x2 has no mine:true to survive)');
-      assertEq(loaded.undoStack, payload.undoStack);
-      assertEq(loaded.filters, payload.filters);
-      assertEq(loaded.searchText, payload.searchText);
-      assertEq(loaded.league, null, 'v1 payload has no league; migration chain adds league:null');
+      assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v1 fixture players (x1/x2) never survive');
+      assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption');
+      assertEq(loaded.filters, payload.filters, 'filters still carry through adoption from the original v1 payload');
+      assertEq(loaded.searchText, payload.searchText, 'searchText still carries through adoption');
+      assertEq(loaded.league, null, 'v1 payload has no league; carried through as null and healed the same as always');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
@@ -1625,8 +1646,10 @@
       // state, then rely on load()'s migrate/heal pipeline on the next boot.
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(v1Payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 7, 'migrated to current schema version');
+      assertEq(loaded.schemaVersion, 8, 'migrated to current schema version');
       assertEq(loaded.manuallyEdited, false, 'v1 payload had no flag; migration defaults it to false');
+      // v1Payload.players ARE the real current seed's players, so v8 force-adopt's identity-carry
+      // (same name+position) reconstructs an identical players/marks shape -- coincidental, not special-cased
       assertEq(loaded.players, v1Payload.players, 'players preserved exactly');
       assertEq(loaded.marks, v1Payload.marks, 'marks preserved exactly');
       assertEq(loaded.undoStack, v1Payload.undoStack, 'undoStack preserved exactly');
@@ -1637,8 +1660,10 @@
 
     t('load(): healAdp matrix — canonical (alphabetical) key order; keeps whichever of espn/flock/sleeper/underdog survive isAdpNum, dropping the rest (an old yahoo-shaped backup partial-heals instead of nulling); null only when zero keys survive or the shape itself is unheal-able', function () {
       function loadWithAdp(adp) {
+        // current version + matching fingerprint: bypasses v8 force-adopt so this normalize-only heal is actually observable on a fixture player
         var payload = {
-          schemaVersion: 7,
+          schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+          seedFingerprint: DC.state.createSeedState().seedFingerprint,
           players: [{ id: 'ad1', rank: 1, name: 'AD One', team: 'KC', position: 'QB', byeWeek: 9, tier: null, adp: adp }],
           marks: { ad1: { drafted: false, target: false, avoid: false, mine: false } },
           undoStack: [], filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: false, league: null
@@ -1681,7 +1706,7 @@
       });
     });
 
-    t('load(): migrations[4] is a pure pass-through — a v4 payload migrates to schemaVersion 5 with players content preserved and adp healed null on', function () {
+    t('load(): migrations[4] is a pure pass-through (v4->v5) then the v8 force-adopt step replaces players/marks/undoStack wholesale; league still carries through', function () {
       var payload = {
         schemaVersion: 4,
         players: [
@@ -1700,17 +1725,18 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 7);
-      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { adp: null }); }), 'players preserved, adp healed null onto each');
-      assertEq(loaded.marks, payload.marks);
-      assertEq(loaded.undoStack, payload.undoStack);
+      assertEq(loaded.schemaVersion, 8);
+      assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v4 fixture players (mg1/mg2) never survive');
+      assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption');
       assertEq(loaded.league, null);
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
     t('load(): non-monotone tiers AND a valid adp on the clamped player — heal and tier-clamp compose; adp survives the clamp', function () {
       var payload = {
-        schemaVersion: 7,
+        // current version + matching fingerprint: bypasses v8 force-adopt so this normalize-only heal is actually observable on fixture players
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
         players: [
           { id: 'cp1', rank: 1, name: 'CP One', team: 'KC', position: 'RB', byeWeek: 9, tier: 3, adp: { espn: 5, flock: 6, sleeper: 4, underdog: 7 } },
           { id: 'cp2', rank: 2, name: 'CP Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1, adp: { espn: 40, flock: 38, sleeper: 42, underdog: 39 } }
@@ -1948,7 +1974,7 @@
       ];
     }
 
-    t('load(): v2->v3->v4 migration preserves players/marks/undoStack/filters/searchText/manuallyEdited, heals mine:false and tier:null in, adds league:null', function () {
+    t('load(): v2->v3->v4 migration (mine/tier/league healed in) then the v8 force-adopt step replaces players/marks/undoStack wholesale and forces manuallyEdited false; filters/searchText/league still carry through', function () {
       var payload = {
         schemaVersion: 2,
         players: makePlayersV3(),
@@ -1963,21 +1989,17 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 7);
-      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null, adp: null }); }));
-      assertEq(loaded.marks, {
-        y1: { drafted: false, target: true, avoid: false, mine: false },
-        y2: { drafted: true, target: false, avoid: false, mine: false }
-      });
-      assertEq(loaded.undoStack, payload.undoStack);
+      assertEq(loaded.schemaVersion, 8);
+      assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v2 fixture players (y1/y2) never survive');
+      assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption');
       assertEq(loaded.filters, payload.filters);
       assertEq(loaded.searchText, payload.searchText);
-      assertEq(loaded.manuallyEdited, true);
+      assertEq(loaded.manuallyEdited, false, 'v8 force-adopt has no manuallyEdited guard -- forces false regardless of the old true flag');
       assertEq(loaded.league, null);
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
-    t('load(): v1 payload chains through all three migrations to v4, preserving players/marks/undoStack, healing tier:null and league:null', function () {
+    t('load(): v1 payload chains through v2/v3/v4 (tier/league healed in) then the v8 force-adopt step replaces players/marks/undoStack wholesale; league still carries through', function () {
       var payload = {
         schemaVersion: 1,
         players: makePlayersV3(),
@@ -1991,21 +2013,18 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 7);
-      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null, adp: null }); }));
-      assertEq(loaded.marks, {
-        y1: { drafted: true, target: false, avoid: false, mine: false },
-        y2: { drafted: false, target: false, avoid: false, mine: false }
-      });
-      assertEq(loaded.undoStack, payload.undoStack);
-      assertEq(loaded.manuallyEdited, false, 'v1->v2 migration stamps manuallyEdited false; passes through v3->v4 unchanged');
-      assertEq(loaded.league, null, 'v3->v4 migration adds league:null');
+      assertEq(loaded.schemaVersion, 8);
+      assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v1 fixture players (y1/y2) never survive');
+      assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption');
+      assertEq(loaded.manuallyEdited, false, 'v1->v2 migration stamps manuallyEdited false; v8 force-adopt would force it false regardless');
+      assertEq(loaded.league, null, 'v3->v4 migration adds league:null; still carries through adoption');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
     t('load(): mine:true without drafted:true is healed to mine:false', function () {
       var payload = {
-        schemaVersion: 3,
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION, // current version + matching fingerprint: bypasses v8 force-adopt so this normalize-only heal is actually observable on fixture players
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
         players: makePlayersV3(),
         marks: {
           y1: { drafted: false, target: false, avoid: false, mine: true },
@@ -2024,7 +2043,8 @@
 
     t('load(): a wrong-typed mine field is healed to false', function () {
       var payload = {
-        schemaVersion: 3,
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION, // current version + matching fingerprint: bypasses v8 force-adopt so this normalize-only heal is actually observable on fixture players
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
         players: makePlayersV3(),
         marks: {
           y1: { drafted: true, target: false, avoid: false, mine: 'yes' },
@@ -2071,7 +2091,7 @@
       var loaded = DC.state.load();
 
       var storedAfter = JSON.parse(localStorage.getItem(DC.state.STORAGE_KEY));
-      assertEq(storedAfter.schemaVersion, 7, 'storage holds the migrated v5 shape immediately, before any dispatch');
+      assertEq(storedAfter.schemaVersion, 8, 'storage holds the migrated/adopted shape immediately, before any dispatch');
       assertEq(storedAfter, loaded, 'the exact returned state is what got persisted');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
@@ -2093,7 +2113,7 @@
       var loaded = DC.state.load();
 
       var storedAfter = JSON.parse(localStorage.getItem(DC.state.STORAGE_KEY));
-      assertEq(storedAfter.schemaVersion, 7, 'storage holds the migrated v5 shape immediately, before any dispatch');
+      assertEq(storedAfter.schemaVersion, 8, 'storage holds the migrated/adopted shape immediately, before any dispatch');
       assertEq(storedAfter, loaded, 'the exact returned state is what got persisted');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
@@ -5208,7 +5228,11 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.players[0].tier, null, 'load()\'s normalize pass must not fabricate a tier for a real null-tier player');
+      // schemaVersion 7 < 8 triggers v8 force-adopt, replacing the single-player fixture with the
+      // full current board -- find the same real player by id (adoption preserves ids) rather than index 0
+      var reloadedKOrDst = loaded.players.filter(function (p) { return p.id === realKOrDst.id; })[0];
+      assert(reloadedKOrDst, 'the real K/DST player must survive v8 force-adopt under the same id');
+      assertEq(reloadedKOrDst.tier, null, 'load()\'s normalize pass must not fabricate a tier for a real null-tier player');
       localStorage.removeItem(DC.state.STORAGE_KEY);
 
       var view = Object.assign({}, realKOrDst, { drafted: false, target: false, avoid: false, mine: false });
@@ -6353,7 +6377,7 @@
     'use strict';
     section('persistence');
 
-    t('load(): v3->v4 migration is a pure pass-through — all seven v3 fields preserved untouched, league:null added, tier healed null onto every player', function () {
+    t('load(): v3->v4 migration is a pure pass-through (league:null added, tier healed null) then the v8 force-adopt step replaces players/marks/undoStack wholesale and forces manuallyEdited false; filters/searchText/league still carry through', function () {
       var payload = {
         schemaVersion: 3,
         players: [
@@ -6371,20 +6395,21 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 7);
-      assertEq(loaded.players, payload.players.map(function (p) { return Object.assign({}, p, { tier: null, adp: null }); }));
-      assertEq(loaded.marks, payload.marks);
-      assertEq(loaded.undoStack, payload.undoStack);
+      assertEq(loaded.schemaVersion, 8);
+      assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v3 fixture players (w1/w2) never survive');
+      assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption');
       assertEq(loaded.filters, payload.filters);
       assertEq(loaded.searchText, payload.searchText);
-      assertEq(loaded.manuallyEdited, true);
+      assertEq(loaded.manuallyEdited, false, 'v8 force-adopt has no manuallyEdited guard -- forces false regardless of the old true flag');
       assertEq(loaded.league, null);
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
     t('load(): wrong-typed/invalid tier values heal to null (string, float, zero, negative); a valid positive int tier survives', function () {
       var payload = {
-        schemaVersion: 4,
+        // current version + matching fingerprint: bypasses v8 force-adopt so this normalize-only heal is actually observable on fixture players
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
         players: [
           { id: 'h1', rank: 1, name: 'H One', team: 'KC', position: 'QB', byeWeek: 9, tier: '3' },
           { id: 'h2', rank: 2, name: 'H Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 1.5 },
@@ -6413,7 +6438,9 @@
 
     t('load(): a non-monotone tier sequence (e.g. a hand-edited or foreign backup) is normalized position-scoped on load, keeping the invariant unbreakable through the heal path too', function () {
       var payload = {
-        schemaVersion: 4,
+        // current version + matching fingerprint: bypasses v8 force-adopt so this normalize-only heal is actually observable on fixture players
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
         players: [
           { id: 'm1', rank: 1, name: 'M One', team: 'KC', position: 'QB', byeWeek: 9, tier: 3 },
           { id: 'm2', rank: 2, name: 'M Two', team: 'DAL', position: 'RB', byeWeek: 7, tier: 2 },
@@ -10911,15 +10938,13 @@
       ['Chargers D/ST', 'LAC', 'DST'],
     ];
 
-    t('load(): migrations[6] reorder branch — a payload whose id sequence fingerprint-matches the legacy seed is resorted by weighted consensus ADP, nulls tail in old-rank order, marks/undoStack preserved verbatim', function () {
+    t('load(): migrations[6] reorder branch — a payload whose id sequence fingerprint-matches the legacy seed is resorted by weighted consensus ADP at v6->v7 (still runs without crashing), then v8 force-adopt runs immediately after and replaces the board wholesale, superseding the reorder result and clearing undoStack', function () {
       var legacyPlayers = LEGACY_SEED_TUPLES.map(function (row, i) {
         return { id: DC.data.slug(row[0], row[1]), rank: i + 1, name: row[0], team: row[1], position: row[2], byeWeek: 0, tier: null, adp: null };
       });
 
-      var chaseId = DC.data.slug("Ja'Marr Chase", 'CIN'); // old rank 1
       var bijanId = DC.data.slug('Bijan Robinson', 'ATL'); // old rank 12
       var colemanId = DC.data.slug('Keon Coleman', 'BUF'); // old rank 100
-      var dstId = DC.data.slug('Chargers D/ST', 'LAC'); // old rank 276
 
       var marks = {};
       legacyPlayers.forEach(function (p) {
@@ -10957,30 +10982,11 @@
         localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
         var loaded = DC.state.load();
 
-        assertEq(loaded.schemaVersion, 7, 'fingerprint match triggers the one-time reorder, landing at v7');
-
-        var frontIds = loaded.players.slice(0, 4).map(function (p) { return p.id; });
-        assertEq(frontIds, [chaseId, dstId, colemanId, bijanId], 'the 4 stubbed-consensus players sort to the front in ascending consensus order (10,20,30,50), not old-rank order (1,276,100,12)');
-        loaded.players.slice(0, 4).forEach(function (p, i) {
-          assertEq(p.rank, i + 1, 'rank recomputed as idx+1 for ' + p.id);
-        });
-
-        var stubbedIds = {};
-        stubbedIds[chaseId] = true;
-        stubbedIds[dstId] = true;
-        stubbedIds[colemanId] = true;
-        stubbedIds[bijanId] = true;
-        var expectedNullTail = legacyPlayers.filter(function (p) { return !stubbedIds[p.id]; });
-        var actualNullTail = loaded.players.slice(4);
-        assertEq(actualNullTail.length, expectedNullTail.length, 'null-consensus tail length');
-        expectedNullTail.forEach(function (p, i) {
-          assertEq(actualNullTail[i].id, p.id, 'null tail stays in old-rank order at position ' + i);
-          assertEq(actualNullTail[i].rank, i + 5, 'null tail rank recomputed');
-        });
-
-        assertEq(loaded.marks[bijanId], marks[bijanId], 'bijan mark preserved verbatim through the reorder');
-        assertEq(loaded.marks[colemanId], marks[colemanId], 'coleman mark preserved verbatim through the reorder');
-        assertEq(loaded.undoStack, undoStack, 'undoStack preserved verbatim through the reorder');
+        assertEq(loaded.schemaVersion, 8, 'fingerprint match triggers the one-time reorder at v7, then v8 force-adopt runs immediately after');
+        // the v6->v7 reorder above ran (asserted via the stub not throwing); its specific output is
+        // superseded by the v8 force-adopt that unconditionally follows it for any pre-v8 payload
+        assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale, superseding the v6->v7 reorder result');
+        assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption (not preserved, unlike the pre-v8 reorder-only behavior)');
       } finally {
         window.DC.adpData = real;
         localStorage.removeItem(DC.state.STORAGE_KEY);
@@ -11009,8 +11015,8 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 7, 'stamped straight to current version');
-      assertEq(loaded.players.map(function (p) { return p.id; }), players.map(function (p) { return p.id; }), 'a 5-id board can never fingerprint-match the 276-id legacy seed — order untouched');
+      assertEq(loaded.schemaVersion, 8, 'stamped through v7 (order untouched, no fingerprint match) then v8 force-adopt replaces the board wholesale');
+      assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the 5 foreign-id fixture players never survive');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
 
@@ -11019,8 +11025,152 @@
       var payload = Object.assign({}, seedState, { schemaVersion: 6 });
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 7, 'stamped to current version');
+      assertEq(loaded.schemaVersion, 8, 'stamped through v7 then v8 force-adopt runs');
       assertEq(loaded.players.map(function (p) { return p.id; }), seedState.players.map(function (p) { return p.id; }), 'same ids as the current seed, order untouched — never reordered again');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+  })();
+  </script>
+
+  <!-- Task 3: v8 board adoption — migrations[7] force-adopt, load-time seedFingerprint re-adopt, isValidState's optional seedFingerprint -->
+  <script>
+  (function () {
+    'use strict';
+    section('persistence');
+
+    t('load(): migrations[7] v8 force-adopt — mark carried across a team move by (name+position) identity, dropped player\'s mark vanishes, undoStack cleared, filters/search/league carried, manuallyEdited forced false, schemaVersion 8, seedFingerprint stamped to current', function () {
+      var realSeed = DC.data.SEED_PLAYERS;
+      try {
+        DC.data.SEED_PLAYERS = [
+          { id: 'stub-alpha-team2', rank: 1, name: 'Alpha One', team: 'TEAM2', position: 'QB', byeWeek: 5, tier: 1, adp: null },
+          { id: 'stub-beta', rank: 2, name: 'Beta Two', team: 'TEAM3', position: 'RB', byeWeek: 6, tier: null, adp: null }
+        ];
+
+        var oldPlayers = [
+          { id: 'old-alpha-team1', rank: 1, name: 'Alpha One', team: 'TEAM1', position: 'QB', byeWeek: 9, tier: null, adp: null },
+          { id: 'old-gone', rank: 2, name: 'Gone Guy', team: 'TEAM1', position: 'WR', byeWeek: 9, tier: null, adp: null }
+        ];
+        var oldMarks = {
+          'old-alpha-team1': { drafted: false, target: true, avoid: false, mine: false },
+          'old-gone': { drafted: true, target: false, avoid: false, mine: true }
+        };
+        var payload = {
+          schemaVersion: 7,
+          players: oldPlayers,
+          marks: oldMarks,
+          undoStack: [{ playerId: 'old-gone', timestamp: 111 }],
+          filters: { position: 'RB', status: 'TARGETS' },
+          searchText: 'zzz',
+          manuallyEdited: true,
+          league: { size: 10, slot: 3, snake: true, roster: DC.state.DEFAULT_ROSTER }
+        };
+        localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+        var loaded = DC.state.load();
+
+        assertEq(loaded.schemaVersion, 8, 'v8 force-adopt has no manuallyEdited guard -- runs regardless of the old true flag');
+        assertEq(loaded.players.map(function (p) { return p.id; }), ['stub-alpha-team2', 'stub-beta'], 'players replaced wholesale from SEED_PLAYERS');
+        assertEq(loaded.marks['stub-alpha-team2'], { drafted: false, target: true, avoid: false, mine: false }, 'mark carried across the team move (TEAM1->TEAM2) by name+position identity');
+        assertEq(loaded.marks['stub-beta'], { drafted: false, target: false, avoid: false, mine: false }, 'no old match -> default all-false marks');
+        assert(!Object.prototype.hasOwnProperty.call(loaded.marks, 'old-gone'), 'dropped player\'s mark must not survive under its old id');
+        assertEq(loaded.undoStack, [], 'old-id pick references are unsafe');
+        assertEq(loaded.filters, { position: 'RB', status: 'TARGETS' }, 'filters carried from old state');
+        assertEq(loaded.searchText, 'zzz', 'searchText carried from old state');
+        assertEq(loaded.league, payload.league, 'league carried from old state');
+        assertEq(loaded.manuallyEdited, false, 'adoption yields a pristine seed regardless of the old flag');
+        assertEq(loaded.seedFingerprint, DC.state.createSeedState().seedFingerprint, 'seedFingerprint stamped to current (still under the stub)');
+      } finally {
+        DC.data.SEED_PLAYERS = realSeed;
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('load(): fingerprint mismatch + manuallyEdited:false adopts -- players replaced with the current seed, mark carried onto the real player matching by name+position identity (team excluded)', function () {
+      var real0 = DC.data.SEED_PLAYERS[0];
+      var oldPlayers = [
+        { id: 'fp-carry', rank: 1, name: real0.name, team: 'ZZZ', position: real0.position, byeWeek: 0, tier: null, adp: null },
+        { id: 'fp-fixture', rank: 2, name: 'Zzyzx Fixture Nobody', team: 'ZZZ', position: 'QB', byeWeek: 0, tier: null, adp: null }
+      ];
+      var marks = {
+        'fp-carry': { drafted: false, target: true, avoid: false, mine: false },
+        'fp-fixture': { drafted: true, target: false, avoid: false, mine: true }
+      };
+      var payload = {
+        schemaVersion: 8,
+        players: oldPlayers,
+        marks: marks,
+        undoStack: [{ playerId: 'fp-fixture', timestamp: 1 }],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: 'kept',
+        manuallyEdited: false,
+        league: null,
+        seedFingerprint: 'stale-fingerprint-not-current'
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+
+      var freshSeed = DC.state.createSeedState();
+      assertEq(loaded.players, freshSeed.players, 'players replaced with the current seed');
+      assertEq(loaded.marks[real0.id], { drafted: false, target: true, avoid: false, mine: false }, 'mark carried onto the real player by name+position identity, ignoring team');
+      assertEq(loaded.undoStack, []);
+      assertEq(loaded.manuallyEdited, false);
+      assertEq(loaded.seedFingerprint, freshSeed.seedFingerprint);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): fingerprint mismatch + manuallyEdited:true keeps the board verbatim (adopt-once-declined) and just stamps the fingerprint; players/marks/undoStack untouched', function () {
+      var fixturePlayers = [
+        { id: 'kept-1', rank: 1, name: 'Kept Fixture One', team: 'ZZZ', position: 'RB', byeWeek: 0, tier: 1, adp: null }
+      ];
+      var marks = { 'kept-1': { drafted: true, target: false, avoid: false, mine: true } };
+      var payload = {
+        schemaVersion: 8,
+        players: fixturePlayers,
+        marks: marks,
+        undoStack: [{ playerId: 'kept-1', timestamp: 1 }],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: true,
+        league: null,
+        seedFingerprint: 'stale-fingerprint-not-current'
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+
+      assertEq(loaded.players, fixturePlayers, 'board kept verbatim, never adopted');
+      assertEq(loaded.marks, marks, 'marks kept verbatim');
+      assertEq(loaded.undoStack, payload.undoStack, 'undoStack untouched -- no adoption happened');
+      assertEq(loaded.manuallyEdited, true);
+      assertEq(loaded.seedFingerprint, DC.state.createSeedState().seedFingerprint, 'fingerprint stamped to current even though the board was kept');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('isValidState (indirect via load): a v8 payload missing seedFingerprint entirely is still structurally accepted -- load falls through to fingerprint-mismatch handling (board kept + stamped, since manuallyEdited:true here) instead of a full seed fallback', function () {
+      var players = [{ id: 'iv1', rank: 1, name: 'IV One', team: 'KC', position: 'QB', byeWeek: 9, tier: null, adp: null }];
+      var marks = { iv1: { drafted: true, target: false, avoid: false, mine: false } };
+      var payload = {
+        schemaVersion: 8, players: players, marks: marks, undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: true, league: null
+        // seedFingerprint intentionally absent
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.players, players, 'accepted as structurally valid -- board kept verbatim, not the full seed fallback');
+      assertEq(loaded.marks, marks);
+      assertEq(typeof loaded.seedFingerprint, 'string', 'a missing fingerprint is a mismatch too; load stamps a real one');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('isValidState (indirect via load): a v8 payload with a non-string seedFingerprint is rejected outright, falling back to a fresh seed (not merely healed)', function () {
+      var players = [{ id: 'iv2', rank: 1, name: 'IV Two', team: 'KC', position: 'QB', byeWeek: 9, tier: null, adp: null }];
+      var marks = { iv2: { drafted: true, target: false, avoid: false, mine: false } };
+      var payload = {
+        schemaVersion: 8, players: players, marks: marks, undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: true, league: null,
+        seedFingerprint: 12345
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded, DC.state.createSeedState(), 'a non-string seedFingerprint fails isValidState -- full seed fallback, board NOT kept');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
   })();
