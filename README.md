@@ -42,7 +42,7 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
-**Reminder for this release:** this release bumps the service-worker cache to v18. DK Proj now gates strictly: it only resolves to a number when DraftKings' lines (plus any manual fills, see DK Proj below) cover a player's full required stat line, so partial coverage skips the badge instead of showing a partial projection. Board badges are color-coded now too -- purple for ADP, green for DK Proj -- and compare-card rows show each source's logo (ESPN/Yahoo/Sleeper/DraftKings). Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+**Reminder for this release:** this release bumps the service-worker cache to v20. The board is now the user's real rankings -- 424 players baked from `scripts/board-source/*.csv` and `scripts/board-manual.json` (see Import your real rankings, below) -- and phones auto-adopt a freshly baked board unless it's been edited or imported. ADP drops Yahoo in favor of Flock and Underdog: the weighted consensus is now Flock 30% / Sleeper 30% / Underdog 25% / ESPN 15% (see Updating ADP, below), and compare cards show all four sources in a 2x2 logo grid. Clear All Data no longer touches the board itself -- it only resets picks, marks, undo, filters, search, league setup, and ADP overrides (see Backup/restore, below). Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
 
 ## Install on iPhone
 
@@ -57,7 +57,9 @@ Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it work
 
 ## Import your real rankings
 
-Out of the box, the board is pre-sorted in weighted market ADP order (see Updating ADP, below, for the weighting), not the bundled sample rankings' original order. A board already installed before that sort shipped reorders itself once, automatically, the next time it loads -- your marks carry over -- and this reorder is skipped entirely on any board you've already imported or manually edited; it only ever touches the untouched, pristine seed board. Importing your own rankings replaces the board order outright, same as always, and once you've imported nothing reorders it again.
+The board ships pre-loaded with the user's real rankings: 424 players -- 356 skill players from the Flock export plus 36 K and 32 DST slotted in by weighted ADP -- baked by `powershell -File scripts\build-board.ps1` from `scripts/board-source/*.csv` and `scripts/board-manual.json`. Tier letters (S, A, B, ...) come from the user's own tier screenshots, transcribed into `board-manual.json` and mapped down the alphabet per position -- S is Tier 1, A is Tier 2, and so on; K and DST carry no tiers of their own. Real 2026 bye weeks are fetched live from ESPN at bake time, and the bake fails closed -- it emits nothing rather than a board with a guessed or missing bye.
+
+The re-bake ritual: new tier or rankings screenshots come in, get transcribed into `board-manual.json`, then `build-board.ps1` runs and the app redeploys. Phones auto-adopt the freshly baked board on their next open, carrying marks over by player identity -- unless the board's already been manually edited in-app (a drag-reorder, a rank-jump, or an import), in which case edits win and that phone's re-bake is skipped. Adoption itself always leaves a pristine board behind; the edit-lock comes back on only after your next real edit or import.
 
 Open Settings -> Import Rankings, then paste text into the box or choose a file (`.csv`, `.txt`, `.tsv`, `.json` are accepted), and tap Parse. Review the preview, then tap "Replace rankings" to apply it.
 
@@ -90,7 +92,7 @@ To export from FantasyPros: go to your Rankings page -> Export -> CSV, then past
 
 Re-importing preserves your Drafted/Target/Avoid marks for any player whose name and team match a player in the new file. Players that drop out of the new file lose their marks; new players start Available.
 
-Once you've manually reordered your rankings (see Edit your rankings in-app, below), Import Rankings automatically downloads a backup file before replacing the board with the imported one. See the iOS standalone note under Backup/restore if the download prompt doesn't appear.
+Once the board's already been manually edited -- reordered by hand (see Edit your rankings in-app, below) or already replaced by an earlier import -- Import Rankings automatically downloads a backup file first, before replacing it with the newly imported one. See the iOS standalone note under Backup/restore if the download prompt doesn't appear.
 
 The board itself is the single source of truth for every feature above and below this section -- ranks, tiers, marks, all of it. A planned future import mode will let you blend multiple ranking and tier sources (say, two different analysts' rankings files) into one board at import time. Because tiers, quiet signals, and roster needs all read straight off the board, a blended import will need no other changes to reach every one of them at once.
 
@@ -104,7 +106,7 @@ Manual edits persist until your next Import Rankings.
 
 ## Tiers
 
-Tiers group same-position players into named bands (Tier 1, Tier 2, ...). They're scoped per position -- Tier 2 QBs and Tier 2 RBs are unrelated groups, with no relationship to each other. The bundled sample rankings ship with tiers already assigned, banded per position, for all 276 players; importing your own rankings replaces the board (and its tiers) as described next. Import a header-based rankings file (FantasyPros-style CSV/TSV) with a `TIERS` or `TIER` column and tiers come in automatically; the headerless formats (numbered list, plain list, parenthesized team/position) have no column to read a tier from, so those players import untiered. However the source file orders its tier values, the app forces them into non-decreasing order down the board within each position on import, correcting anything out of order in the file itself.
+Tiers group same-position players into named bands (Tier 1, Tier 2, ...). They're scoped per position -- Tier 2 QBs and Tier 2 RBs are unrelated groups, with no relationship to each other. The baked board ships with tiers already assigned for QB/RB/WR/TE -- transcribed from the user's own tier screenshots into `scripts/board-manual.json` (S=Tier 1, A=Tier 2, ...); K and DST carry none. Importing your own rankings replaces the board (and its tiers) as described next. Import a header-based rankings file (FantasyPros-style CSV/TSV) with a `TIERS` or `TIER` column and tiers come in automatically; the headerless formats (numbered list, plain list, parenthesized team/position) have no column to read a tier from, so those players import untiered. However the source file orders its tier values, the app forces them into non-decreasing order down the board within each position on import, correcting anything out of order in the file itself.
 
 The always-on indicator is a colored tier-color strip band across the top of each row -- it shows on the main board (Available and Drafted lists) and on compare cards; inside Edit Rankings it's a colored T-chip (e.g. `T3`) next to a player's name instead. Divider lines are separate and narrower: they appear only in Edit Rankings, and only while a single position chip (QB/RB/WR/TE/DST/K) is active, marking tier breaks within that position's list. FLEX behaves like All here -- both mix multiple positions, so neither ever shows dividers, only the T-chips. Switching to All or FLEX, or typing a search, clears the dividers; the T-chips keep showing regardless.
 
@@ -135,11 +137,11 @@ Tap "Clear league setup" in Settings -> League to remove your league config. The
 
 ## Compare players
 
-Long-press a player's row on the main board (Available or Drafted lists -- not the DRAFT/star/x buttons) to add him to a compare tray that appears above the bottom bar; long-press him again to remove him. The tray holds up to 4 players. Tap **Compare** once 2 or more are selected to open side-by-side cards (2 players) or a quadrant layout (3-4). Each card leads with a tier-color strip across the top (the same band the board rows use), then the player's headshot and a dot-separated team · position · bye line, overall and position rank, ADP from three sites (ESPN, Yahoo, Sleeper), and a Weighted row set apart with a hairline and bold text as the blended consensus. Each ADP row carries that source's logo next to its name, and the DK Proj row further down the card (see DK Proj, below) carries DraftKings' logo the same way -- all four source logos are cached offline just like player headshots. Below that, the status row (target/avoid/drafted/mine icons) also carries a link that opens an X (Twitter) search for the player's name (top tweets) in a new tab -- from the home-screen app this opens in your browser or the X app; if it misbehaves in standalone mode, open the app's URL in Safari itself as a fallback (same pattern as the Export note below). Each card also carries a color-coded verdict line, shown as a tinted box at the bottom of the card: it reads that player's weighted consensus ADP against your upcoming picks, showing red when he's likely gone before your next turn, orange for a coin flip, green when he should reach your next pick but not the one after, and grey when he can wait. When it's your pick right now, the line reads "on the clock" instead and buckets the same red/orange/grey way against the pick after this one. Without a league set up it instead compares his consensus against picks made so far -- green once he's past his ADP, orange right at his ADP ("at his market price now"), grey with a picks-to-go count otherwise. The ✕ on a card or its tray chip removes that player; Done closes the compare screen and keeps whoever's left selected; Clear empties the tray entirely. Once a league is set up, Mine becomes a roster board (see Track your own roster, above) whose tiles don't long-press into compare -- use the Available/Drafted lists instead.
+Long-press a player's row on the main board (Available or Drafted lists -- not the DRAFT/star/x buttons) to add him to a compare tray that appears above the bottom bar; long-press him again to remove him. The tray holds up to 4 players. Tap **Compare** once 2 or more are selected to open side-by-side cards (2 players) or a quadrant layout (3-4). Each card leads with a tier-color strip across the top (the same band the board rows use), then the player's headshot and a dot-separated team · position · bye line, overall and position rank, ADP from four sites (Flock, Sleeper, Underdog, ESPN), and a Weighted row set apart with a hairline and bold text as the blended consensus. Each ADP row carries that source's logo next to its name, and the DK Proj row further down the card (see DK Proj, below) carries DraftKings' logo the same way -- all five source logos are cached offline just like player headshots. Below that, the status row (target/avoid/drafted/mine icons) also carries a link that opens an X (Twitter) search for the player's name (top tweets) in a new tab -- from the home-screen app this opens in your browser or the X app; if it misbehaves in standalone mode, open the app's URL in Safari itself as a fallback (same pattern as the Export note below). Each card also carries a color-coded verdict line, shown as a tinted box at the bottom of the card: it reads that player's weighted consensus ADP against your upcoming picks, showing red when he's likely gone before your next turn, orange for a coin flip, green when he should reach your next pick but not the one after, and grey when he can wait. When it's your pick right now, the line reads "on the clock" instead and buckets the same red/orange/grey way against the pick after this one. Without a league set up it instead compares his consensus against picks made so far -- green once he's past his ADP, orange right at his ADP ("at his market price now"), grey with a picks-to-go count otherwise. The ✕ on a card or its tray chip removes that player; Done closes the compare screen and keeps whoever's left selected; Clear empties the tray entirely. Once a league is set up, Mine becomes a roster board (see Track your own roster, above) whose tiles don't long-press into compare -- use the Available/Drafted lists instead.
 
 Player headshots (a Sleeper team logo for DST) also show on the main board itself, next to the rank badge on every row. Tap a player's photo there and his full card -- the same one the compare screen shows, verdict and all -- pops up over the board; tap outside it, or its ✕, to dismiss. Because the photo is its own tap target, press-and-hold on a row to add it to compare no longer arms if the press starts on the photo -- start it anywhere else on the row and it still works the same. The board's meta line -- team, position, bye -- appends a small purple ADP badge (a bare number, no label) with the weighted consensus whenever a player has one; that line truncates its own text first, so the badge -- and any VALUE/CLIFF tag -- is never cut off.
 
-ADP is real market consensus from three sources -- ESPN, Yahoo, Sleeper -- blended into one weighted consensus number and refreshed by rerunning `scripts\update-adp.ps1` (see Updating ADP, below). A source missing a number for a given player shows as a dash on his card rather than being guessed at. This covers imported players too: the ADP table is a separate sidecar joined at read time by player name and position (team alone for defenses), not something baked into your rankings file, so replacing your board via Import Rankings doesn't drop anyone's ADP.
+ADP is real market consensus from four sources -- Flock, Sleeper, Underdog, ESPN -- blended into one weighted consensus number, refreshed in full by rerunning `scripts\update-adp.ps1` or partially (ESPN + Sleeper) via Settings -> Refresh ADP (see Updating ADP, below). A source missing a number for a given player shows as a dash on his card rather than being guessed at. This covers imported players too: the ADP table is a separate sidecar joined at read time by player name and position (team alone for defenses), not something baked into your rankings file, so replacing your board via Import Rankings doesn't drop anyone's ADP.
 
 ## Quiet signals
 
@@ -154,6 +156,10 @@ Settings -> Export Backup downloads a `draft-cockpit-backup.json` file containin
 
 **Export a backup before draft day, and again right after the draft.** localStorage is the only copy of your data; there is no cloud sync.
 
+Settings -> Clear All Data resets every bit of draft-day state -- picks, targets/avoid, undo history, filters, search, league setup, and any in-app ADP override -- back to a clean slate. It never touches the board itself: player order, tiers, and everyone's rank stay exactly as baked or as you last left them.
+
+Restoring a pre-v8 backup (exported before this round's real-rankings bake) adopts the current baked board, carrying your marks over by player identity rather than keeping the old board. Importing your own rankings marks the board as user-authored -- a later import auto-downloads a backup of the current board first (see Import your real rankings, above) -- and a PC-side re-bake never overwrites a board you've imported or manually edited.
+
 **iOS standalone note:** if you installed the app to your home screen and the Export download prompt doesn't appear when you tap it, open the app's URL in Safari itself (not the home-screen icon) and export from there instead. This is a limitation of anchor-tag downloads inside an iOS standalone (home-screen) web app, not a bug in the app.
 
 ## Updating your rankings later
@@ -164,18 +170,18 @@ Re-import at any time via Settings -> Import Rankings using any of the supported
 
 ADP drifts constantly in draft season -- the numbers in this repo go stale fast. Two ways to refresh it:
 
-**On the phone, right now:** Settings -> Refresh ADP pulls fresh Sleeper + ESPN numbers directly from the device and stores them as a localStorage override -- no script, no redeploy needed. Yahoo's numbers only move via the full script below.
+**On the phone, right now:** Settings -> Refresh ADP pulls fresh Sleeper + ESPN numbers directly from the device and stores them as a localStorage override -- no script, no redeploy needed. Flock and Underdog only move via the full script below.
 
-**The full script, for a complete refresh (including Yahoo):**
+**The full script, for a complete refresh (including Flock and Underdog):**
 
 ```powershell
 powershell -File scripts\update-adp.ps1
 powershell -File scripts\run-tests.ps1
 ```
 
-Then bump `CACHE_NAME` in `sw.js` (v17, v18, ...), update the release reminder above, commit, and deploy. Your phone picks up the new numbers on the second online open, same as any other update (see Install on iPhone, above).
+Then bump `CACHE_NAME` in `sw.js` (v19, v20, ...), update the release reminder above, commit, and deploy. Your phone picks up the new numbers on the second online open, same as any other update (see Install on iPhone, above).
 
-Sources are weighted, not averaged equally -- Sleeper 60%, ESPN 30%, Yahoo 10%. The weighting lives in one constant, `ADP_WEIGHTS` in `js/state.js`, if you ever want to tilt it further toward one site.
+Sources are weighted, not averaged equally -- Flock 30%, Sleeper 30%, Underdog 25%, ESPN 15%. Flock is the user's rankings site's expert consensus and Underdog comes from that same sheet (`scripts/board-source/adp.csv`); ESPN and Sleeper are live. That sheet also carries Yahoo, CBS, and FFPC columns, but none of the three enter the blend. The weighting lives in one constant, `ADP_WEIGHTS` in `js/state.js`, if you ever want to tilt it further toward one site. Flock and Underdog are rank-scale integers straight off the sheet, while ESPN and Sleeper are live decimal ADP -- deliberately mixed, near-identical scales.
 
 ## DK Proj
 
@@ -197,6 +203,17 @@ PC-only. It drives a real Chrome window, positioned off-screen, for roughly 4-5 
 
 **Caveats:** DK's O/U lines are juiced betting medians, not true means -- fine for ranking players against each other, not gospel season totals. There's no interception market on DraftKings, so every QB's DK Proj runs a touch rich relative to a true expectation. The "DK lines as of" date under Settings shows when the sidecar was last refreshed.
 
+## Draft-morning ritual
+
+Right before you draft:
+
+1. **On the phone:** Settings -> Refresh ADP -- live ESPN + Sleeper numbers, no redeploy needed (see Updating ADP, above).
+2. **On the PC:** `scripts\update-adp.ps1` -- full ADP refresh (all four sources) plus the ESPN headshot map.
+3. **On the PC:** `scripts\update-dk-lines.ps1` -- refreshes DK Proj's DraftKings lines; drives a real, off-screen Chrome window for a few minutes (see DK Proj, above).
+4. **On the PC, only if rankings or tiers changed:** `scripts\build-board.ps1` -- re-bakes the board (see Import your real rankings, above).
+
+Any PC script needs the usual tail after it: run the tests, bump `CACHE_NAME`, update the release reminder, commit, deploy.
+
 ## Project layout
 
 ```
@@ -207,11 +224,11 @@ draft-cockpit/
   sw.js                   service worker: cache-first offline support; bump CACHE_NAME on any precached file change
   tests.html              in-browser unit test harness (open directly, or run headless via scripts\run-tests.ps1)
   js/
-    data.js               seed player data (276 players: QB/RB/WR/TE plus K/DST), team bye weeks, id slugging
-    adp-data.js           GENERATED -- real ADP table (espn/yahoo/sleeper); regenerate with scripts\update-adp.ps1
+    data.js               GENERATED -- seed player data (424 players: QB/RB/WR/TE plus K/DST), real bye weeks, id slugging; regenerate with scripts\build-board.ps1
+    adp-data.js           GENERATED -- real ADP table (espn/flock/sleeper/underdog); regenerate with scripts\update-adp.ps1
     dk-data.js            GENERATED -- DraftKings season-line O/U sidecar; regenerate with scripts\update-dk-lines.ps1
     state.js              state shape, reducer, localStorage load/save, schema migrations
-    adp-refresh.js        in-app ADP refresh (Settings -> Refresh ADP) -- pulls fresh Sleeper + ESPN numbers on the device; Yahoo still only updates via update-adp.ps1
+    adp-refresh.js        in-app ADP refresh (Settings -> Refresh ADP) -- pulls fresh Sleeper + ESPN numbers on the device; Flock/Underdog still only update via update-adp.ps1
     importer.js           rankings + backup file parsing (CSV/TSV/list/parenthesized/backup JSON)
     ui.js                 all rendering and event wiring (search, filters, undo, settings sheet)
     edit.js               drag-to-reorder / tap-to-jump rankings editor (Settings -> Edit Rankings)
@@ -225,8 +242,11 @@ draft-cockpit/
     serve.ps1              local dev server (HttpListener on localhost:8321, no admin needed)
     run-tests.ps1          headless-Chrome/Edge test runner (fail-closed: crash counts as failure)
     make-icons.ps1         regenerates the three icon PNGs via System.Drawing
-    update-adp.ps1         fetches ESPN/Yahoo/Sleeper ADP and regenerates js\adp-data.js
+    build-board.ps1        bakes board-source\*.csv + board-manual.json into js\data.js (real rankings, tiers, live ESPN byes)
+    update-adp.ps1         fetches ESPN/Sleeper live ADP + Flock/Underdog from board-source\adp.csv, regenerates js\adp-data.js and its ESPN headshot map
     update-dk-lines.ps1    scrapes DraftKings season-line O/U props and regenerates js\dk-data.js
+    board-source\          REDRAFT-rankings.csv, k.csv, dst.csv, adp.csv -- raw inputs to build-board.ps1 and update-adp.ps1
+    board-manual.json      tier letters transcribed from the user's rankings-site screenshots (S=Tier 1, A=Tier 2, ... per position)
 ```
 
 ## Regenerating icons
