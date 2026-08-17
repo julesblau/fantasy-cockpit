@@ -9265,7 +9265,7 @@
       }
     });
 
-    t('source logos: Flock/Sleeper/Underdog/ESPN adp rows each carry their live-verified .src-logo img (exact src + onerror=display:none, not the avatar visibility:hidden pattern), Weighted carries none', function () {
+    t('source logos: Flock/Sleeper/Underdog/ESPN adp cells are logo-only (no visible text label, identity on .adp-site aria-label) and carry their live-verified .src-logo img (exact src + onerror=display:none, not the avatar visibility:hidden pattern); Weighted keeps its visible text label and carries no logo', function () {
       var player = { id: 'logo-fixture', rank: 1, name: 'Logo Fixture Player', team: 'AAA', position: 'WR', byeWeek: 5, tier: null, adp: { flock: 9, sleeper: 11, underdog: 13, espn: 10 } };
       var card = { player: player, adp: player.adp, posRank: 1, pickNumber: null, marks: { target: false, avoid: false, drafted: false, mine: false }, verdict: { cls: 'verdict-none', text: 'x' } };
       var html = DC.compare.templates.cardHTML(card);
@@ -9284,16 +9284,21 @@
         var row = rows[Number(i)];
         var label = bySite[i][0];
         var url = bySite[i][1];
-        var img = row.querySelector('.adp-site img.src-logo');
+        var site = row.querySelector('.adp-site');
+        var img = site.querySelector('img.src-logo');
         assert(img, label + ' row should carry a .src-logo img: ' + row.innerHTML);
         assertEq(img.getAttribute('src'), url, label + ' logo src should match the live-verified URL');
         assertEq(img.getAttribute('onerror'), "this.style.display='none'", label + ' logo onerror should display:none');
         assertEq(img.getAttribute('alt'), '', label + ' logo alt should be empty');
+        assertEq(site.getAttribute('aria-label'), label, label + ' identity should live on .adp-site aria-label');
+        assertEq(site.textContent, '', label + ' .adp-site should carry no visible text -- logo only');
+        assert(html.indexOf('>' + label + '<') === -1, label + ' visible text label should be gone from cardHTML: ' + html);
       });
 
       var weightedRow = rows[4];
       assert(weightedRow.classList.contains('adp-row-weighted'), 'sanity: row 4 should be the Weighted row');
       assert(!weightedRow.querySelector('.src-logo'), 'Weighted row should carry NO .src-logo -- it is ours, not a source: ' + weightedRow.innerHTML);
+      assertEq(weightedRow.querySelector('.adp-site').textContent, 'Weighted', 'Weighted keeps its visible text label -- it is a full-width text row, not a logo cell');
     });
 
     t('.compare-card-adp holds exactly 4 non-weighted .adp-row plus 1 .adp-row-weighted (last, full-width grid span), and cardHTML output never mentions Yahoo', function () {
@@ -10336,9 +10341,9 @@
         '.compare-title{font-size:20px;font-weight:700}' +
         '.compare-adp-updated{font-size:12px;margin-top:2px}' +
         '.compare-done{height:44px;min-width:64px;border:none;font-size:15px;font-weight:600}' +
-        '.compare-grid{flex:1;display:grid;gap:8px;padding:0 12px 12px;min-height:0}' +
+        '.compare-grid{flex:1;display:grid;gap:8px;padding:0 12px 12px;min-height:0;overflow-y:auto}' +
         '.compare-grid.cols-2{grid-template-columns:1fr 1fr}' +
-        '.compare-grid.quad{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}' +
+        '.compare-grid.quad{grid-template-columns:1fr 1fr;grid-template-rows:minmax(min-content, 1fr) minmax(min-content, 1fr)}' +
         '.compare-card{position:relative;border-radius:12px;padding:0;min-width:0;overflow:hidden}' +
         '.compare-card-inner{padding:12px 10px}' +
         '.compare-card-x{position:absolute;top:0;right:0;width:44px;height:44px;display:flex;align-items:center;justify-content:center}' +

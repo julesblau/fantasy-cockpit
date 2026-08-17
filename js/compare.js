@@ -64,6 +64,12 @@
     return '<div class="' + cls + '"><span class="adp-site">' + srcLogoHTML(SRC_LOGOS[label]) + esc(label) + '</span><span class="adp-val">' + esc(value) + '</span></div>';
   }
 
+  // source cells: logo-only, no visible text label -- the 2x2 grid has no room for "Underdog 126";
+  // identity lives on the span's aria-label instead of a text node
+  function adpCellHTML(label, value) {
+    return '<div class="adp-row"><span class="adp-site" aria-label="' + esc(label) + '">' + srcLogoHTML(SRC_LOGOS[label]) + '</span><span class="adp-val">' + esc(value) + '</span></div>';
+  }
+
   // brand glyph, not part of DC.ui's icon set -- single path, viewBox 0 0 24 24
   var X_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zM17.083 19.77h1.833L7.084 4.126H5.117z"></path></svg>';
 
@@ -219,10 +225,10 @@
           '<div class="compare-card-name">' + esc(player.name) + '</div>' +
           '<div class="compare-card-ranks">#' + player.rank + ' ' + MIDDOT + ' ' + esc(player.position) + card.posRank + '</div>' +
           '<div class="compare-card-adp">' +
-            adpRowHTML('Flock', flockVal) +
-            adpRowHTML('Sleeper', sleeperVal) +
-            adpRowHTML('Underdog', underdogVal) +
-            adpRowHTML('ESPN', espnVal) +
+            adpCellHTML('Flock', flockVal) +
+            adpCellHTML('Sleeper', sleeperVal) +
+            adpCellHTML('Underdog', underdogVal) +
+            adpCellHTML('ESPN', espnVal) +
             adpRowHTML('Weighted', weightedVal, 'adp-row-weighted') +
           '</div>' +
           '<div class="dk-proj-row"><span class="dk-proj-label">' + srcLogoHTML(DK_LOGO_URL) + 'DK Proj</span><span class="dk-proj-val">' + esc(dkProjVal) + '</span></div>' +
