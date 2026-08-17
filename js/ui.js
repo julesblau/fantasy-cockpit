@@ -252,7 +252,7 @@
     );
   }
 
-  /** @param {{posRanks:*, isCompared:boolean}} [ctx] */
+  /** @param {{pickLabel:(string|null), posRanks:*, isCompared:boolean}} [ctx] */
   function draftedSearchRowHTML(view, ctx) {
     ctx = ctx || {};
     var rowClasses = ['player-row', 'is-drafted-search'];
@@ -260,6 +260,8 @@
       rowClasses.push('is-compared');
     }
     var mineToggleClass = 'btn-toggle' + (view.mine ? ' on-mine' : '');
+    var pillClass = 'drafted-pill' + (ctx.pickLabel ? ' pill-mine' : '');
+    var pillText = ctx.pickLabel ? ctx.pickLabel : 'DRAFTED';
     return (
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '">' +
         tierStripHTML(view.tier) +
@@ -270,17 +272,20 @@
             '<div class="player-name">' + esc(view.name) + '</div>' +
             '<div class="player-meta player-meta-card">' + metricsLineHTML(view, ctx) + '</div>' +
           '</div>' +
-          '<span class="drafted-pill">DRAFTED</span>' +
+          '<span class="' + pillClass + '">' + pillText + '</span>' +
           '<button class="' + mineToggleClass + '" data-action="toggle-mine" data-id="' + esc(view.id) + '" aria-label="Toggle whether this pick is yours">' + icon('user') + '</button>' +
         '</div>' +
       '</div>'
     );
   }
 
-  /** @param {{pickNumber:(number|null), posRanks:*, isCompared:boolean}} [ctx] */
+  /** @param {{pickNumber:(number|null), pickLabel:(string|null), posRanks:*, isCompared:boolean}} [ctx] */
   function draftedRowHTML(view, ctx) {
     ctx = ctx || {};
     var pickText = typeof ctx.pickNumber === 'number' ? ctx.pickNumber : EMDASH;
+    var badgeHTML = ctx.pickLabel
+      ? '<span class="pick-badge pick-badge-mine">' + ctx.pickLabel + '</span>'
+      : '<span class="pick-badge">Pick ' + pickText + '</span>';
     var rowClasses = ['player-row'];
     if (view.mine) {
       rowClasses.push('is-mine');
@@ -302,7 +307,7 @@
             '</div>' +
             '<div class="player-meta player-meta-card">' + metricsLineHTML(view, ctx) + '</div>' +
           '</div>' +
-          '<span class="pick-badge">Pick ' + pickText + '</span>' +
+          badgeHTML +
           '<button class="' + mineToggleClass + '" data-action="toggle-mine" data-id="' + esc(view.id) + '" aria-label="Toggle whether this pick is yours">' + icon('user') + '</button>' +
           '<button class="btn-undraft" data-action="undraft" data-id="' + esc(view.id) + '">UNDO</button>' +
         '</div>' +
@@ -312,7 +317,7 @@
 
   /**
    * @param {Object} view player + marks (id, rank, name, team, position, byeWeek, tier, drafted, target, avoid)
-   * @param {{searching:boolean, statusFilter:string, pickNumber:(number|null), signals:*}} ctx
+   * @param {{searching:boolean, statusFilter:string, pickNumber:(number|null), pickLabel:(string|null), signals:*}} ctx
    */
   function playerRowHTML(view, ctx) {
     ctx = ctx || {};
@@ -326,7 +331,7 @@
   }
 
   /**
-   * @param {Array<{slot:string, player:(Object|null)}>} tiles DC.state.rosterBoard(state) output (non-null)
+   * @param {Array<{slot:string, player:(Object|null), pickLabel:(string|null|undefined)}>} tiles DC.state.rosterBoard(state) output (non-null), pickLabel attached by the caller
    */
   function rosterBoardHTML(tiles) {
     return tiles.map(function (tile) {
@@ -335,8 +340,9 @@
         return '<div class="roster-tile is-empty" data-slot="' + tile.slot + '"><div class="tile-slot">' + label + '</div><div class="tile-body"><div class="tile-empty">' + EMDASH + ' empty ' + EMDASH + '</div></div></div>';
       }
       var p = tile.player;
+      var pickHTML = tile.pickLabel ? '<div class="tile-pick">' + tile.pickLabel + '</div>' : '';
       // display-only: every tile is already mine, so un-mine/undraft live in the Drafted row (and Mine's no-league fallback rows)
-      return '<div class="roster-tile" data-slot="' + tile.slot + '"><div class="tile-slot">' + label + '</div><div class="tile-body"><div class="tile-name">' + esc(p.name) + '</div><div class="tile-meta">' + esc(p.team) + '</div></div><div class="tile-bye">BYE ' + p.byeWeek + '</div></div>';
+      return '<div class="roster-tile" data-slot="' + tile.slot + '"><div class="tile-slot">' + label + '</div><div class="tile-body"><div class="tile-name">' + esc(p.name) + '</div><div class="tile-meta">' + esc(p.team) + '</div></div><div class="tile-right">' + pickHTML + '<div class="tile-bye">BYE ' + p.byeWeek + '</div></div></div>';
     }).join('');
   }
 
@@ -1407,7 +1413,15 @@
       if (mineNoSearch && state.league) {
         // league configured: the roster board replaces both the row list and the empty-state,
         // regardless of pick count — takes priority over the visible.length===0 branch below
-        listEl.innerHTML = templates.rosterBoardHTML(DC.state.rosterBoard(state));
+        // new tile objects only — never mutate rosterBoard()'s output
+        var tiles = DC.state.rosterBoard(state).map(function (tile) {
+          if (!tile.player) {
+            return tile;
+          }
+          var tpn = DC.state.pickNumber(state, tile.player.id);
+          return Object.assign({}, tile, { pickLabel: typeof tpn === 'number' ? DC.state.roundPickLabel(tpn, state.league.size) : null });
+        });
+        listEl.innerHTML = templates.rosterBoardHTML(tiles);
       } else if (visible.length === 0) {
         var empty = pickEmptyKind(state);
         listEl.innerHTML = templates.emptyStateHTML(empty.kind, empty.detail);
@@ -1420,10 +1434,12 @@
         var posRanks = DC.state.positionRanks(state);
         var myPick = !!(pm && pm.isMyPick);
         var rowsHtml = visible.map(function (v) {
+          var pn = v.drafted ? DC.state.pickNumber(state, v.id) : null;
           var ctx = {
             searching: searching,
             statusFilter: state.filters.status,
-            pickNumber: v.drafted ? DC.state.pickNumber(state, v.id) : null,
+            pickNumber: pn,
+            pickLabel: v.drafted && v.mine && state.league && typeof pn === 'number' ? DC.state.roundPickLabel(pn, state.league.size) : null,
             signals: signals,
             posRanks: posRanks,
             myPick: myPick,

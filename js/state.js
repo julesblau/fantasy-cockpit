@@ -726,6 +726,18 @@
     return null;
   }
 
+  /**
+   * @param {number} overall 1-based overall pick
+   * @param {number} leagueSize
+   * @returns {string|null} "round.overall", e.g. "2.24" -- null unless both args are positive integers
+   */
+  function roundPickLabel(overall, leagueSize) {
+    if (!Number.isInteger(overall) || overall < 1 || !Number.isInteger(leagueSize) || leagueSize < 1) {
+      return null;
+    }
+    return String(Math.floor((overall - 1) / leagueSize) + 1) + '.' + overall;
+  }
+
   // ---- board-signal selectors (pure; scan-only, no .sort()) ------------------------------
 
   // module-private: overall pick number for round r under this league's slot/snake config
@@ -1346,6 +1358,7 @@
     availableCountsByPosition: availableCountsByPosition,
     myRosterCounts: myRosterCounts,
     pickNumber: pickNumber,
+    roundPickLabel: roundPickLabel,
     matchesSearch: matchesSearch,
     clampTierAt: clampTierAt,
     normalizeTiers: normalizeTiers,

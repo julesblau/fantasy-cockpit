@@ -659,10 +659,23 @@ button.player-rank {
   color: var(--text-2);
 }
 
-.tile-bye {
+.tile-right {
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.tile-bye {
   font-size: 15px;
   font-weight: 700;
+  color: var(--text-2);
+}
+
+.tile-pick {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
   color: var(--text-2);
 }
 
@@ -874,6 +887,12 @@ button.player-rank {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-2);
+}
+
+.pick-badge-mine {
+  color: var(--accent-draft);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 
 .btn-undraft {

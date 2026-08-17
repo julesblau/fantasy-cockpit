@@ -1216,6 +1216,21 @@
       assertEq(DC.state.pickNumber(state, 'p5'), 2);
       assertEq(DC.state.pickNumber(state, 'p1'), null);
     });
+
+    t('roundPickLabel: "round.overallPick" for a 12-team snake, plus a size-10 case, and null for invalid args', function () {
+      assertEq(DC.state.roundPickLabel(1, 12), '1.1');
+      assertEq(DC.state.roundPickLabel(24, 12), '2.24');
+      assertEq(DC.state.roundPickLabel(25, 12), '3.25');
+      assertEq(DC.state.roundPickLabel(13, 12), '2.13');
+      assertEq(DC.state.roundPickLabel(11, 10), '2.11', 'size-10 case');
+      assertEq(DC.state.roundPickLabel(1.5, 12), null, 'non-integer overall');
+      assertEq(DC.state.roundPickLabel(0, 12), null, 'zero overall');
+      assertEq(DC.state.roundPickLabel(-1, 12), null, 'negative overall');
+      assertEq(DC.state.roundPickLabel(null, 12), null, 'null overall');
+      assertEq(DC.state.roundPickLabel(undefined, 12), null, 'undefined overall');
+      assertEq(DC.state.roundPickLabel(1, 0), null, 'zero leagueSize');
+      assertEq(DC.state.roundPickLabel(1, null), null, 'null leagueSize');
+    });
   })();
   </script>
 
@@ -5105,11 +5120,37 @@
       assert(html.indexOf('data-action="toggle-target"') === -1, 'no toggle-target action: ' + html);
     });
 
+    t('draftedSearchRowHTML: truthy pickLabel shows the label text with pill-mine instead of DRAFTED; non-mine (no pickLabel) still shows DRAFTED', function () {
+      var view = { id: 'p16', rank: 4, name: 'Pill Fixture', team: 'DAL', position: 'TE', byeWeek: 7, tier: null, mine: true };
+      var mineHtml = DC.ui.templates.draftedSearchRowHTML(view, { pickLabel: '1.5' });
+      assert(mineHtml.indexOf('pill-mine') !== -1, 'pill-mine class present: ' + mineHtml);
+      assert(mineHtml.indexOf('>1.5<') !== -1, 'label text present: ' + mineHtml);
+      assert(mineHtml.indexOf('DRAFTED') === -1, 'DRAFTED text must not show when pickLabel is present: ' + mineHtml);
+
+      var nonMineView = Object.assign({}, view, { id: 'p17', mine: false });
+      var nonMineHtml = DC.ui.templates.draftedSearchRowHTML(nonMineView, {});
+      assert(nonMineHtml.indexOf('DRAFTED') !== -1, 'DRAFTED text present with no pickLabel: ' + nonMineHtml);
+      assert(nonMineHtml.indexOf('pill-mine') === -1, 'no pill-mine class without pickLabel: ' + nonMineHtml);
+    });
+
     t('draftedRowHTML: toggle-mine button carries an aria-label', function () {
       var view = { id: 'p15', rank: 4, name: 'Row Guy', team: 'DAL', position: 'RB', byeWeek: 7, tier: null, mine: false };
       var html = DC.ui.templates.draftedRowHTML(view, { pickNumber: 2 });
       assert(html.indexOf('data-action="toggle-mine"') !== -1, 'toggle-mine present: ' + html);
       assert(html.indexOf('aria-label="Toggle whether this pick is yours"') !== -1, 'toggle-mine button should carry an aria-label: ' + html);
+    });
+
+    t('draftedRowHTML: truthy pickLabel shows pick-badge-mine with the label text, not "Pick N"; non-mine row (no pickLabel) still shows "Pick N"', function () {
+      var mineView = { id: 'p18', rank: 1, name: 'Chip Fixture', team: 'KC', position: 'RB', byeWeek: 9, tier: 1, mine: true };
+      var mineHtml = DC.ui.templates.draftedRowHTML(mineView, { pickNumber: 24, pickLabel: '2.24' });
+      assert(mineHtml.indexOf('pick-badge-mine') !== -1, 'pick-badge-mine class present: ' + mineHtml);
+      assert(mineHtml.indexOf('>2.24<') !== -1, 'label text present: ' + mineHtml);
+      assert(mineHtml.indexOf('Pick 24') === -1, 'must not show Pick N when pickLabel is present: ' + mineHtml);
+
+      var nonMineView = { id: 'p19', rank: 2, name: 'NonMine Fixture', team: 'SF', position: 'WR', byeWeek: 5, tier: 1, mine: false };
+      var nonMineHtml = DC.ui.templates.draftedRowHTML(nonMineView, { pickNumber: 7 });
+      assert(nonMineHtml.indexOf('Pick 7') !== -1, 'Pick N badge: ' + nonMineHtml);
+      assert(nonMineHtml.indexOf('pick-badge-mine') === -1, 'no pick-badge-mine on non-mine row: ' + nonMineHtml);
     });
 
     t('playerRowHTML (drafted): toggle-mine button always present; .on-mine class + .is-mine row class only when view.mine', function () {
@@ -5322,6 +5363,14 @@
       assert(mineViewHtml.indexOf('data-action="toggle-mine"') !== -1, 'toggle-mine present: ' + mineViewHtml);
       assert(mineViewHtml.indexOf('Pick 2') !== -1, 'pick badge present: ' + mineViewHtml);
       assert(mineViewHtml.indexOf('data-action="undraft"') !== -1, 'undo present: ' + mineViewHtml);
+    });
+
+    t('playerRowHTML: mine+drafted row with a truthy pickLabel shows the label via pick-badge-mine, dispatched through playerRowHTML (not just draftedRowHTML directly)', function () {
+      var view = { id: 'p20', rank: 8, name: 'Dispatch Fixture', team: 'MIA', position: 'WR', byeWeek: 8, drafted: true, target: false, avoid: false, mine: true };
+      var html = DC.ui.templates.playerRowHTML(view, { searching: false, statusFilter: 'MINE', pickNumber: 24, pickLabel: '2.24' });
+      assert(html.indexOf('pick-badge-mine') !== -1, 'pick-badge-mine present: ' + html);
+      assert(html.indexOf('>2.24<') !== -1, 'label text present: ' + html);
+      assert(html.indexOf('Pick 24') === -1, 'must not show Pick N when pickLabel is present: ' + html);
     });
   })();
   </script>
@@ -5647,6 +5696,31 @@
         assertEq(qbTile.querySelector('.tile-name').textContent, qb.name);
         assert(qbTile.querySelector('.tile-bye').textContent.indexOf('BYE ' + qb.byeWeek) !== -1, qbTile.querySelector('.tile-bye').textContent);
         assert(!qbTile.querySelector('[data-action]'), 'filled roster tile should be display-only, no action buttons: ' + qbTile.outerHTML);
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+
+    t('Mine pick chips (live render wiring): a mine pick at overall #1 in a 12-team league shows "1.1" on both the roster tile and the Drafted-view pick-badge', function () {
+      var fixture = buildMountFixture();
+      var seed = DC.state.createSeedState();
+      var store = DC.state.createStore(seed);
+      try {
+        DC.ui.mount(store);
+        store.dispatch({ type: 'SET_LEAGUE', league: { size: 12, slot: 1, snake: true, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, DST: 1, K: 1, BENCH: 7 } } });
+        var qb = seed.players.filter(function (p) { return p.position === 'QB'; })[0];
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: qb.id, mine: true });
+
+        fixture.querySelector('[data-action="set-status"][data-status="MINE"]').click();
+        var qbTile = fixture.querySelector('#player-list').querySelector('.roster-tile[data-slot="QB"]');
+        assertEq(qbTile.querySelector('.tile-pick').textContent, '1.1', 'roster tile should show the round.pick label');
+
+        fixture.querySelector('[data-action="set-status"][data-status="DRAFTED"]').click();
+        var draftedRow = fixture.querySelector('.player-row[data-id="' + qb.id + '"]');
+        var badge = draftedRow.querySelector('.pick-badge');
+        assert(badge.classList.contains('pick-badge-mine'), 'Drafted-view badge should carry pick-badge-mine: ' + badge.outerHTML);
+        assertEq(badge.textContent, '1.1', 'Drafted-view badge should show the round.pick label, not "Pick 1"');
       } finally {
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
@@ -9253,6 +9327,18 @@
       assertEq(label.textContent, 'DK Proj', 'label textContent should stay "DK Proj" -- the img contributes no text');
     });
 
+    t('cardHTML: mine+drafted card with truthy pickLabel shows the label in the status row, not "Pick N"; pickLabel undefined falls back to "Pick N"', function () {
+      var player = { id: 'pick-label-fixture', rank: 1, name: 'Pick Label Fixture', team: 'SEA', position: 'WR', byeWeek: 13, tier: 1, adp: null };
+      var cardWithLabel = { player: player, adp: null, posRank: 1, pickNumber: 24, pickLabel: '2.24', marks: { target: false, avoid: false, drafted: true, mine: true }, verdict: { cls: 'verdict-none', text: 'drafted' } };
+      var htmlWithLabel = DC.compare.templates.cardHTML(cardWithLabel);
+      assert(htmlWithLabel.indexOf('>2.24<') !== -1, 'label text present: ' + htmlWithLabel);
+      assert(htmlWithLabel.indexOf('Pick 24') === -1, 'must not show Pick N when pickLabel is present: ' + htmlWithLabel);
+
+      var cardNoLabel = Object.assign({}, cardWithLabel, { pickLabel: undefined });
+      var htmlNoLabel = DC.compare.templates.cardHTML(cardNoLabel);
+      assert(htmlNoLabel.indexOf('Pick 24') !== -1, 'falls back to Pick N when pickLabel is undefined: ' + htmlNoLabel);
+    });
+
     t('5. ADP null fallback: a player whose adp is null renders the em-dash for all five adp-vals', function () {
       var fixture = buildCompareFixture();
       try {
@@ -9644,7 +9730,7 @@
       var seed = DC.state.createSeedState();
       var id = seed.players[0].id;
       var card = DC.compare.templates.buildCards(seed, [id])[0];
-      assertEq(JSON.stringify(Object.keys(card)), JSON.stringify(['player', 'adp', 'posRank', 'pickNumber', 'marks', 'verdict']), 'card key order');
+      assertEq(JSON.stringify(Object.keys(card)), JSON.stringify(['player', 'adp', 'posRank', 'pickNumber', 'pickLabel', 'marks', 'verdict']), 'card key order');
       assertEq(JSON.stringify(Object.keys(card.verdict)), JSON.stringify(['cls', 'text']), 'verdict key order');
     });
 
@@ -11703,6 +11789,22 @@
       var tiles = [{ slot: 'QB', player: avatarFixturePlayer({ position: 'QB' }) }];
       var html = DC.ui.templates.rosterBoardHTML(tiles);
       assert(html.indexOf('player-avatar-box') === -1, 'roster tiles should not render an avatar: ' + html);
+    });
+
+    t('rosterBoardHTML: filled tile with pickLabel renders .tile-pick with the label; tile without pickLabel has no .tile-pick', function () {
+      var tiles = [
+        { slot: 'QB', player: avatarFixturePlayer({ id: 'rbh-qb', position: 'QB' }), pickLabel: '1.3' },
+        { slot: 'RB', player: avatarFixturePlayer({ id: 'rbh-rb', position: 'RB' }), pickLabel: null }
+      ];
+      var html = DC.ui.templates.rosterBoardHTML(tiles);
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      var qbTile = wrap.querySelector('.roster-tile[data-slot="QB"]');
+      var rbTile = wrap.querySelector('.roster-tile[data-slot="RB"]');
+      assert(qbTile.querySelector('.tile-pick'), 'QB tile should carry .tile-pick: ' + qbTile.outerHTML);
+      assertEq(qbTile.querySelector('.tile-pick').textContent, '1.3');
+      assert(!rbTile.querySelector('.tile-pick'), 'RB tile without pickLabel should carry no .tile-pick: ' + rbTile.outerHTML);
+      assert(qbTile.querySelector('.tile-bye'), 'sanity: tile-bye should still be present alongside tile-pick: ' + qbTile.outerHTML);
     });
 
     t('compare card: avatar present with the larger (avatar-lg) box and the 2x (w=96&h=70) combiner src', function () {

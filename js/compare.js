@@ -141,7 +141,7 @@
   /**
    * @param {Object} state
    * @param {string[]} ids in caller order; ids missing from state.players are skipped (stale after import)
-   * @returns {Array<{player:Object, adp:(Object|null), posRank:number, pickNumber:(number|null), marks:Object, verdict:{cls:string, text:string}}>}
+   * @returns {Array<{player:Object, adp:(Object|null), posRank:number, pickNumber:(number|null), pickLabel:(string|null), marks:Object, verdict:{cls:string, text:string}}>}
    */
   function buildCards(state, ids) {
     var byId = {};
@@ -155,11 +155,13 @@
         return;
       }
       var marks = state.marks[id];
+      var pickNumber = marks && marks.drafted ? DC.state.pickNumber(state, id) : null;
       cards.push({
         player: player,
         adp: DC.state.adpForPlayer(player),
         posRank: posRanks[id],
-        pickNumber: marks && marks.drafted ? DC.state.pickNumber(state, id) : null,
+        pickNumber: pickNumber,
+        pickLabel: marks && marks.drafted && marks.mine && state.league && typeof pickNumber === 'number' ? DC.state.roundPickLabel(pickNumber, state.league.size) : null,
         marks: marks,
         verdict: marks && marks.drafted
           ? { cls: 'verdict-none', text: 'drafted' }
@@ -192,8 +194,12 @@
       statusIconsHTML += DC.ui.icon('x');
     }
     if (marks.drafted) {
-      var pickText = typeof card.pickNumber === 'number' ? card.pickNumber : EMDASH;
-      statusIconsHTML += DC.ui.icon('check') + '<span>Pick ' + pickText + '</span>';
+      if (card.pickLabel) {
+        statusIconsHTML += DC.ui.icon('check') + '<span>' + card.pickLabel + '</span>';
+      } else {
+        var pickText = typeof card.pickNumber === 'number' ? card.pickNumber : EMDASH;
+        statusIconsHTML += DC.ui.icon('check') + '<span>Pick ' + pickText + '</span>';
+      }
     }
     if (marks.mine) {
       statusIconsHTML += DC.ui.icon('user');
