@@ -883,6 +883,12 @@ button.player-rank {
   padding: 4px 8px;
 }
 
+.pill-mine {
+  color: var(--accent-draft);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
 .pick-badge {
   font-size: 13px;
   font-weight: 600;
