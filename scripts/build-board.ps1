@@ -89,7 +89,7 @@ $dstNameMap = @{
 }
 
 # weighted ADP renormalization weights for K/DST interleave (Expert/Sleeper/Underdog/ESPN only)
-$adpWeights = @{ Expert = 0.30; Sleeper = 0.30; Underdog = 0.25; ESPN = 0.15 }
+$adpWeights = @{ Expert = 0.33; Sleeper = 0.22; Underdog = 0.22; ESPN = 0.23 }
 
 # ---- Step 1: parse REDRAFT (skill order) ------------------------------------------------------
 

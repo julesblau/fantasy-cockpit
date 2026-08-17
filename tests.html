@@ -6257,14 +6257,14 @@
       assert(result.following > result.next, 'following (' + result.following + ') must exceed next (' + result.next + ')');
     });
 
-    t('adpConsensus: fixture player — weighted mean of flock/sleeper/underdog/espn (0.30/0.30/0.25/0.15), rounded to one decimal', function () {
-      // 0.30*4 + 0.30*10 + 0.25*8 + 0.15*6 = 1.2 + 3.0 + 2.0 + 0.9 = 7.1
+    t('adpConsensus: fixture player — weighted mean of flock/sleeper/underdog/espn (0.33/0.22/0.22/0.23), rounded to one decimal', function () {
+      // 0.33*4 + 0.22*10 + 0.22*8 + 0.23*6 = 1.32 + 2.2 + 1.76 + 1.38 = 6.66 -> 6.7
       var player = { adp: { flock: 4, sleeper: 10, underdog: 8, espn: 6 } };
-      assertEq(DC.state.adpConsensus(player), 7.1);
+      assertEq(DC.state.adpConsensus(player), 6.7);
     });
 
-    t('adpConsensus: rounds the weighted mean — {flock:2,sleeper:2,underdog:2,espn:1.9} (weighted 1.985) -> 2', function () {
-      // 0.30*2 + 0.30*2 + 0.25*2 + 0.15*1.9 = 0.6 + 0.6 + 0.5 + 0.285 = 1.985 -> rounds to 2
+    t('adpConsensus: rounds the weighted mean — {flock:2,sleeper:2,underdog:2,espn:1.9} (weighted 1.977) -> 2', function () {
+      // 0.33*2 + 0.22*2 + 0.22*2 + 0.23*1.9 = 0.66 + 0.44 + 0.44 + 0.437 = 1.977 -> rounds to 2
       assertEq(DC.state.adpConsensus({ adp: { flock: 2, sleeper: 2, underdog: 2, espn: 1.9 } }), 2);
     });
 
@@ -6276,13 +6276,13 @@
       assertEq(DC.state.adpConsensus({}), null);
     });
 
-    t('adpConsensus: partial-source weighted math via stubbed sidecar — flock 10 + espn 20, sleeper/underdog absent -> 13.3', function () {
+    t('adpConsensus: partial-source weighted math via stubbed sidecar — flock 10 + espn 20, sleeper/underdog absent -> 14.1', function () {
       var real = window.DC.adpData;
       try {
         window.DC.adpData = { players: { 'partialkey|rb': { flock: 10, espn: 20 } } };
         var player = { name: 'Partial Key', team: 'KC', position: 'RB' };
-        // (0.30*10 + 0.15*20) / 0.45 = (3 + 3) / 0.45 = 6 / 0.45 = 13.333... -> 13.3
-        assertEq(DC.state.adpConsensus(player), 13.3);
+        // (0.33*10 + 0.23*20) / 0.56 = (3.3 + 4.6) / 0.56 = 7.9 / 0.56 = 14.107... -> 14.1
+        assertEq(DC.state.adpConsensus(player), 14.1);
       } finally {
         window.DC.adpData = real;
       }
@@ -9230,9 +9230,9 @@
         assertEq(adpVals[1].textContent, String(p.adp.sleeper), 'Sleeper adp value should match fixture');
         assertEq(adpVals[2].textContent, String(p.adp.underdog), 'Underdog adp value should match fixture');
         assertEq(adpVals[3].textContent, String(p.adp.espn), 'ESPN adp value should match fixture');
-        // distinct per-site values under the real ADP_WEIGHTS blend (flock .30/sleeper .30/underdog .25/espn .15):
-        // 0.30*10 + 0.30*8 + 0.25*6 + 0.15*4 = 3 + 2.4 + 1.5 + 0.6 = 7.5
-        assertEq(adpVals[4].textContent, '7.5', 'Weighted adp value should equal the weighted consensus');
+        // distinct per-site values under the real ADP_WEIGHTS blend (flock .33/sleeper .22/underdog .22/espn .23):
+        // 0.33*10 + 0.22*8 + 0.22*6 + 0.23*4 = 3.3 + 1.76 + 1.32 + 0.92 = 7.3
+        assertEq(adpVals[4].textContent, '7.3', 'Weighted adp value should equal the weighted consensus');
 
         var weightedRow = card.querySelectorAll('.compare-card-adp .adp-row')[4];
         assert(weightedRow.classList.contains('adp-row-weighted'), 'the Weighted row should carry adp-row-weighted');
@@ -10193,8 +10193,8 @@
         assertEq(vals[2].textContent, '—', 'underdog cell always renders the em-dash -- absent from this sidecar entry');
         assertEq(vals[3].textContent, '5', 'espn cell should show the sidecar value, not the stale player.adp value');
         // only espn(5) and sleeper(7) survive the merge (flock/underdog absent on this sidecar entry):
-        // (0.15*5 + 0.30*7) / (0.15+0.30) = (0.75+2.1) / 0.45 = 2.85/0.45 = 6.333... -> 6.3
-        assertEq(vals[4].textContent, '6.3', 'Weighted cell should reflect the sidecar-resolved espn/sleeper values, not the stale player.adp value');
+        // (0.23*5 + 0.22*7) / (0.23+0.22) = (1.15+1.54) / 0.45 = 2.69/0.45 = 5.977... -> rounds to 6, rendered '6' (no decimal)
+        assertEq(vals[4].textContent, '6', 'Weighted cell should reflect the sidecar-resolved espn/sleeper values, not the stale player.adp value');
       } finally {
         window.DC.adpData = real;
         document.body.removeChild(fixture);

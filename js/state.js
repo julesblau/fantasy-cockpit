@@ -1073,7 +1073,7 @@
     return adpOverride ? adpOverride.updatedAt : (DC.adpData ? DC.adpData.updatedAt : null);
   }
 
-  var ADP_WEIGHTS = { flock: 0.30, sleeper: 0.30, underdog: 0.25, espn: 0.15 }; // user-chosen blend; flock = expert consensus
+  var ADP_WEIGHTS = { flock: 0.33, sleeper: 0.22, underdog: 0.22, espn: 0.23 }; // user-chosen blend; flock = expert consensus
 
   /**
    * @param {Player} player

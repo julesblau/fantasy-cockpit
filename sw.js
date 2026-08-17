@@ -1,5 +1,5 @@
 // Bump CACHE_NAME (v1 -> v2 ...) whenever any precached file changes.
-var CACHE_NAME = 'draft-cockpit-v20';
+var CACHE_NAME = 'draft-cockpit-v21';
 // Player headshots/logos: a separate, un-versioned runtime cache -- never wiped by an app-shell bump.
 var IMG_CACHE_NAME = 'draft-cockpit-img-v1';
 var IMG_HOSTS = ['a.espncdn.com', 'sleepercdn.com', 'flockfantasy.com', 'cdn.prod.website-files.com', 'sportsbook.draftkings.com'];
