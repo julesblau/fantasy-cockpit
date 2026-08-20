@@ -42,7 +42,7 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
-**Reminder for this release:** this release bumps the service-worker cache to v22 and adds the Queue -- an ESPN-style personal shortlist you build by swiping players right, independent of board rank (see Queue, above). Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+**Reminder for this release:** this release bumps the service-worker cache to v23 and fixes a bug where a completed swipe no longer swallows the next tap on the Queue chip or a DRAFT button. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
 
 ## Install on iPhone
 

@@ -12181,6 +12181,14 @@
           var e = entries.shift();
           if (e) { e.cb(); }
         },
+        // drains every pending timer, including ones scheduled by earlier flushed callbacks --
+        // stands in for the real elapsed time between two separate physical taps.
+        flushAll: function () {
+          while (entries.length) {
+            var e = entries.shift();
+            e.cb();
+          }
+        },
         restore: function () {
           window.setTimeout = original;
           window.clearTimeout = originalClear;
@@ -12627,6 +12635,138 @@
         listEl.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 7, clientY: targetRect.top + 1 }));
 
         assertEq(store.getState().queueIds, [ids[0], ids[2], ids[1]], 'the mover lands after the hidden drafted id, not ahead of it');
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    // ---- real-device double-tap repro: a completed swipe/drag fires NO trailing click on a
+    // real browser (only a tap that never left the slop radius gets one) -- so a suppression
+    // flag that expects that click to arrive and clear itself stays stale and eats whatever the
+    // user's NEXT genuine tap turns out to be, anywhere under the appEl-wide click delegate. ----
+
+    t('BUG: after a real completed swipe (no trailing click), the very next genuine tap on the Queue chip must fire on the FIRST click', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+
+        var timers = mockTimerQueue();
+        try {
+          // completed rightward swipe -- commits past the flash delay, real browser fires no click
+          row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 9, button: 0, clientX: 200, clientY: 300 }));
+          row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 9, clientX: 260, clientY: 302 }));
+          row.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 9, clientX: 260, clientY: 302 }));
+          timers.flushAll(); // QUEUE_TOGGLE's delayed dispatch, plus any self-expiring suppression timer --
+          // stands in for the real elapsed time before the user's next, separate physical tap
+        } finally {
+          timers.restore();
+        }
+        assertEq(spy.calls.filter(function (a) { return a.type === 'QUEUE_TOGGLE'; }).length, 1, 'sanity: the swipe committed');
+
+        // the user's next real action: a plain tap on the Queue chip (pointerdown, pointerup, click)
+        var chip = fixture.querySelector('[data-action="set-status"][data-status="QUEUE"]');
+        assert(chip, 'expected a Queue chip');
+        chip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 10, button: 0 }));
+        chip.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 10 }));
+        chip.click();
+
+        var filterDispatches = spy.calls.filter(function (a) { return a.type === 'SET_STATUS_FILTER'; });
+        assertEq(filterDispatches.length, 1, 'the FIRST tap on the chip must switch the filter -- it must not be swallowed by a stale swipe-suppression flag');
+        assertEq(store.getState().filters.status, 'QUEUE');
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('BUG: after a real completed swipe (no trailing click), the very next genuine tap on a DRAFT button must fire on the FIRST click', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var ids = DC.data.SEED_PLAYERS.slice(0, 2).map(function (p) { return p.id; });
+        var swipedId = ids[0];
+        var otherId = ids[1];
+        var row = fixture.querySelector('.player-row[data-id="' + swipedId + '"]');
+
+        var timers = mockTimerQueue();
+        try {
+          row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 9, button: 0, clientX: 200, clientY: 300 }));
+          row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 9, clientX: 260, clientY: 302 }));
+          row.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 9, clientX: 260, clientY: 302 }));
+          timers.flushAll(); // QUEUE_TOGGLE's delayed dispatch, plus any self-expiring suppression timer --
+          // stands in for the real elapsed time before the user's next, separate physical tap
+          assertEq(spy.calls.filter(function (a) { return a.type === 'QUEUE_TOGGLE'; }).length, 1, 'sanity: the swipe committed');
+
+          // the user's next real action: a plain tap on a DRAFT button (a different, still-available row)
+          var btn = fixture.querySelector('.btn-draft[data-id="' + otherId + '"]');
+          assert(btn, 'expected a DRAFT button for the other player');
+          btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 10, button: 0 }));
+          btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 10 }));
+          btn.click();
+          timers.flushAll(); // runDraftSequence's flash-then-dispatch delay, if it was ever scheduled
+        } finally {
+          timers.restore();
+        }
+
+        var draftDispatches = spy.calls.filter(function (a) { return a.type === 'DRAFT_PLAYER'; });
+        assertEq(draftDispatches.length, 1, 'the FIRST tap on DRAFT must draft -- it must not be swallowed by a stale swipe-suppression flag');
+        assertEq(draftDispatches[0].playerId, otherId);
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('a real completed queue drag-reorder (no trailing click) does not swallow the next genuine tap on a DRAFT button', function () {
+      var fixture = buildLaidOutMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var ids = DC.data.SEED_PLAYERS.slice(0, 3).map(function (p) { return p.id; });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[0] });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[1] });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[2] });
+        store.dispatch({ type: 'SET_STATUS_FILTER', status: 'QUEUE' });
+
+        var listEl = fixture.querySelector('#player-list');
+        var rows = listEl.querySelectorAll('.player-row');
+        assertEq(rows.length, 3, 'expected 3 queued rows');
+        var fromRow = rows[0];
+        var handle = fromRow.querySelector('.queue-drag-handle');
+        var targetRow = rows[2];
+        var targetRect = targetRow.getBoundingClientRect();
+        assert(targetRect.height > 0, 'fixture must have real layout for this test to be meaningful');
+
+        // completed drag-reorder -- real browser fires no trailing click on the handle either
+        handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 7, button: 0, clientY: fromRow.getBoundingClientRect().top + 1 }));
+        listEl.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 7, clientY: targetRect.top + targetRect.height + 1 }));
+        listEl.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 7, clientY: targetRect.top + targetRect.height + 1 }));
+        assertEq(spy.calls.filter(function (a) { return a.type === 'QUEUE_REORDER'; }).length, 1, 'sanity: the drag committed');
+
+        // the user's next real action: a plain tap on a DRAFT button in the queue view
+        var btn = listEl.querySelector('.btn-draft[data-id="' + ids[1] + '"]');
+        assert(btn, 'expected a DRAFT button in the queue view');
+        var timers = mockTimerQueue();
+        try {
+          btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 11, button: 0 }));
+          btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 11 }));
+          btn.click();
+          timers.flushOne();
+        } finally {
+          timers.restore();
+        }
+
+        var draftDispatches = spy.calls.filter(function (a) { return a.type === 'DRAFT_PLAYER'; });
+        assertEq(draftDispatches.length, 1, 'the FIRST tap on DRAFT after a drag-reorder must draft');
+        assertEq(draftDispatches[0].playerId, ids[1]);
       } finally {
         spy.restore();
         cleanup(fixture, store);

@@ -1208,6 +1208,13 @@
           row.removeEventListener('transitionend', onDone);
         });
       }
+      // real browsers fire NO click after a pointer sequence that moved past slop, so the click
+      // handler's consume-on-click never runs to clear this -- bound its life to this tick
+      // instead: a genuine trailing click (when one does arrive) always runs synchronously before
+      // this timer's task, so that case is untouched; a later, unrelated tap is never swallowed.
+      setTimeout(function () {
+        swipeClickSuppressed = false;
+      }, 0);
     }
 
     listEl.addEventListener('pointerup', function (ev) {
@@ -1368,7 +1375,7 @@
 
     appEl.addEventListener('click', function (ev) {
       if (swipeClickSuppressed) {
-        swipeClickSuppressed = false; // the click that always follows an armed swipe's pointerup
+        swipeClickSuppressed = false; // trailing click after an armed swipe, when the browser fires one
         return;
       }
       var target = ev.target.closest('[data-action]');
