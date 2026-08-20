@@ -42,7 +42,7 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
-**Reminder for this release:** this release bumps the service-worker cache to v21. The weighted ADP consensus is now Flock 33% / Sleeper 22% / Underdog 22% / ESPN 23% (see Updating ADP, below) -- board K/DST placement still reflects the prior weights until the next `build-board.ps1` re-bake. Players you've drafted as yours now show their round.pick (e.g. "2.24") instead of a plain pick number, on Drafted rows, Mine's roster tiles, and compare cards (see Track your own roster, above). Compare cards' four ADP source cells are now logo-only, with the full source name in the logo's aria-label, so cards no longer clip on quad layouts. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+**Reminder for this release:** this release bumps the service-worker cache to v22 and adds the Queue -- an ESPN-style personal shortlist you build by swiping players right, independent of board rank (see Queue, above). Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
 
 ## Install on iPhone
 
@@ -128,6 +128,18 @@ Without a league set up (see Draft position tracker, below), Mine just lists you
 Set a roster template in Settings -> League -- steppers for QB, RB, WR, TE, FLEX, DST, K, and Bench slot counts, alongside the league size/slot/snake settings. The default template (used the first time you set one up) is QB 1, RB 2, WR 2, TE 1, FLEX 1, DST 1, K 1, Bench 7. Once a template is set, Mine becomes a roster board: one tile per starting slot, in order -- QB, RB, WR, TE, FLEX, DST, K, then Bench -- sized to your template (so the default template gives 2 RB tiles, 2 WR tiles, 7 bench tiles, and so on). Tiles fill in as you draft: a filled tile shows the player's name and team with his bye week on the right; an open slot reads "-- empty --". Each of your picks fills its own position's slots first; only an RB, WR, or TE pick can roll into FLEX once its own slot is full -- K and DST have no FLEX eligibility, so once their own slot is full they go straight to Bench. Picks are counted in the order you drafted them, so backfilling marks out of draft order can shuffle which slot a given pick lands in.
 
 With a league set up, players you've drafted as yours show their round.pick (e.g. "2.24" = round 2, pick 24 overall) in place of a plain pick number -- on Drafted rows, Mine's roster tiles, and compare cards. This needs league setup to know the round size, and assumes every pick up to that point has been marked, since the round comes from a running count of drafted picks (see Draft position tracker, below).
+
+## Queue
+
+Build a personal shortlist, in whatever order you want, independent of the board's own ranking.
+
+Swipe right on an available player's row -- main board or search results -- to add him to your queue. The swipe has to start on the row body: starting on his photo or within the left screen edge (that zone is reserved for iOS's own back-swipe) doesn't arm it, and neither does starting on one of the row's buttons.
+
+The **Queue** chip sits alongside Targets/Avoid/Drafted/Mine, with a count badge showing how many players are queued. Tapping it opens the queue view: full board rows in queue order, with the same actions as the main board -- DRAFT, star, x, tapping a photo to peek his card, long-press to add him to compare. Swipe right on a row there to unqueue him.
+
+Each queued row gets a drag handle for reordering. Dragging only changes your personal queue order -- it never touches board rank, tiers, or anyone else's position. The handle hides while a search is active or a position filter narrows the list to less than everyone, since dragging only makes sense over the whole queue at once; switch back to All with no search to reorder again.
+
+Drafting a queued player drops him out of the queue view, but he keeps his slot in the underlying order -- undoing the draft brings him right back where he was. Queuing is orthogonal to Targets/Avoid: a player can be targeted, avoided, and queued all at once, independently. Your queue rides along in Export Backup, gets wiped by Clear All Data like everything else in that reset, and carries across a re-import or board adoption by player identity, the same way marks do.
 
 ## Draft position tracker
 

@@ -15,6 +15,7 @@
   --accent-undo: #FF9F0A;
   --accent-drafted: #636366;
   --accent-compare: #BF5AF2;
+  --accent-queue: #32ADE6;
   --tier-c1: #BF5AF2;
   --tier-c2: #64D2FF;
   --tier-c3: #FFB340;
@@ -348,6 +349,28 @@ body.searching #bottom-bar {
   background: var(--accent-position);
   color: #fff;
   border-color: transparent;
+}
+
+.chip.active-queue {
+  background: var(--accent-queue);
+  color: #fff;
+  border-color: transparent;
+}
+
+/* 5 status chips/390px: same overrun precedent as the position row -- icon + label at
+   15px/600 doesn't fit 5 across without shrinking */
+.chip-row:not(.chip-row-positions) .chip {
+  font-size: 13px;
+  gap: 3px;
+}
+
+.chip-count {
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius-chip);
+  padding: 1px 6px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* player row */
@@ -802,6 +825,20 @@ button.player-rank {
   background: var(--accent-position);
 }
 
+/* right edge (::after, not ::before) so it composes with the left-edge target/avoid/mine
+   stripe above instead of fighting it for the same pseudo-element */
+.player-row.is-queued::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 3px;
+  z-index: 1;
+  pointer-events: none;
+  background: var(--accent-queue);
+}
+
 /* outline (not box-shadow) so it composes with the stripes above and isn't clipped by overflow:hidden */
 .player-row.is-compared {
   outline: 2px solid var(--accent-compare);
@@ -847,6 +884,39 @@ button.player-rank {
 
 .player-row.gap-shift {
   transition: transform 120ms ease-out;
+}
+
+/* swipe-to-queue: JS drives translateX directly while dragging (no transition, follow the
+   finger 1:1); pan-y leaves vertical scroll native so only a horizontal gesture reaches JS */
+#player-list .player-row {
+  touch-action: pan-y;
+}
+
+.player-row.swipe-dragging {
+  transition: none;
+}
+
+.player-row.swipe-snap {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .player-row.swipe-snap {
+    transition: transform 150ms ease-out;
+  }
+}
+
+.player-row.flash-queue {
+  animation: queue-flash 150ms ease-out;
+}
+
+@keyframes queue-flash {
+  from {
+    background: rgba(50, 173, 230, 0.25);
+  }
+  to {
+    background: transparent;
+  }
 }
 
 .player-row.settled {

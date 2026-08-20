@@ -169,6 +169,9 @@
         pickNumber: pickNumber,
         pickLabel: marks && marks.drafted && marks.mine && state.league && typeof pickNumber === 'number' ? DC.state.roundPickLabel(pickNumber, state.league.size) : null,
         marks: marks,
+        // guarded rather than a bare DC.state.isQueued(state, id) -- some hand-built test-only
+        // state fixtures predate the queue feature and omit queueIds entirely
+        queued: !!(state.queueIds && DC.state.isQueued(state, id)),
         verdict: marks && marks.drafted
           ? { cls: 'verdict-none', text: 'drafted' }
           : verdictFor(DC.state.adpConsensus(player), picks)
@@ -209,6 +212,9 @@
     }
     if (marks.mine) {
       statusIconsHTML += DC.ui.icon('user');
+    }
+    if (card.queued) {
+      statusIconsHTML += DC.ui.icon('list');
     }
 
     var xAria = opts.xAria || 'Remove from compare';

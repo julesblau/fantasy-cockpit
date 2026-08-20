@@ -586,7 +586,7 @@
 
     t('createSeedState: correct shape from DC.data.SEED_PLAYERS', function () {
       var s = DC.state.createSeedState();
-      assertEq(s.schemaVersion, 8);
+      assertEq(s.schemaVersion, 9);
       s.players.forEach(function (p, i) {
         var seed = DC.data.SEED_PLAYERS[i];
         assertEq(p, { id: seed.id, rank: seed.rank, name: seed.name, team: seed.team, position: seed.position, byeWeek: seed.byeWeek, tier: seed.tier, adp: seed.adp }, 'seed player ' + i);
@@ -750,7 +750,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 8);
+      assertEq(loaded.schemaVersion, 9);
       assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v5->v6 adp-nulling step is superseded for any pre-v8 payload');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
@@ -1288,7 +1288,7 @@
 
     t('STORAGE_KEY and CURRENT_SCHEMA_VERSION constants', function () {
       assertEq(DC.state.STORAGE_KEY, 'draft-cockpit/state');
-      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 8);
+      assertEq(DC.state.CURRENT_SCHEMA_VERSION, 9);
     });
 
     t('load(): missing key falls back to a fresh seed state', function () {
@@ -1526,7 +1526,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 8);
+      assertEq(loaded.schemaVersion, 9);
       assertEq(loaded.manuallyEdited, false);
       assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v1 fixture players (x1/x2) never survive');
       assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption');
@@ -1660,7 +1660,7 @@
       // state, then rely on load()'s migrate/heal pipeline on the next boot.
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(v1Payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 8, 'migrated to current schema version');
+      assertEq(loaded.schemaVersion, 9, 'migrated to current schema version');
       assertEq(loaded.manuallyEdited, false, 'v1 payload had no flag; migration defaults it to false');
       // v1Payload.players ARE the real current seed's players, so v8 force-adopt's identity-carry
       // (same name+position) reconstructs an identical players/marks shape -- coincidental, not special-cased
@@ -1739,7 +1739,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 8);
+      assertEq(loaded.schemaVersion, 9);
       assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v4 fixture players (mg1/mg2) never survive');
       assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption');
       assertEq(loaded.league, null);
@@ -2003,7 +2003,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 8);
+      assertEq(loaded.schemaVersion, 9);
       assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v2 fixture players (y1/y2) never survive');
       assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption');
       assertEq(loaded.filters, payload.filters);
@@ -2027,7 +2027,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 8);
+      assertEq(loaded.schemaVersion, 9);
       assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v1 fixture players (y1/y2) never survive');
       assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption');
       assertEq(loaded.manuallyEdited, false, 'v1->v2 migration stamps manuallyEdited false; v8 force-adopt would force it false regardless');
@@ -2105,7 +2105,7 @@
       var loaded = DC.state.load();
 
       var storedAfter = JSON.parse(localStorage.getItem(DC.state.STORAGE_KEY));
-      assertEq(storedAfter.schemaVersion, 8, 'storage holds the migrated/adopted shape immediately, before any dispatch');
+      assertEq(storedAfter.schemaVersion, 9, 'storage holds the migrated/adopted shape immediately, before any dispatch');
       assertEq(storedAfter, loaded, 'the exact returned state is what got persisted');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
@@ -2127,7 +2127,7 @@
       var loaded = DC.state.load();
 
       var storedAfter = JSON.parse(localStorage.getItem(DC.state.STORAGE_KEY));
-      assertEq(storedAfter.schemaVersion, 8, 'storage holds the migrated/adopted shape immediately, before any dispatch');
+      assertEq(storedAfter.schemaVersion, 9, 'storage holds the migrated/adopted shape immediately, before any dispatch');
       assertEq(storedAfter, loaded, 'the exact returned state is what got persisted');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
@@ -2796,10 +2796,10 @@
       assert(html.indexOf('B—') !== -1, 'byeWeek 0 -> B—: ' + html);
     });
 
-    t('chipsHTML: renders 12 chips total (8 position + 4 status incl. Mine); RB position + TARGETS status marked active; FLEX sits between TE and DST', function () {
+    t('chipsHTML: renders 13 chips total (8 position + 5 status incl. Mine and Queue); RB position + TARGETS status marked active; FLEX sits between TE and DST', function () {
       var html = DC.ui.templates.chipsHTML({ position: 'RB', status: 'TARGETS' });
       var chipMatches = html.match(/<button class="chip/g) || [];
-      assertEq(chipMatches.length, 12, 'expected 12 chips');
+      assertEq(chipMatches.length, 13, 'expected 13 chips (Queue joined the status row)');
       assert(/class="chip active-position"[^>]*data-position="RB"/.test(html), 'RB chip active-position: ' + html);
       assert(/class="chip active-target"[^>]*data-status="TARGETS"/.test(html), 'Targets chip active-target: ' + html);
       var teIdx = html.indexOf('data-position="TE"');
@@ -6470,7 +6470,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 8);
+      assertEq(loaded.schemaVersion, 9);
       assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v3 fixture players (w1/w2) never survive');
       assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption');
       assertEq(loaded.filters, payload.filters);
@@ -9735,7 +9735,7 @@
       var seed = DC.state.createSeedState();
       var id = seed.players[0].id;
       var card = DC.compare.templates.buildCards(seed, [id])[0];
-      assertEq(JSON.stringify(Object.keys(card)), JSON.stringify(['player', 'adp', 'posRank', 'pickNumber', 'pickLabel', 'marks', 'verdict']), 'card key order');
+      assertEq(JSON.stringify(Object.keys(card)), JSON.stringify(['player', 'adp', 'posRank', 'pickNumber', 'pickLabel', 'marks', 'queued', 'verdict']), 'card key order');
       assertEq(JSON.stringify(Object.keys(card.verdict)), JSON.stringify(['cls', 'text']), 'verdict key order');
     });
 
@@ -11094,7 +11094,7 @@
         localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
         var loaded = DC.state.load();
 
-        assertEq(loaded.schemaVersion, 8, 'fingerprint match triggers the one-time reorder at v7, then v8 force-adopt runs immediately after');
+        assertEq(loaded.schemaVersion, 9, 'fingerprint match triggers the one-time reorder at v7, then v8 force-adopt runs immediately after');
         // the v6->v7 reorder above ran (asserted via the stub not throwing); its specific output is
         // superseded by the v8 force-adopt that unconditionally follows it for any pre-v8 payload
         assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale, superseding the v6->v7 reorder result');
@@ -11127,7 +11127,7 @@
       };
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 8, 'stamped through v7 (order untouched, no fingerprint match) then v8 force-adopt replaces the board wholesale');
+      assertEq(loaded.schemaVersion, 9, 'stamped through v7 (order untouched, no fingerprint match) then v8 force-adopt replaces the board wholesale');
       assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the 5 foreign-id fixture players never survive');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
@@ -11137,7 +11137,7 @@
       var payload = Object.assign({}, seedState, { schemaVersion: 6 });
       localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
       var loaded = DC.state.load();
-      assertEq(loaded.schemaVersion, 8, 'stamped through v7 then v8 force-adopt runs');
+      assertEq(loaded.schemaVersion, 9, 'stamped through v7 then v8 force-adopt runs');
       assertEq(loaded.players.map(function (p) { return p.id; }), seedState.players.map(function (p) { return p.id; }), 'same ids as the current seed, order untouched — never reordered again');
       localStorage.removeItem(DC.state.STORAGE_KEY);
     });
@@ -11179,7 +11179,7 @@
         localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
         var loaded = DC.state.load();
 
-        assertEq(loaded.schemaVersion, 8, 'v8 force-adopt has no manuallyEdited guard -- runs regardless of the old true flag');
+        assertEq(loaded.schemaVersion, 9, 'v8 force-adopt has no manuallyEdited guard -- runs regardless of the old true flag');
         assertEq(loaded.players.map(function (p) { return p.id; }), ['stub-alpha-team2', 'stub-beta'], 'players replaced wholesale from SEED_PLAYERS');
         assertEq(loaded.marks['stub-alpha-team2'], { drafted: false, target: true, avoid: false, mine: false }, 'mark carried across the team move (TEAM1->TEAM2) by name+position identity');
         assertEq(loaded.marks['stub-beta'], { drafted: false, target: false, avoid: false, mine: false }, 'no old match -> default all-false marks');
@@ -11857,6 +11857,780 @@
       var meta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
       assert(meta, 'expected a CSP meta tag restricting img-src');
       assert(/img-src[^;]*'self'/.test(meta.getAttribute('content')), 'expected img-src to be restricted: ' + meta.getAttribute('content'));
+    });
+  })();
+  </script>
+
+  <!-- Queue feature: schema v9, QUEUE_TOGGLE/QUEUE_REORDER reducers, QUEUE status filter -->
+  <script>
+  (function () {
+    'use strict';
+    section('queue');
+
+    function queueFixturePlayers() {
+      return [
+        { id: 'q1', rank: 1, name: 'Quinn Aaronson', team: 'KC', position: 'RB', byeWeek: 5, tier: null, adp: null },
+        { id: 'q2', rank: 2, name: 'Quinn Bakerson', team: 'DAL', position: 'WR', byeWeek: 6, tier: null, adp: null },
+        { id: 'q3', rank: 3, name: 'Quinn Carlson', team: 'KC', position: 'RB', byeWeek: 5, tier: null, adp: null },
+        { id: 'q4', rank: 4, name: 'Quinn Davidson', team: 'SF', position: 'QB', byeWeek: 7, tier: null, adp: null },
+        { id: 'q5', rank: 5, name: 'Quinn Edwardson', team: 'SF', position: 'WR', byeWeek: 7, tier: null, adp: null }
+      ];
+    }
+
+    function queueFixtureState(overrides) {
+      var players = queueFixturePlayers();
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+      });
+      var base = {
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+        players: players,
+        marks: marks,
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' },
+        searchText: '',
+        manuallyEdited: false,
+        league: null,
+        seedFingerprint: 'fixture',
+        queueIds: ['q1']
+      };
+      return Object.assign({}, base, overrides || {});
+    }
+
+    // ---- QUEUE_TOGGLE ------------------------------------------------------
+
+    t('QUEUE_TOGGLE appends an unqueued id to the end of queueIds', function () {
+      var state = queueFixtureState({ queueIds: ['q1', 'q3'] });
+      var next = DC.state.reduce(state, { type: 'QUEUE_TOGGLE', playerId: 'q2' });
+      assertEq(next.queueIds, ['q1', 'q3', 'q2']);
+    });
+
+    t('QUEUE_TOGGLE removes an already-queued id, leaving the rest in order', function () {
+      var state = queueFixtureState({ queueIds: ['q1', 'q2', 'q3'] });
+      var next = DC.state.reduce(state, { type: 'QUEUE_TOGGLE', playerId: 'q2' });
+      assertEq(next.queueIds, ['q1', 'q3']);
+    });
+
+    t('QUEUE_TOGGLE on an id not on the board is a no-op', function () {
+      var state = queueFixtureState({ queueIds: ['q1'] });
+      var next = DC.state.reduce(state, { type: 'QUEUE_TOGGLE', playerId: 'not-on-board' });
+      assertEq(next, state);
+    });
+
+    // ---- QUEUE_REORDER ------------------------------------------------------
+
+    t('QUEUE_REORDER moves an id to the given index within queueIds', function () {
+      var state = queueFixtureState({ queueIds: ['q1', 'q2', 'q3'] });
+      var next = DC.state.reduce(state, { type: 'QUEUE_REORDER', playerId: 'q3', toIndex: 0 });
+      assertEq(next.queueIds, ['q3', 'q1', 'q2']);
+    });
+
+    t('QUEUE_REORDER clamps an out-of-range toIndex to the end', function () {
+      var state = queueFixtureState({ queueIds: ['q1', 'q2', 'q3'] });
+      var next = DC.state.reduce(state, { type: 'QUEUE_REORDER', playerId: 'q1', toIndex: 99 });
+      assertEq(next.queueIds, ['q2', 'q3', 'q1']);
+    });
+
+    t('QUEUE_REORDER clamps a negative toIndex to 0', function () {
+      var state = queueFixtureState({ queueIds: ['q1', 'q2', 'q3'] });
+      var next = DC.state.reduce(state, { type: 'QUEUE_REORDER', playerId: 'q3', toIndex: -5 });
+      assertEq(next.queueIds, ['q3', 'q1', 'q2']);
+    });
+
+    t('QUEUE_REORDER on an id absent from queueIds is a no-op', function () {
+      var state = queueFixtureState({ queueIds: ['q1', 'q2'] });
+      var next = DC.state.reduce(state, { type: 'QUEUE_REORDER', playerId: 'q5', toIndex: 0 });
+      assertEq(next, state);
+    });
+
+    t('QUEUE_REORDER treats a non-numeric toIndex (e.g. NaN) as "the end", not front-of-list via NaN propagation', function () {
+      var state = queueFixtureState({ queueIds: ['q1', 'q2', 'q3'] });
+      var next = DC.state.reduce(state, { type: 'QUEUE_REORDER', playerId: 'q1', toIndex: NaN });
+      assertEq(next.queueIds, ['q2', 'q3', 'q1']);
+    });
+
+    // ---- draft/undo/mine never touch queueIds --------------------------------
+
+    t('DRAFT_PLAYER leaves queueIds untouched; the QUEUE filter stops returning the drafted player', function () {
+      var state = queueFixtureState({ queueIds: ['q3', 'q1', 'q5'] });
+      var drafted = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'q1', mine: true });
+      assertEq(drafted.queueIds, ['q3', 'q1', 'q5'], 'queueIds is never mutated by drafting');
+      var viewState = Object.assign({}, drafted, { filters: { position: 'ALL', status: 'QUEUE' } });
+      var visible = DC.state.visiblePlayers(viewState).map(function (p) { return p.id; });
+      assertEq(visible, ['q3', 'q5'], 'drafted player q1 is filtered out of the QUEUE view');
+    });
+
+    t('UNDO_DRAFT restores the drafted player to his original queue position in the QUEUE filter', function () {
+      var state = queueFixtureState({ queueIds: ['q3', 'q1', 'q5'] });
+      var drafted = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'q1', mine: true });
+      var undone = DC.state.reduce(drafted, { type: 'UNDO_DRAFT' });
+      assertEq(undone.queueIds, ['q3', 'q1', 'q5'], 'queueIds is never mutated by undo');
+      var viewState = Object.assign({}, undone, { filters: { position: 'ALL', status: 'QUEUE' } });
+      var visible = DC.state.visiblePlayers(viewState).map(function (p) { return p.id; });
+      assertEq(visible, ['q3', 'q1', 'q5'], 'q1 reappears at its original queue slot for free');
+    });
+
+    t('UNDRAFT_PLAYER and TOGGLE_MINE leave queueIds byte-for-byte unchanged', function () {
+      var state = queueFixtureState({ queueIds: ['q3', 'q1', 'q5'] });
+      var drafted = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'q1', mine: true });
+      var toggled = DC.state.reduce(drafted, { type: 'TOGGLE_MINE', playerId: 'q1' });
+      assertEq(toggled.queueIds, ['q3', 'q1', 'q5']);
+      var undrafted = DC.state.reduce(toggled, { type: 'UNDRAFT_PLAYER', playerId: 'q1' });
+      assertEq(undrafted.queueIds, ['q3', 'q1', 'q5']);
+    });
+
+    // ---- CLEAR_ALL_DATA -------------------------------------------------------
+
+    t('CLEAR_ALL_DATA resets queueIds to empty', function () {
+      var state = queueFixtureState({ queueIds: ['q1', 'q2'] });
+      var next = DC.state.reduce(state, { type: 'CLEAR_ALL_DATA' });
+      assertEq(next.queueIds, []);
+    });
+
+    // ---- IMPORT_PLAYERS carryover --------------------------------------------
+
+    t('IMPORT_PLAYERS keeps queueIds that survive by id, in the old queue order, and drops the rest', function () {
+      var state = queueFixtureState({ queueIds: ['q3', 'q1', 'q5'] });
+      var newPlayers = [
+        { id: 'q1', rank: 1, name: 'Quinn Aaronson', team: 'KC', position: 'RB', byeWeek: 5, tier: null, adp: null },
+        { id: 'q5', rank: 2, name: 'Quinn Edwardson', team: 'SF', position: 'WR', byeWeek: 7, tier: null, adp: null },
+        { id: 'q9', rank: 3, name: 'New Guy', team: 'NE', position: 'TE', byeWeek: 1, tier: null, adp: null }
+      ];
+      var next = DC.state.reduce(state, { type: 'IMPORT_PLAYERS', players: newPlayers });
+      assertEq(next.queueIds, ['q1', 'q5'], 'q3 dropped (not in the new board); q1/q5 survive in their old queue order');
+    });
+
+    // ---- schema v8->v9 migration + load-time healing --------------------------
+
+    t('load(): migrations v8->v9 adds queueIds: [] to a v8 payload lacking that field', function () {
+      var players = [{ id: 'mig-1', rank: 1, name: 'Mig One', team: 'KC', position: 'QB', byeWeek: 9, tier: null, adp: null }];
+      var marks = { 'mig-1': { drafted: false, target: false, avoid: false, mine: false } };
+      var payload = {
+        schemaVersion: 8, players: players, marks: marks, undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: true, league: null,
+        seedFingerprint: 'stale-fingerprint-not-current'
+        // queueIds intentionally absent (pre-v9 shape)
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.schemaVersion, 9);
+      assertEq(loaded.queueIds, [], 'v8->v9 migration adds an empty queueIds array');
+      assertEq(loaded.players, players, 'manuallyEdited:true keeps the board verbatim (adopt-once-declined), unrelated to the queueIds migration');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): healing drops queueIds entries for ids not on the board and dedupes, preserving first occurrence', function () {
+      var players = [
+        { id: 'h1', rank: 1, name: 'Heal One', team: 'KC', position: 'QB', byeWeek: 9, tier: null, adp: null },
+        { id: 'h2', rank: 2, name: 'Heal Two', team: 'KC', position: 'RB', byeWeek: 9, tier: null, adp: null }
+      ];
+      var marks = {
+        h1: { drafted: false, target: false, avoid: false, mine: false },
+        h2: { drafted: false, target: false, avoid: false, mine: false }
+      };
+      var payload = {
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION, players: players, marks: marks, undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: true, league: null,
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
+        queueIds: ['h1', 'off-board', 'h2', 'h1', 42, null]
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.queueIds, ['h1', 'h2'], 'off-board id dropped, non-string entries dropped, duplicate h1 collapsed to its first occurrence');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): a non-array queueIds heals to []', function () {
+      var players = [{ id: 'na1', rank: 1, name: 'Na One', team: 'KC', position: 'QB', byeWeek: 9, tier: null, adp: null }];
+      var marks = { na1: { drafted: false, target: false, avoid: false, mine: false } };
+      var payload = {
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION, players: players, marks: marks, undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, searchText: '', manuallyEdited: true, league: null,
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
+        queueIds: 'not-an-array'
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.queueIds, []);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    // ---- QUEUE status filter ---------------------------------------------------
+
+    t('visiblePlayers QUEUE status returns queued, undrafted players in QUEUE order (not board/rank order)', function () {
+      var state = queueFixtureState({ queueIds: ['q3', 'q1', 'q5'], filters: { position: 'ALL', status: 'QUEUE' } });
+      var visible = DC.state.visiblePlayers(state).map(function (p) { return p.id; });
+      assertEq(visible, ['q3', 'q1', 'q5'], 'order follows queueIds, not the q1<q2<q3 board/rank order');
+    });
+
+    t('visiblePlayers QUEUE status composes with the position filter, preserving queue order', function () {
+      var state = queueFixtureState({ queueIds: ['q3', 'q1', 'q5'], filters: { position: 'RB', status: 'QUEUE' } });
+      var visible = DC.state.visiblePlayers(state).map(function (p) { return p.id; });
+      assertEq(visible, ['q3', 'q1'], 'q5 (WR) excluded by the RB position filter; q3/q1 stay in queue order');
+    });
+
+    t('visiblePlayers QUEUE status composes with search text, preserving queue order', function () {
+      var state = queueFixtureState({
+        queueIds: ['q3', 'q1', 'q5'],
+        filters: { position: 'ALL', status: 'QUEUE' },
+        searchText: 'quinn a'
+      });
+      var visible = DC.state.visiblePlayers(state).map(function (p) { return p.id; });
+      assertEq(visible, ['q1'], 'only "Quinn Aaronson" matches the search text');
+    });
+
+    // ---- selectors ---------------------------------------------------------
+
+    t('isQueued/queueCount reflect queueIds membership and exclude drafted players from the count', function () {
+      var state = queueFixtureState({ queueIds: ['q1', 'q2'] });
+      assertEq(DC.state.isQueued(state, 'q1'), true);
+      assertEq(DC.state.isQueued(state, 'q3'), false);
+      assertEq(DC.state.queueCount(state), 2);
+      var drafted = DC.state.reduce(state, { type: 'DRAFT_PLAYER', playerId: 'q1' });
+      assertEq(DC.state.isQueued(drafted, 'q1'), true, 'still queued -- drafting never touches queueIds');
+      assertEq(DC.state.queueCount(drafted), 1, 'q1 excluded from the count once drafted');
+    });
+  })();
+  </script>
+
+  <!-- Queue feature, UI layer: chip badge, queue-view row order/empty-state, swipe-to-queue
+       gesture, drag-reorder handle visibility. Follows the mount-fixture/spyDispatch/
+       mockTimerQueue patterns already established for the draft long-press flow. -->
+  <script>
+  (function () {
+    'use strict';
+    section('queue-ui');
+
+    function buildMountFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    // laid-out (not display:none) variant so getBoundingClientRect returns real pixel geometry
+    // — needed for the drag-reorder handle test's row-offset math, same precedent as edit.js's
+    // buildLaidOutEditFixture.
+    function buildLaidOutMountFixture() {
+      var root = document.createElement('div');
+      root.style.position = 'fixed';
+      root.style.top = '0';
+      root.style.left = '0';
+      root.style.visibility = 'hidden';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list" style="height:600px;overflow-y:auto"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function spyDispatch(store) {
+      var calls = [];
+      var original = store.dispatch;
+      store.dispatch = function (action) {
+        calls.push(action);
+        return original(action);
+      };
+      return { calls: calls, restore: function () { store.dispatch = original; } };
+    }
+
+    // mocks setTimeout AND clearTimeout (unlike the naive FIFO-only queue elsewhere) — needed
+    // here because a swipe's pointerdown ALSO arms the compare long-press timer (the row body
+    // is that recognizer's target too); teardownComparePress()'s real clearTimeout must actually
+    // remove that entry so flushOne() reaches the swipe's own delayed dispatch, not the
+    // long-press callback that would otherwise still be sitting first in a plain FIFO.
+    function mockTimerQueue() {
+      var original = window.setTimeout;
+      var originalClear = window.clearTimeout;
+      var nextId = 1;
+      var entries = [];
+      window.setTimeout = function (cb) {
+        var id = nextId++;
+        entries.push({ id: id, cb: cb });
+        return id;
+      };
+      window.clearTimeout = function (id) {
+        entries = entries.filter(function (e) { return e.id !== id; });
+      };
+      return {
+        flushOne: function () {
+          var e = entries.shift();
+          if (e) { e.cb(); }
+        },
+        restore: function () {
+          window.setTimeout = original;
+          window.clearTimeout = originalClear;
+        }
+      };
+    }
+
+    function cleanup(fixture, store) {
+      document.body.removeChild(fixture);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    }
+
+    // ---- chip badge ---------------------------------------------------------
+
+    t('chipsHTML: Queue chip carries a count badge that hides at zero and marks active-queue when selected', function () {
+      var withCount = DC.ui.templates.chipsHTML({ position: 'ALL', status: 'AVAILABLE' }, 3);
+      assert(/data-action="set-status" data-status="QUEUE"/.test(withCount), 'Queue chip present: ' + withCount);
+      assert(/<span class="chip-count">3<\/span>/.test(withCount), 'count badge shows 3: ' + withCount);
+      assert(!/active-queue/.test(withCount), 'Queue chip not active when status is AVAILABLE: ' + withCount);
+
+      var zeroCount = DC.ui.templates.chipsHTML({ position: 'ALL', status: 'AVAILABLE' }, 0);
+      assert(!/chip-count/.test(zeroCount), 'badge hidden at zero: ' + zeroCount);
+
+      var undefinedCount = DC.ui.templates.chipsHTML({ position: 'ALL', status: 'AVAILABLE' });
+      assert(!/chip-count/.test(undefinedCount), 'badge hidden when count omitted entirely: ' + undefinedCount);
+
+      var active = DC.ui.templates.chipsHTML({ position: 'ALL', status: 'QUEUE' }, 1);
+      assert(/class="chip active-queue"[^>]*data-status="QUEUE"/.test(active), 'Queue chip marked active-queue: ' + active);
+    });
+
+    // ---- empty state ---------------------------------------------------------
+
+    t('emptyStateHTML: "queue" kind renders distinct copy pointing at the swipe gesture', function () {
+      var html = DC.ui.templates.emptyStateHTML('queue');
+      assert(html.indexOf('Queue is empty') !== -1, 'title: ' + html);
+      assert(html.indexOf('Swipe') !== -1, 'sub copy should mention swiping: ' + html);
+    });
+
+    t('render(): QUEUE status with no queued players shows the queue empty-state', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        store.dispatch({ type: 'SET_STATUS_FILTER', status: 'QUEUE' });
+        var listEl = fixture.querySelector('#player-list');
+        assert(listEl.textContent.indexOf('Queue is empty') !== -1, 'expected the queue empty-state: ' + listEl.innerHTML);
+      } finally {
+        cleanup(fixture, store);
+      }
+    });
+
+    // ---- queue view row order -------------------------------------------------
+
+    t('render(): QUEUE status renders rows in queue order, not board/rank order', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        var ids = DC.data.SEED_PLAYERS.slice(0, 3).map(function (p) { return p.id; });
+        // toggle in reverse of board order -> queueIds should read [ids[2], ids[1], ids[0]]
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[2] });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[1] });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[0] });
+        store.dispatch({ type: 'SET_STATUS_FILTER', status: 'QUEUE' });
+
+        var listEl = fixture.querySelector('#player-list');
+        var rowIds = Array.prototype.map.call(listEl.querySelectorAll('.player-row[data-id]'), function (r) { return r.getAttribute('data-id'); });
+        assertEq(rowIds, [ids[2], ids[1], ids[0]], 'row order should follow queueIds, not board rank order');
+      } finally {
+        cleanup(fixture, store);
+      }
+    });
+
+    t('render(): a queued row carries is-queued on the Available board too (not just in the queue view)', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var secondId = DC.data.SEED_PLAYERS[1].id;
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: firstId });
+
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        var otherRow = fixture.querySelector('.player-row[data-id="' + secondId + '"]');
+        assert(row.classList.contains('is-queued'), 'queued player should carry is-queued on the Available board');
+        assert(!otherRow.classList.contains('is-queued'), 'unqueued player should not carry is-queued');
+      } finally {
+        cleanup(fixture, store);
+      }
+    });
+
+    // ---- swipe-to-queue gesture -------------------------------------------------
+
+    t('swipe: a rightward drag past 40px arms and, after the flash delay, dispatches QUEUE_TOGGLE for that row', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        assert(row, 'expected a row for the first seed player');
+
+        var timers = mockTimerQueue();
+        try {
+          row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 9, button: 0, clientX: 200, clientY: 300 }));
+          row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 9, clientX: 250, clientY: 302 })); // dx=50, dy=2 -> arms rightward
+          assertEq(spy.calls.length, 0, 'no dispatch yet on arm alone');
+          row.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 9, clientX: 250, clientY: 302 }));
+          assertEq(spy.calls.length, 0, 'dispatch is delayed behind the flash timer, not immediate on release');
+          timers.flushOne();
+        } finally {
+          timers.restore();
+        }
+
+        var toggles = spy.calls.filter(function (a) { return a.type === 'QUEUE_TOGGLE'; });
+        assertEq(toggles.length, 1, 'expected exactly one QUEUE_TOGGLE dispatch');
+        assertEq(toggles[0].playerId, firstId);
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('swipe: releasing before the 40px threshold never dispatches QUEUE_TOGGLE', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+
+        var timers = mockTimerQueue();
+        try {
+          row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 9, button: 0, clientX: 200, clientY: 300 }));
+          row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 9, clientX: 215, clientY: 300 })); // dx=15, below the 40px arm threshold
+          row.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 9, clientX: 215, clientY: 300 }));
+        } finally {
+          timers.restore();
+        }
+
+        assertEq(spy.calls.filter(function (a) { return a.type === 'QUEUE_TOGGLE'; }).length, 0, 'a sub-threshold drag must never queue-toggle');
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('swipe: a vertical-first move cancels the gesture permanently, even if it later swings past 40px horizontally', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+
+        var timers = mockTimerQueue();
+        try {
+          row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 9, button: 0, clientX: 200, clientY: 300 }));
+          row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 9, clientX: 205, clientY: 350 })); // dy=50 >> dx=5 -> vertical-first cancel
+          row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 9, clientX: 260, clientY: 352 })); // now dx=60 > threshold, but the gesture was already abandoned
+          row.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 9, clientX: 260, clientY: 352 }));
+          timers.flushOne();
+        } finally {
+          timers.restore();
+        }
+
+        assertEq(spy.calls.filter(function (a) { return a.type === 'QUEUE_TOGGLE'; }).length, 0, 'a vertical-first move must not later arm on a horizontal swing');
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('swipe: a full leftward swipe is completely inert -- no arm, no dispatch, no trailing-click suppression', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        var starBtn = row.querySelector('[data-action="toggle-target"]');
+
+        var timers = mockTimerQueue();
+        try {
+          row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 9, button: 0, clientX: 200, clientY: 300 }));
+          row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 9, clientX: 140, clientY: 302 })); // dx=-60, dy=2 -> leftward, must never arm
+          assert(!row.classList.contains('swipe-dragging'), 'a leftward drag must never arm the visual drag feedback');
+          row.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 9, clientX: 140, clientY: 302 }));
+          starBtn.click(); // proves the trailing click was NOT suppressed, unlike an armed rightward swipe
+          timers.flushOne();
+        } finally {
+          timers.restore();
+        }
+
+        assertEq(spy.calls.filter(function (a) { return a.type === 'QUEUE_TOGGLE'; }).length, 0, 'a leftward swipe must never dispatch QUEUE_TOGGLE');
+        assertEq(spy.calls.filter(function (a) { return a.type === 'TOGGLE_TARGET'; }).length, 1, 'the trailing click must fire normally since the gesture never armed');
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('swipe: never arms on a drafted row (Drafted view)', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: firstId, mine: false });
+        store.dispatch({ type: 'SET_STATUS_FILTER', status: 'DRAFTED' });
+
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        assert(row, 'expected the drafted row to still render in the Drafted view');
+
+        var timers = mockTimerQueue();
+        try {
+          row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 9, button: 0, clientX: 200, clientY: 300 }));
+          row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 9, clientX: 260, clientY: 300 }));
+          row.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 9, clientX: 260, clientY: 300 }));
+          timers.flushOne();
+        } finally {
+          timers.restore();
+        }
+
+        assertEq(spy.calls.filter(function (a) { return a.type === 'QUEUE_TOGGLE'; }).length, 0, 'a drafted row must never be swipe-queueable');
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('swipe: never arms when the gesture starts inside the ~24px iOS back-swipe edge zone', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+
+        var timers = mockTimerQueue();
+        try {
+          row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 9, button: 0, clientX: 10, clientY: 300 }));
+          row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 9, clientX: 70, clientY: 300 }));
+          row.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 9, clientX: 70, clientY: 300 }));
+          timers.flushOne();
+        } finally {
+          timers.restore();
+        }
+
+        assertEq(spy.calls.filter(function (a) { return a.type === 'QUEUE_TOGGLE'; }).length, 0, 'a gesture starting in the edge-swipe zone must never queue-toggle');
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('swipe: never arms when the gesture starts on the player photo (peek tap target)', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var avatarTap = fixture.querySelector('.player-row[data-id="' + firstId + '"] .avatar-tap');
+        assert(avatarTap, 'expected an avatar-tap target on the row');
+
+        var timers = mockTimerQueue();
+        try {
+          avatarTap.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 9, button: 0, clientX: 200, clientY: 300 }));
+          avatarTap.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 9, clientX: 260, clientY: 300 }));
+          avatarTap.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 9, clientX: 260, clientY: 300 }));
+          timers.flushOne();
+        } finally {
+          timers.restore();
+        }
+
+        assertEq(spy.calls.filter(function (a) { return a.type === 'QUEUE_TOGGLE'; }).length, 0, 'a gesture starting on the photo must never queue-toggle');
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('swipe: the trailing click after an armed swipe is suppressed (no toggle-target fires even if it lands on a data-action button)', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var firstId = DC.data.SEED_PLAYERS[0].id;
+        var row = fixture.querySelector('.player-row[data-id="' + firstId + '"]');
+        var starBtn = row.querySelector('[data-action="toggle-target"]');
+
+        var timers = mockTimerQueue();
+        try {
+          row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 9, button: 0, clientX: 200, clientY: 300 }));
+          row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 9, clientX: 260, clientY: 300 })); // arms
+          starBtn.click(); // the browser's trailing click, landing on a button under the finger
+          assertEq(spy.calls.filter(function (a) { return a.type === 'TOGGLE_TARGET'; }).length, 0, 'the suppressed trailing click must not toggle-target');
+          row.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 9, clientX: 260, clientY: 300 }));
+          timers.flushOne();
+        } finally {
+          timers.restore();
+        }
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    // ---- queue-view drag-reorder handle visibility -----------------------------
+
+    t('render(): the queue drag handle is hidden while search is active or a position filter narrows the list, and shown otherwise', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        var ids = DC.data.SEED_PLAYERS.slice(0, 2).map(function (p) { return p.id; });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[0] });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[1] });
+        store.dispatch({ type: 'SET_STATUS_FILTER', status: 'QUEUE' });
+
+        var listEl = fixture.querySelector('#player-list');
+        assert(listEl.querySelector('.queue-drag-handle'), 'handle should render in a plain, unfiltered queue view');
+
+        store.dispatch({ type: 'SET_SEARCH', text: DC.data.SEED_PLAYERS[0].name });
+        assert(!listEl.querySelector('.queue-drag-handle'), 'handle should hide while a text search is active');
+        store.dispatch({ type: 'SET_SEARCH', text: '' });
+
+        var narrowedPosition = DC.data.SEED_PLAYERS[0].position;
+        store.dispatch({ type: 'SET_POSITION_FILTER', position: narrowedPosition });
+        assert(!listEl.querySelector('.queue-drag-handle'), 'handle should hide while a position filter narrows the list');
+      } finally {
+        cleanup(fixture, store);
+      }
+    });
+
+    t('drag: dragging a queue row past a sibling row and releasing dispatches QUEUE_REORDER', function () {
+      var fixture = buildLaidOutMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var ids = DC.data.SEED_PLAYERS.slice(0, 3).map(function (p) { return p.id; });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[0] });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[1] });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[2] });
+        store.dispatch({ type: 'SET_STATUS_FILTER', status: 'QUEUE' });
+
+        var listEl = fixture.querySelector('#player-list');
+        var rows = listEl.querySelectorAll('.player-row');
+        assertEq(rows.length, 3, 'expected 3 queued rows');
+        var fromRow = rows[0];
+        var handle = fromRow.querySelector('.queue-drag-handle');
+        assert(handle, 'expected a drag handle on the first queue row');
+        var targetRow = rows[2];
+        var targetRect = targetRow.getBoundingClientRect();
+        assert(targetRect.height > 0, 'fixture must have real layout for this test to be meaningful');
+
+        handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 7, button: 0, clientY: fromRow.getBoundingClientRect().top + 1 }));
+        assert(fromRow.classList.contains('dragging'), 'row should carry .dragging while the handle drag is active');
+        document.querySelector('#player-list').dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 7, clientY: targetRect.top + targetRect.height + 1 }));
+        listEl.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 7, clientY: targetRect.top + targetRect.height + 1 }));
+
+        var reorders = spy.calls.filter(function (a) { return a.type === 'QUEUE_REORDER'; });
+        assertEq(reorders.length, 1, 'expected exactly one QUEUE_REORDER dispatch');
+        assertEq(reorders[0].playerId, ids[0]);
+        assertEq(store.getState().queueIds, [ids[1], ids[2], ids[0]], 'final queueIds order after the drag');
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('drag: dragging a queue row down past a hidden drafted id lands it correctly in the FULL queueIds array, not the visible-row index space', function () {
+      // repro: queueIds=[drafted, b, c], view shows [b, c]; dragging b below c must NOT be a
+      // silent no-op against the full array (the bug: toIndex was computed in visible-row space).
+      var fixture = buildLaidOutMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var ids = DC.data.SEED_PLAYERS.slice(0, 3).map(function (p) { return p.id; });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[0] });
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: ids[0], mine: false }); // stays in queueIds, hidden from the QUEUE view
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[1] });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[2] });
+        store.dispatch({ type: 'SET_STATUS_FILTER', status: 'QUEUE' });
+        assertEq(store.getState().queueIds, [ids[0], ids[1], ids[2]], 'sanity: full queueIds includes the hidden drafted id');
+
+        var listEl = fixture.querySelector('#player-list');
+        var rows = listEl.querySelectorAll('.player-row');
+        assertEq(rows.length, 2, 'the drafted id must not render a visible row');
+        var fromRow = rows[0]; // ids[1]
+        var handle = fromRow.querySelector('.queue-drag-handle');
+        var targetRow = rows[1]; // ids[2]
+        var targetRect = targetRow.getBoundingClientRect();
+        assert(targetRect.height > 0, 'fixture must have real layout for this test to be meaningful');
+
+        handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 7, button: 0, clientY: fromRow.getBoundingClientRect().top + 1 }));
+        listEl.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 7, clientY: targetRect.top + targetRect.height + 1 }));
+        listEl.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 7, clientY: targetRect.top + targetRect.height + 1 }));
+
+        assertEq(store.getState().queueIds, [ids[0], ids[2], ids[1]], 'the drafted id stays put; the two visible ids swap in the FULL array');
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('drag: dragging a queue row up past a hidden drafted id lands it correctly in the FULL queueIds array, not the visible-row index space', function () {
+      // same bug, opposite direction: queueIds=[drafted, b, c], view shows [b, c]; dragging c
+      // above b must not let it jump ahead of the hidden drafted id too.
+      var fixture = buildLaidOutMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      try {
+        DC.ui.mount(store);
+        var ids = DC.data.SEED_PLAYERS.slice(0, 3).map(function (p) { return p.id; });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[0] });
+        store.dispatch({ type: 'DRAFT_PLAYER', playerId: ids[0], mine: false });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[1] });
+        store.dispatch({ type: 'QUEUE_TOGGLE', playerId: ids[2] });
+        store.dispatch({ type: 'SET_STATUS_FILTER', status: 'QUEUE' });
+        assertEq(store.getState().queueIds, [ids[0], ids[1], ids[2]], 'sanity: full queueIds includes the hidden drafted id');
+
+        var listEl = fixture.querySelector('#player-list');
+        var rows = listEl.querySelectorAll('.player-row');
+        assertEq(rows.length, 2, 'the drafted id must not render a visible row');
+        var fromRow = rows[1]; // ids[2]
+        var handle = fromRow.querySelector('.queue-drag-handle');
+        var targetRow = rows[0]; // ids[1]
+        var targetRect = targetRow.getBoundingClientRect();
+        assert(targetRect.height > 0, 'fixture must have real layout for this test to be meaningful');
+
+        handle.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 7, button: 0, clientY: fromRow.getBoundingClientRect().top + 1 }));
+        listEl.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 7, clientY: targetRect.top + 1 }));
+        listEl.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 7, clientY: targetRect.top + 1 }));
+
+        assertEq(store.getState().queueIds, [ids[0], ids[2], ids[1]], 'the mover lands after the hidden drafted id, not ahead of it');
+      } finally {
+        spy.restore();
+        cleanup(fixture, store);
+      }
     });
   })();
   </script>

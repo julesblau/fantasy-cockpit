@@ -71,7 +71,10 @@
     undo: '<path d="M3 11a8 8 0 1 1 2.34 5.66"></path><polyline points="3 5 3 11 9 11"></polyline>',
     gear: '<circle cx="12" cy="12" r="3"></circle><line x1="12" y1="2" x2="12" y2="5"></line><line x1="12" y1="19" x2="12" y2="22"></line><line x1="2" y1="12" x2="5" y2="12"></line><line x1="19" y1="12" x2="22" y2="12"></line><line x1="4.9" y1="4.9" x2="7" y2="7"></line><line x1="17" y1="17" x2="19.1" y2="19.1"></line><line x1="4.9" y1="19.1" x2="7" y2="17"></line><line x1="17" y1="7" x2="19.1" y2="4.9"></line>',
     trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"></path><path d="M8 5H5a2 2 0 0 0 0 4h2"></path><path d="M16 5h3a2 2 0 0 1 0 4h-2"></path><line x1="12" y1="13" x2="12" y2="17"></line><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line>',
-    user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>'
+    user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle>',
+    list: '<line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line>',
+    // matches edit.js's GRIP_ICON glyph -- same drag-handle visual language, different context
+    grip: '<line x1="4" y1="7" x2="20" y2="7"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="17" x2="20" y2="17"></line>'
   };
 
   /** @param {string} name @param {number} [size] pixel width/height, default 20 */
@@ -217,7 +220,14 @@
     return '<div class="player-rank">' + view.rank + '</div>';
   }
 
-  /** @param {{signals:*, posRanks:*, myPick:boolean, isCompared:boolean}} [ctx] */
+  // queue-view-only, rendered when ctx.dragHandle is true -- data-action excludes it from the
+  // compare long-press recognizer and the swipe gesture's arm check (same [data-action] guard
+  // that already excludes avatarTapHTML/the star/x/draft buttons), so it can never steal a tap.
+  function queueDragHandleHTML(id) {
+    return '<div class="drag-handle queue-drag-handle" data-action="queue-drag-handle" data-id="' + esc(id) + '">' + icon('grip') + '</div>';
+  }
+
+  /** @param {{signals:*, posRanks:*, myPick:boolean, isCompared:boolean, queuedIds:*, dragHandle:boolean}} [ctx] */
   function availableRowHTML(view, ctx) {
     ctx = ctx || {};
     var rowClasses = ['player-row'];
@@ -229,6 +239,9 @@
     }
     if (ctx.isCompared) {
       rowClasses.push('is-compared');
+    }
+    if (ctx.queuedIds && ctx.queuedIds[view.id]) {
+      rowClasses.push('is-queued');
     }
     var starClass = 'btn-toggle btn-toggle-star' + (view.target ? ' on-target' : '');
     var starIcon = view.target ? icon('star-filled') : icon('star');
@@ -247,17 +260,21 @@
           '<button class="' + starClass + '" data-action="toggle-target" data-id="' + esc(view.id) + '">' + starIcon + '</button>' +
           '<button class="' + xClass + '" data-action="toggle-avoid" data-id="' + esc(view.id) + '">' + icon('x') + '</button>' +
           '<button class="' + draftClass + '" data-action="draft" data-id="' + esc(view.id) + '">DRAFT</button>' +
+          (ctx.dragHandle ? queueDragHandleHTML(view.id) : '') +
         '</div>' +
       '</div>'
     );
   }
 
-  /** @param {{pickLabel:(string|null), posRanks:*, isCompared:boolean}} [ctx] */
+  /** @param {{pickLabel:(string|null), posRanks:*, isCompared:boolean, queuedIds:*}} [ctx] */
   function draftedSearchRowHTML(view, ctx) {
     ctx = ctx || {};
     var rowClasses = ['player-row', 'is-drafted-search'];
     if (ctx.isCompared) {
       rowClasses.push('is-compared');
+    }
+    if (ctx.queuedIds && ctx.queuedIds[view.id]) {
+      rowClasses.push('is-queued');
     }
     var mineToggleClass = 'btn-toggle' + (view.mine ? ' on-mine' : '');
     var pillClass = 'drafted-pill' + (ctx.pickLabel ? ' pill-mine' : '');
@@ -373,8 +390,11 @@
 
   var POSITION_CHIPS = [['ALL', 'All'], ['QB', 'QB'], ['RB', 'RB'], ['WR', 'WR'], ['TE', 'TE'], ['FLEX', 'FLEX'], ['DST', 'DST'], ['K', 'K']];
 
-  /** @param {{position:string, status:string}} filters */
-  function chipsHTML(filters) {
+  /**
+   * @param {{position:string, status:string}} filters
+   * @param {number} [queuedCount] undrafted-queued count, badge hidden when falsy/zero
+   */
+  function chipsHTML(filters, queuedCount) {
     var positionRow = '<div class="chip-row chip-row-positions">' + POSITION_CHIPS.map(function (pair) {
       var val = pair[0];
       var label = pair[1];
@@ -382,11 +402,13 @@
       return '<button class="chip' + active + '" data-action="set-position" data-position="' + val + '">' + label + '</button>';
     }).join('') + '</div>';
 
+    var queueBadge = queuedCount > 0 ? '<span class="chip-count">' + queuedCount + '</span>' : '';
     var statusRow = '<div class="chip-row">' +
       '<button class="chip' + (filters.status === 'TARGETS' ? ' active-target' : '') + '" data-action="set-status" data-status="TARGETS">' + icon('star') + ' Targets</button>' +
       '<button class="chip' + (filters.status === 'AVOID' ? ' active-avoid' : '') + '" data-action="set-status" data-status="AVOID">' + icon('x') + ' Avoid</button>' +
       '<button class="chip' + (filters.status === 'DRAFTED' ? ' active-drafted' : '') + '" data-action="set-status" data-status="DRAFTED">' + icon('check') + ' Drafted</button>' +
       '<button class="chip' + (filters.status === 'MINE' ? ' active-mine' : '') + '" data-action="set-status" data-status="MINE">' + icon('user') + ' Mine</button>' +
+      '<button class="chip' + (filters.status === 'QUEUE' ? ' active-queue' : '') + '" data-action="set-status" data-status="QUEUE">' + icon('list') + ' Queue' + queueBadge + '</button>' +
     '</div>';
 
     return positionRow + statusRow;
@@ -418,6 +440,8 @@
         return emptyBody('check', 'No picks yet', 'Players you draft will show up here.', null, null);
       case 'mine':
         return emptyBody('user', 'No picks of yours yet', 'Draft your pick on your turn, or tag your picks in the Drafted view.', null, null);
+      case 'queue':
+        return emptyBody('list', 'Queue is empty', 'Swipe a player right on the board to queue him.', null, null);
       case 'combo': {
         var status = (detail && detail.status) || '';
         var position = (detail && detail.position) || '';
@@ -1062,6 +1086,251 @@
     listEl.addEventListener('pointerup', onComparePressEnd);
     listEl.addEventListener('pointercancel', onComparePressEnd);
 
+    // ---- swipe-to-queue: pointerdown on a player row (never the photo/buttons/drag-handle --
+    // same [data-action] exclusion the compare-press recognizer above already uses) arms only a
+    // RIGHTWARD intent once dx>40 AND |dx|>|dy| (only a rightward release ever commits); a
+    // vertical-first OR leftward-first move abandons the gesture outright so the list keeps
+    // scrolling normally. Mirrors runDraftSequence's flash-then-delayed-dispatch shape so the
+    // snap transition gets to play on the real row before the next render replaces it wholesale. ----
+
+    var SWIPE_ARM_PX = 40;
+    var SWIPE_EDGE_ZONE_PX = 24; // iOS standalone back-swipe zone -- never arm from here
+
+    var swipeRow = null;
+    var swipePointerId = null;
+    var swipeStartX = 0;
+    var swipeStartY = 0;
+    var swipeLastDx = 0;
+    var swipeArmed = false;
+    var swipeClickSuppressed = false;
+
+    function teardownSwipe() {
+      if (swipeRow) {
+        swipeRow.classList.remove('swipe-dragging');
+        swipeRow.style.transform = '';
+      }
+      swipeRow = null;
+      swipePointerId = null;
+      swipeArmed = false;
+    }
+
+    listEl.addEventListener('pointerdown', function (ev) {
+      if (ev.button !== 0 && ev.pointerType === 'mouse') {
+        return;
+      }
+      if (ev.clientX < SWIPE_EDGE_ZONE_PX) {
+        return;
+      }
+      var row = ev.target.closest('.player-row');
+      if (!row || ev.target.closest('[data-action]')) {
+        return;
+      }
+      var id = row.getAttribute('data-id');
+      var mark = store.getState().marks[id];
+      if (!mark || mark.drafted) {
+        return; // never on Drafted rows or Mine tiles (roster tiles aren't .player-row at all)
+      }
+      if (swipeRow) {
+        return; // a swipe is already tracking a different pointer
+      }
+      swipeRow = row;
+      swipePointerId = ev.pointerId;
+      swipeStartX = ev.clientX;
+      swipeStartY = ev.clientY;
+      swipeLastDx = 0;
+      swipeArmed = false;
+      try {
+        row.setPointerCapture(ev.pointerId);
+      } catch (e) {
+        // best-effort; the gesture still works via listEl's own listeners without capture
+      }
+    });
+
+    listEl.addEventListener('pointermove', function (ev) {
+      if (!swipeRow || ev.pointerId !== swipePointerId) {
+        return;
+      }
+      var dx = ev.clientX - swipeStartX;
+      var dy = ev.clientY - swipeStartY;
+      swipeLastDx = dx;
+      if (!swipeArmed) {
+        if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
+          teardownSwipe(); // vertical-first: abandon outright, let the page scroll
+          return;
+        }
+        if (dx < 0 && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+          teardownSwipe(); // leftward-first: abandon outright, same as vertical-first -- only rightward ever arms
+          return;
+        }
+        if (dx > SWIPE_ARM_PX && Math.abs(dx) > Math.abs(dy)) {
+          swipeArmed = true;
+          swipeClickSuppressed = true;
+          teardownComparePress();
+          swipeRow.classList.add('swipe-dragging');
+        }
+      }
+      if (swipeArmed) {
+        swipeRow.style.transform = 'translateX(' + dx + 'px)';
+      }
+    });
+
+    function endSwipe(commit) {
+      if (!swipeRow) {
+        return;
+      }
+      var row = swipeRow;
+      var id = row.getAttribute('data-id');
+      var wasArmed = swipeArmed;
+      var finalDx = swipeLastDx;
+      try {
+        row.releasePointerCapture(swipePointerId);
+      } catch (e) {
+        // no-op: capture may already be released (e.g. by the browser on pointercancel)
+      }
+      row.classList.remove('swipe-dragging');
+      row.style.transform = '';
+      swipeRow = null;
+      swipePointerId = null;
+      swipeArmed = false;
+      if (!wasArmed) {
+        return;
+      }
+      row.classList.add('swipe-snap');
+      if (commit && finalDx > SWIPE_ARM_PX) {
+        row.classList.add('flash-queue');
+        setTimeout(function () {
+          // the row itself is about to be destroyed by this dispatch's re-render -- no cleanup needed
+          store.dispatch({ type: 'QUEUE_TOGGLE', playerId: id });
+        }, 150);
+      } else {
+        row.addEventListener('transitionend', function onDone() {
+          row.classList.remove('swipe-snap');
+          row.removeEventListener('transitionend', onDone);
+        });
+      }
+    }
+
+    listEl.addEventListener('pointerup', function (ev) {
+      if (!swipeRow || ev.pointerId !== swipePointerId) {
+        return;
+      }
+      endSwipe(true);
+    });
+    listEl.addEventListener('pointercancel', function (ev) {
+      if (!swipeRow || ev.pointerId !== swipePointerId) {
+        return;
+      }
+      endSwipe(false);
+    });
+
+    // ---- queue drag reorder: handle-initiated pointer drag, a lightweight sibling of edit.js's
+    // drag machinery -- row follows the pointer vertically, drop slot computed from real row
+    // offsets via the geometry helper edit.js already exports for reuse; no gap-shift preview or
+    // auto-scroll (a personal queue is short, unlike the full board edit.js drags over). ----
+
+    var queueDragRow = null;
+    var queueDragPointerId = null;
+    var queueDragFromIndex = -1;
+    var queueDragRows = [];
+    var queueDragVisibleIds = []; // ids of queueDragRows, i.e. the VISIBLE subsequence of state.queueIds
+    var queueDragRowTops = [];
+    var queueDragRowHeights = [];
+    var queueDragStartClientY = 0;
+    var queueDragCurrentSlot = -1;
+
+    function teardownQueueDrag() {
+      if (queueDragRow) {
+        queueDragRow.classList.remove('dragging');
+        queueDragRow.style.transform = '';
+      }
+      queueDragRow = null;
+      queueDragPointerId = null;
+      queueDragFromIndex = -1;
+    }
+
+    listEl.addEventListener('pointerdown', function (ev) {
+      if (ev.button !== 0) {
+        return;
+      }
+      var handle = ev.target.closest('.queue-drag-handle');
+      if (!handle) {
+        return;
+      }
+      if (queueDragRow) {
+        return; // a drag is already active
+      }
+      var row = handle.closest('.player-row');
+      if (!row) {
+        return;
+      }
+      queueDragRows = Array.prototype.slice.call(listEl.querySelectorAll('.player-row'));
+      queueDragFromIndex = queueDragRows.indexOf(row);
+      if (queueDragFromIndex === -1) {
+        return;
+      }
+      queueDragVisibleIds = queueDragRows.map(function (r) { return r.getAttribute('data-id'); });
+      var listRect = listEl.getBoundingClientRect();
+      var scrollTop = listEl.scrollTop;
+      queueDragRowTops = queueDragRows.map(function (r) { return (r.getBoundingClientRect().top - listRect.top) + scrollTop; });
+      queueDragRowHeights = queueDragRows.map(function (r) { return r.getBoundingClientRect().height; });
+      queueDragRow = row;
+      queueDragPointerId = ev.pointerId;
+      queueDragStartClientY = ev.clientY;
+      queueDragCurrentSlot = queueDragFromIndex;
+      row.classList.add('dragging');
+      try {
+        handle.setPointerCapture(ev.pointerId);
+      } catch (e) {
+        // best-effort; the drag still works via listEl's own listeners without capture
+      }
+    });
+
+    listEl.addEventListener('pointermove', function (ev) {
+      if (!queueDragRow || ev.pointerId !== queueDragPointerId) {
+        return;
+      }
+      queueDragRow.style.transform = 'translateY(' + (ev.clientY - queueDragStartClientY) + 'px)';
+      var listRect = listEl.getBoundingClientRect();
+      var y = (ev.clientY - listRect.top) + listEl.scrollTop;
+      queueDragCurrentSlot = DC.edit.geom.slotFromPointerOffsets(y, queueDragRowTops, queueDragRowHeights, queueDragRows.length);
+    });
+
+    function finishQueueDrag(commit) {
+      if (!queueDragRow) {
+        return;
+      }
+      var fromVisibleIdx = queueDragFromIndex;
+      var toVisibleSlot = queueDragCurrentSlot;
+      var visibleIds = queueDragVisibleIds;
+      var id = queueDragRow.getAttribute('data-id');
+      teardownQueueDrag();
+      if (!commit) {
+        return;
+      }
+      // queueDragRows/visibleIds are the VISIBLE queue rows, but QUEUE_REORDER's toIndex applies
+      // against the FULL state.queueIds (which also holds drafted ids, hidden from this view but
+      // kept in place) -- translate the visible drop slot with the same primitive edit.js's own
+      // filtered-view drags use, rather than treating visible and overall index spaces as one.
+      var move = DC.edit.staging.visibleSlotToOverallMove(store.getState().queueIds, visibleIds, fromVisibleIdx, toVisibleSlot);
+      if (move.fromIndex === -1 || move.toIndex === move.fromIndex) {
+        return; // no-op landing spot, or the id vanished from queueIds mid-drag
+      }
+      store.dispatch({ type: 'QUEUE_REORDER', playerId: id, toIndex: move.toIndex });
+    }
+
+    listEl.addEventListener('pointerup', function (ev) {
+      if (!queueDragRow || ev.pointerId !== queueDragPointerId) {
+        return;
+      }
+      finishQueueDrag(true);
+    });
+    listEl.addEventListener('pointercancel', function (ev) {
+      if (!queueDragRow || ev.pointerId !== queueDragPointerId) {
+        return;
+      }
+      finishQueueDrag(false);
+    });
+
     function showUndoBanner(name) {
       if (undoBannerTimer) {
         clearTimeout(undoBannerTimer);
@@ -1098,6 +1367,10 @@
     // ---- delegated click handling ----
 
     appEl.addEventListener('click', function (ev) {
+      if (swipeClickSuppressed) {
+        swipeClickSuppressed = false; // the click that always follows an armed swipe's pointerup
+        return;
+      }
       var target = ev.target.closest('[data-action]');
       if (!target) {
         return;
@@ -1382,6 +1655,9 @@
       if (state.filters.status === 'MINE') {
         return { kind: 'mine' };
       }
+      if (state.filters.status === 'QUEUE') {
+        return { kind: 'queue' };
+      }
       var allDrafted = state.players.every(function (p) { return state.marks[p.id].drafted; });
       if (allDrafted) {
         return { kind: 'complete' };
@@ -1407,7 +1683,9 @@
       var pm = DC.state.pickMath(state);
       trackerEl.innerHTML = pm ? templates.trackerStripHTML(pm) : ''; // hidden entirely when league unset
 
-      chipsEl.innerHTML = templates.chipsHTML(state.filters);
+      // guarded rather than a bare DC.state.queueCount(state) -- some hand-built test-only
+      // state fixtures predate the queue feature and omit queueIds entirely
+      chipsEl.innerHTML = templates.chipsHTML(state.filters, state.queueIds ? DC.state.queueCount(state) : 0);
 
       var mineNoSearch = state.filters.status === 'MINE' && !searching;
       if (mineNoSearch && state.league) {
@@ -1433,6 +1711,12 @@
         };
         var posRanks = DC.state.positionRanks(state);
         var myPick = !!(pm && pm.isMyPick);
+        var queuedIds = {};
+        (state.queueIds || []).forEach(function (id) { queuedIds[id] = true; });
+        // drag reorder only makes sense over the WHOLE queue, in order -- a text search or a
+        // narrowing position filter shows a subset, so the handle hides rather than reorder
+        // ambiguously underneath it (edit.js's search-disables-drag rule, same rationale)
+        var showDragHandle = state.filters.status === 'QUEUE' && !searching && state.filters.position === 'ALL';
         var rowsHtml = visible.map(function (v) {
           var pn = v.drafted ? DC.state.pickNumber(state, v.id) : null;
           var ctx = {
@@ -1443,7 +1727,9 @@
             signals: signals,
             posRanks: posRanks,
             myPick: myPick,
-            isCompared: compareIds.indexOf(v.id) !== -1
+            isCompared: compareIds.indexOf(v.id) !== -1,
+            queuedIds: queuedIds,
+            dragHandle: showDragHandle
           };
           return templates.playerRowHTML(v, ctx);
         }).join('');

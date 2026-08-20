@@ -6,7 +6,7 @@
   /** @typedef {{id:string, rank:number, name:string, team:string, position:Position, byeWeek:number, tier:(number|null)}} Player */
   /** @typedef {{drafted:boolean, target:boolean, avoid:boolean, mine:boolean}} Marks */
   /** @typedef {{playerId:string, timestamp:number}} UndoEntry */
-  /** @typedef {{position:("ALL"|"FLEX"|Position), status:("AVAILABLE"|"TARGETS"|"AVOID"|"DRAFTED"|"MINE")}} Filters */
+  /** @typedef {{position:("ALL"|"FLEX"|Position), status:("AVAILABLE"|"TARGETS"|"AVOID"|"DRAFTED"|"MINE"|"QUEUE")}} Filters */
   /** @typedef {{QB:number, RB:number, WR:number, TE:number, FLEX:number, DST:number, K:number, BENCH:number}} RosterReq */
   /** @typedef {{size:number, slot:number, snake:boolean, roster:RosterReq}} League */
   /**
@@ -18,15 +18,16 @@
    *   filters: Filters,
    *   searchText: string,
    *   manuallyEdited: boolean,
-   *   league: (League|null)
+   *   league: (League|null),
+   *   queueIds: string[]
    * }} State
    */
 
-  var CURRENT_SCHEMA_VERSION = 8;
+  var CURRENT_SCHEMA_VERSION = 9;
   var STORAGE_KEY = 'draft-cockpit/state';
   var ADP_OVERRIDE_KEY = 'draft-cockpit/adp-override';
   var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true, DST: true, K: true };
-  var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true };
+  var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true, QUEUE: true };
   var ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K', 'BENCH'];
   // upgrade detection only: a stored roster with exactly these 6 keys (no DST/K) predates K/DST support
   var LEGACY_ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'BENCH'];
@@ -119,6 +120,13 @@
     return adoptSeed(v7);
   };
 
+  // pure pass-through: stamps schemaVersion itself, iterates nothing (queueIds healing is normalize's job)
+  migrations[8] = function (v8) {
+    return { schemaVersion: 9, players: v8.players, marks: v8.marks, undoStack: v8.undoStack,
+             filters: v8.filters, searchText: v8.searchText, manuallyEdited: v8.manuallyEdited, league: v8.league,
+             seedFingerprint: v8.seedFingerprint, queueIds: [] };
+  };
+
   /** @returns {State} */
   function createSeedState() {
     var players = DC.data.SEED_PLAYERS.map(function (p) {
@@ -137,7 +145,8 @@
       searchText: '',
       manuallyEdited: false,
       league: null,
-      seedFingerprint: currentFingerprint()
+      seedFingerprint: currentFingerprint(),
+      queueIds: []
     };
   }
 
@@ -147,23 +156,34 @@
    * new player by (normalizeAdpName(name) + position) identity -- team deliberately excluded,
    * since a team move changes the slug id but not who the player is. An old player with no
    * new match has its mark dropped silently; a new player with no old match gets a fresh
-   * all-false mark. undoStack is cleared (old-id pick references are unsafe); filters/
+   * all-false mark. queueIds survives the same identity join, in the old queue order, with
+   * unmatched ids dropped. undoStack is cleared (old-id pick references are unsafe); filters/
    * searchText/league carry over from the old state.
    * @param {State} oldState @returns {State}
    */
   function adoptSeed(oldState) {
     var oldMarkByIdentity = {};
+    var oldIdentityById = {};
     oldState.players.forEach(function (p) {
-      oldMarkByIdentity[normalizeAdpName(p.name) + '|' + p.position] = oldState.marks[p.id];
+      var identity = normalizeAdpName(p.name) + '|' + p.position;
+      oldMarkByIdentity[identity] = oldState.marks[p.id];
+      oldIdentityById[p.id] = identity;
     });
     var newPlayers = DC.data.SEED_PLAYERS.map(function (p) {
       return { id: p.id, rank: p.rank, name: p.name, team: p.team, position: p.position, byeWeek: p.byeWeek, tier: typeof p.tier === 'number' ? p.tier : null, adp: p.adp === undefined ? null : p.adp };
     });
     var marks = {};
+    var newIdByIdentity = {};
     newPlayers.forEach(function (p) {
-      var carried = oldMarkByIdentity[normalizeAdpName(p.name) + '|' + p.position];
+      var identity = normalizeAdpName(p.name) + '|' + p.position;
+      var carried = oldMarkByIdentity[identity];
       marks[p.id] = carried || { drafted: false, target: false, avoid: false, mine: false };
+      newIdByIdentity[identity] = p.id;
     });
+    var queueIds = (oldState.queueIds || []).map(function (id) {
+      var identity = oldIdentityById[id];
+      return identity ? newIdByIdentity[identity] : undefined;
+    }).filter(function (id) { return !!id; });
     return {
       schemaVersion: CURRENT_SCHEMA_VERSION,
       players: newPlayers,
@@ -174,7 +194,8 @@
       // adoption yields a pristine seed; edit flag re-arms on the next real edit
       manuallyEdited: false,
       league: oldState.league,
-      seedFingerprint: currentFingerprint()
+      seedFingerprint: currentFingerprint(),
+      queueIds: queueIds
     };
   }
 
@@ -506,6 +527,31 @@
         return setMark(state, action.playerId, { avoid: nowAvoid, target: nowAvoid ? false : curAvoid.target });
       }
 
+      case 'QUEUE_TOGGLE': {
+        if (!state.marks[action.playerId]) {
+          return state;
+        }
+        var queueIdx = state.queueIds.indexOf(action.playerId);
+        var nextQueueIds = queueIdx === -1
+          ? state.queueIds.concat([action.playerId])
+          : state.queueIds.slice(0, queueIdx).concat(state.queueIds.slice(queueIdx + 1));
+        return Object.assign({}, state, { queueIds: nextQueueIds });
+      }
+
+      case 'QUEUE_REORDER': {
+        var fromIdx = state.queueIds.indexOf(action.playerId);
+        if (fromIdx === -1) {
+          return state;
+        }
+        var withoutId = state.queueIds.slice(0, fromIdx).concat(state.queueIds.slice(fromIdx + 1));
+        // non-numeric toIndex (e.g. NaN) would otherwise propagate through Math.min/max and land the
+        // mover at the front via slice's NaN-as-0 coercion -- fall back to "the end" instead
+        var rawToIndex = typeof action.toIndex === 'number' && isFinite(action.toIndex) ? action.toIndex : withoutId.length;
+        var clampedIdx = Math.max(0, Math.min(rawToIndex, withoutId.length));
+        var reorderedQueue = withoutId.slice(0, clampedIdx).concat([action.playerId], withoutId.slice(clampedIdx));
+        return Object.assign({}, state, { queueIds: reorderedQueue });
+      }
+
       case 'SET_SEARCH':
         return Object.assign({}, state, { searchText: action.text });
 
@@ -548,7 +594,8 @@
           searchText: '',
           manuallyEdited: state.manuallyEdited,
           league: null,
-          seedFingerprint: state.seedFingerprint
+          seedFingerprint: state.seedFingerprint,
+          queueIds: []
         };
       }
 
@@ -565,6 +612,10 @@
         var newUndoStack = state.undoStack.filter(function (e) {
           return survivingIds[e.playerId];
         });
+        // same identity as marks: same id -> keeps its queue slot, in the old queue order
+        var newQueueIds = (state.queueIds || []).filter(function (id) {
+          return survivingIds[id];
+        });
         return {
           schemaVersion: state.schemaVersion,
           players: newPlayers,
@@ -577,7 +628,8 @@
           // one is a mismatch) and set manuallyEdited so a future re-bake keeps this board too
           manuallyEdited: true,
           league: state.league,
-          seedFingerprint: currentFingerprint()
+          seedFingerprint: currentFingerprint(),
+          queueIds: newQueueIds
         };
       }
 
@@ -654,7 +706,27 @@
 
     var searchActive = state.searchText.trim() !== '';
     var statusFiltered;
-    if (searchActive) {
+    if (state.filters.status === 'QUEUE') {
+      // queue order, not board order: derive from queueIds, position filter and search compose as membership checks on top
+      var posFilteredIds = {};
+      var posFilteredById = {};
+      positionFiltered.forEach(function (p) {
+        posFilteredIds[p.id] = true;
+        posFilteredById[p.id] = p;
+      });
+      statusFiltered = state.queueIds.map(function (id) {
+        return posFilteredIds[id] ? posFilteredById[id] : null;
+      }).filter(function (p) {
+        if (!p) {
+          return false;
+        }
+        var mark = state.marks[p.id];
+        if (!mark || mark.drafted) {
+          return false;
+        }
+        return !searchActive || matchesSearch(p, state.searchText);
+      });
+    } else if (searchActive) {
       statusFiltered = positionFiltered.filter(function (p) {
         return matchesSearch(p, state.searchText);
       });
@@ -1139,6 +1211,23 @@
     return (window.DC && DC.dkData && DC.dkData.updatedAt) || null;
   }
 
+  /** @param {State} state @param {string} id @returns {boolean} */
+  function isQueued(state, id) {
+    return state.queueIds.indexOf(id) !== -1;
+  }
+
+  /** @param {State} state @returns {number} queued ids that are not drafted */
+  function queueCount(state) {
+    var n = 0;
+    state.queueIds.forEach(function (id) {
+      var mark = state.marks[id];
+      if (mark && !mark.drafted) {
+        n++;
+      }
+    });
+    return n;
+  }
+
   function isValidState(obj) {
     if (!obj || typeof obj !== 'object') {
       return false;
@@ -1199,8 +1288,9 @@
    * missing/invalid marks entries default to false, orphan marks/undoStack
    * entries for ids not in players are dropped, target/avoid exclusivity
    * is re-enforced, players are rebuilt in canonical key order with tier
-   * healed, and a non-conforming league is healed to null. localStorage is
-   * the only copy of a live draft, so a bad-shaped single field shouldn't
+   * healed, a non-conforming league is healed to null, and queueIds is
+   * healed to an array of on-board string ids with no duplicates. localStorage
+   * is the only copy of a live draft, so a bad-shaped single field shouldn't
    * cost the whole draft.
    * @param {State} state
    * @returns {State}
@@ -1228,6 +1318,15 @@
       return e && typeof e.playerId === 'string' && validIds[e.playerId];
     });
 
+    var seenQueueIds = {};
+    var queueIds = (Array.isArray(state.queueIds) ? state.queueIds : []).filter(function (id) {
+      if (typeof id !== 'string' || !validIds[id] || seenQueueIds[id]) {
+        return false;
+      }
+      seenQueueIds[id] = true;
+      return true;
+    });
+
     return {
       schemaVersion: state.schemaVersion,
       players: normalizeTiers(healPlayers(state.players)),
@@ -1237,7 +1336,8 @@
       searchText: state.searchText,
       manuallyEdited: (typeof state.manuallyEdited === 'boolean' ? state.manuallyEdited : false),
       league: healLeague(state.league),
-      seedFingerprint: state.seedFingerprint
+      seedFingerprint: state.seedFingerprint,
+      queueIds: queueIds
     };
   }
 
@@ -1381,6 +1481,8 @@
     adpUpdatedAt: adpUpdatedAt,
     ADP_OVERRIDE_KEY: ADP_OVERRIDE_KEY,
     dkProjForPlayer: dkProjForPlayer,
-    dkUpdatedAt: dkUpdatedAt
+    dkUpdatedAt: dkUpdatedAt,
+    isQueued: isQueued,
+    queueCount: queueCount
   };
 })();
