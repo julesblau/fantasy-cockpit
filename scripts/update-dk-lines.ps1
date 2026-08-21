@@ -275,7 +275,7 @@ finally {
     if ($chromeProc) { try { Stop-Process -Id $chromeProc.Id -Force -ErrorAction SilentlyContinue } catch {} }
 }
 
-# ---- RAW_PLAYERS board parse (name/team/position, board order) ----------------------------
+# ---- SEED_PLAYERS board parse (name/team/position, board order) ----------------------------
 # board rank = array index+1, mirrors SEED_PLAYERS.map in js/data.js. Feeds the manual-merge
 # typo guard below and the gap worksheet after the gates.
 
@@ -283,21 +283,21 @@ try {
     $dataJsText = [IO.File]::ReadAllText($dataJsPath)
 }
 catch {
-    Fail("failed to read $dataJsPath for RAW_PLAYERS parse: $($_.Exception.Message)")
+    Fail("failed to read $dataJsPath for SEED_PLAYERS parse: $($_.Exception.Message)")
 }
-$rawStart = $dataJsText.IndexOf("var RAW_PLAYERS = [")
+$rawStart = $dataJsText.IndexOf("var SEED_PLAYERS = [")
 if ($rawStart -lt 0) {
-    Fail("could not find 'var RAW_PLAYERS = [' in js/data.js")
+    Fail("could not find 'var SEED_PLAYERS = [' in js/data.js")
 }
 $rawEnd = $dataJsText.IndexOf("];", $rawStart)
 if ($rawEnd -lt 0) {
-    Fail("could not find closing '];' for RAW_PLAYERS in js/data.js")
+    Fail("could not find closing '];' for SEED_PLAYERS in js/data.js")
 }
 $rawBlock = $dataJsText.Substring($rawStart, $rawEnd - $rawStart)
-$rowPattern = '\[\s*(?:"([^"]+)"|''([^'']+)'')\s*,\s*''([A-Za-z]+)''\s*,\s*''([A-Za-z]+)''\s*\]'
+$rowPattern = '\{\s*id:\s*"[^"]*",\s*rank:\s*\d+,\s*name:\s*"([^"]+)",\s*team:\s*"([A-Za-z]+)",\s*position:\s*"([A-Za-z]+)"'
 $rowMatches = [regex]::Matches($rawBlock, $rowPattern)
 if ($rowMatches.Count -eq 0) {
-    Fail("parsed zero seed player rows from RAW_PLAYERS")
+    Fail("parsed zero seed player rows from SEED_PLAYERS")
 }
 
 $boardPlayers = New-Object System.Collections.ArrayList
@@ -308,12 +308,11 @@ $rank = 0
 foreach ($m in $rowMatches) {
     $rank++
     $name = $m.Groups[1].Value
-    if (-not $m.Groups[1].Success) { $name = $m.Groups[2].Value }
-    $team = $m.Groups[3].Value
-    $pos = $m.Groups[4].Value
+    $team = $m.Groups[2].Value
+    $pos = $m.Groups[3].Value
     $k = Normalize-AdpName $name
     if ($seenKeys.ContainsKey($k)) {
-        Write-Host "WARN: RAW_PLAYERS names '$($seenKeys[$k])' and '$name' both normalize to key '$k'"
+        Write-Host "WARN: SEED_PLAYERS names '$($seenKeys[$k])' and '$name' both normalize to key '$k'"
         $collisions++
     }
     else {
@@ -323,7 +322,7 @@ foreach ($m in $rowMatches) {
     [void]$boardPlayers.Add(@{ Rank = $rank; Name = $name; Team = $team; Position = $pos; Key = $k })
 }
 Write-Host ""
-Write-Host "RAW_PLAYERS normalization collision check:"
+Write-Host "SEED_PLAYERS normalization collision check:"
 if ($collisions -eq 0) {
     Write-Host "  no collisions found ($($rowMatches.Count) names checked)"
 }
@@ -364,7 +363,7 @@ else {
         $key = Normalize-AdpName $aliased
 
         if (-not $seenKeys.ContainsKey($key)) {
-            Write-Host "WARN: manual line for '$rawManualName' (key '$key') matches no RAW_PLAYERS name; merging anyway"
+            Write-Host "WARN: manual line for '$rawManualName' (key '$key') matches no SEED_PLAYERS name; merging anyway"
         }
 
         if (-not $players.ContainsKey($key)) {
@@ -593,7 +592,7 @@ catch {
 
 Write-Host ""
 Write-Host "Total distinct players: $($players.Count)"
-Write-Host "Seed liveness (first 60 RAW_PLAYERS): $livenessHits/60"
+Write-Host "Seed liveness (first 60 SEED_PLAYERS): $livenessHits/60"
 if ($unmatchedNames.Count -gt 0) {
     Write-Host "  unmatched:"
     foreach ($n in $unmatchedNames) {
