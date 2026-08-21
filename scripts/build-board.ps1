@@ -521,7 +521,7 @@ for ($i = 0; $i -lt $sortedTeams.Count; $i++) {
 }
 [void]$lines.Add("  };")
 [void]$lines.Add("")
-[void]$lines.Add("  // real user rankings bake: 357 skill (REDRAFT-rankings.csv, one dedup drop) + K/DST")
+[void]$lines.Add("  // real user rankings bake: 353 skill (REDRAFT-rankings.csv, one dedup drop) + K/DST")
 [void]$lines.Add("  // interleaved by weighted ADP consensus -- see scripts\build-board.ps1")
 [void]$lines.Add("  var SEED_PLAYERS = [")
 for ($i = 0; $i -lt $seedFinal.Count; $i++) {
