@@ -240,7 +240,7 @@ draft-cockpit/
   sw.js                   service worker: cache-first offline support; bump CACHE_NAME on any precached file change
   tests.html              in-browser unit test harness (open directly, or run headless via scripts\run-tests.ps1)
   js/
-    data.js               GENERATED -- seed player data (424 players: QB/RB/WR/TE plus K/DST), real bye weeks, id slugging; regenerate with scripts\build-board.ps1
+    data.js               GENERATED -- seed player data (421 players: QB/RB/WR/TE plus K/DST), real bye weeks, id slugging; regenerate with scripts\build-board.ps1
     adp-data.js           GENERATED -- real ADP table (espn/flock/sleeper/underdog); regenerate with scripts\update-adp.ps1
     dk-data.js            GENERATED -- DraftKings season-line O/U sidecar; regenerate with scripts\update-dk-lines.ps1
     state.js              state shape, reducer, localStorage load/save, schema migrations
