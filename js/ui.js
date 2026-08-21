@@ -12,10 +12,9 @@
 
   var STATUS_LABELS = { AVAILABLE: 'Available', TARGETS: 'Targets', AVOID: 'Avoid', DRAFTED: 'Drafted' };
 
-  // signal tag priority order: VALUE > CLIFF, max 2 rendered (vacuous now but kept for future signals)
+  // VALUE-only right now; the up-to-2-tags/priority-order machinery below stays generic for future signals
   var SIGNAL_DEFS = [
-    ['value', 'sig-value', 'VALUE'],
-    ['cliff', 'sig-cliff', 'CLIFF']
+    ['value', 'sig-value', 'VALUE']
   ];
 
   var LEAGUE_SIZE_MIN = 4;
@@ -94,7 +93,7 @@
 
   /**
    * @param {string} playerId @param {*} [signals] same shape as signalTagsHTML's param
-   * @returns {number} rendered tag count for this player (0-2) — mirrors signalTagsHTML's own
+   * @returns {number} rendered tag count for this player (0-1) — mirrors signalTagsHTML's own
    *   cap so the suppression check below agrees with what actually rendered
    */
   function signalTagCount(playerId, signals) {
@@ -155,10 +154,10 @@
 
   /**
    * @param {string} playerId
-   * @param {{value:Object, cliff:Object}} [signals] id->true maps (DC.state.valueFlagIds/
-   *   lastInTierIds), computed ONCE per render — never call the selectors per row. Unrecognized
-   *   keys (e.g. a stray 'gone') are silently ignored — only keys in SIGNAL_DEFS are read.
-   * @returns {string} up to 2 .sig-tag spans, priority VALUE > CLIFF; '' when none/absent
+   * @param {{value:Object}} [signals] id->true maps (DC.state.valueFlagIds), computed ONCE per
+   *   render — never call the selectors per row. Unrecognized keys (e.g. a stray 'gone') are
+   *   silently ignored — only keys in SIGNAL_DEFS are read.
+   * @returns {string} up to 2 .sig-tag spans (currently at most 1, VALUE); '' when none/absent
    */
   function signalTagsHTML(playerId, signals) {
     if (!signals) {
@@ -1731,8 +1730,7 @@
       } else {
         // signal id-sets and position ranks computed ONCE per render, shared by every row's ctx — never per row
         var signals = {
-          value: DC.state.valueFlagIds(state),
-          cliff: DC.state.lastInTierIds(state)
+          value: DC.state.valueFlagIds(state)
         };
         var posRanks = DC.state.positionRanks(state);
         var myPick = !!(pm && pm.isMyPick);

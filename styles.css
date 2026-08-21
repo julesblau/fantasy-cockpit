@@ -21,7 +21,13 @@
   --tier-c3: #FFB340;
   --tier-c4: #5E5CE6;
   --tier-c5: #66D4CF;
-  --tier-c6: #8E8E93;
+  --tier-c6: #32D74B;
+  --tier-c7: #FF453A;
+  --tier-c8: #FFD60A;
+  --tier-c9: #0A84FF;
+  --tier-c10: #FF375F;
+  --tier-c11: #AC8E68;
+  --tier-c12: #BCEC5D;
   --badge-adp: #8A4FFF;
   --badge-proj: #3BE37E;
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
@@ -422,7 +428,12 @@ body.searching #bottom-bar {
 .tier-strip.tier-c4 { background: var(--tier-c4); }
 .tier-strip.tier-c5 { background: var(--tier-c5); }
 .tier-strip.tier-c6 { background: var(--tier-c6); }
-.tier-strip.tier-cx { background: var(--accent-drafted); }
+.tier-strip.tier-c7 { background: var(--tier-c7); }
+.tier-strip.tier-c8 { background: var(--tier-c8); }
+.tier-strip.tier-c9 { background: var(--tier-c9); }
+.tier-strip.tier-c10 { background: var(--tier-c10); }
+.tier-strip.tier-c11 { background: var(--tier-c11); }
+.tier-strip.tier-c12 { background: var(--tier-c12); }
 
 .player-row-body {
   display: flex;
@@ -563,8 +574,13 @@ button.player-rank {
 .tier-c3 { color: var(--tier-c3); background: rgba(255, 179, 64, 0.18); }
 .tier-c4 { color: var(--tier-c4); background: rgba(94, 92, 230, 0.18); }
 .tier-c5 { color: var(--tier-c5); background: rgba(102, 212, 207, 0.18); }
-.tier-c6 { color: var(--tier-c6); background: rgba(142, 142, 147, 0.18); }
-.tier-cx { color: var(--accent-drafted); background: rgba(99, 99, 102, 0.18); }
+.tier-c6 { color: var(--tier-c6); background: rgba(50, 215, 75, 0.18); }
+.tier-c7 { color: var(--tier-c7); background: rgba(255, 69, 58, 0.18); }
+.tier-c8 { color: var(--tier-c8); background: rgba(255, 214, 10, 0.18); }
+.tier-c9 { color: var(--tier-c9); background: rgba(10, 132, 255, 0.18); }
+.tier-c10 { color: var(--tier-c10); background: rgba(255, 55, 95, 0.18); }
+.tier-c11 { color: var(--tier-c11); background: rgba(172, 142, 104, 0.18); }
+.tier-c12 { color: var(--tier-c12); background: rgba(188, 236, 93, 0.18); }
 
 .player-meta {
   font-size: 13px;
@@ -620,7 +636,8 @@ button.player-rank {
 
 /* filled twin of .adp-badge -- padding 1px 5px matches it exactly (no border, unlike the old
    outlined version) so height/width don't shift; suppressed by metricsLineHTML when the row
-   already carries both signal tags (redundant number, avoids a measured overflow at the 390px floor) */
+   already carries both signal tags (redundant number, avoids a measured overflow at the 390px
+   floor) -- currently unreachable with only one signal defined, kept for when a second returns */
 .proj-badge {
   background: var(--badge-proj);
   color: #043018;
@@ -634,8 +651,8 @@ button.player-rank {
   vertical-align: middle;
 }
 
-/* quiet signal tags: available rows only, up to 2, priority VALUE > CLIFF — inline-flex so they
-   sit at the end of the metrics line instead of on their own row */
+/* quiet signal tags: available rows only, VALUE-only right now (up to 2 slots kept for future
+   signals) — inline-flex so they sit at the end of the metrics line instead of on their own row */
 .signal-tags {
   display: inline-flex;
   gap: 4px;
@@ -658,11 +675,6 @@ button.player-rank {
 .sig-value {
   border-color: var(--accent-draft);
   color: var(--accent-draft);
-}
-
-.sig-cliff {
-  border-color: var(--accent-target);
-  color: var(--accent-target);
 }
 
 /* roster board tiles (Mine view, league configured) */

@@ -335,7 +335,7 @@
     return Object.keys(out).length > 0 ? out : null;
   }
 
-  /** @param {number|null|undefined} tier @returns {string|null} CSS class for tiers 1-6, 'tier-cx' for >=7, null otherwise */
+  /** @param {number|null|undefined} tier @returns {string|null} CSS class, cycling through 12 hues (13->tier-c1, ...), null for non-positive-integer/null/undefined */
   function tierColorClass(tier) {
     if (tier === null || tier === undefined) {
       return null;
@@ -343,7 +343,7 @@
     if (typeof tier !== 'number' || !isFinite(tier) || Math.floor(tier) !== tier || tier < 1) {
       return null;
     }
-    return tier <= 6 ? 'tier-c' + tier : 'tier-cx';
+    return 'tier-c' + (((tier - 1) % 12) + 1);
   }
 
   /** @param {Player[]} players @returns {Player[]} rebuilt in canonical key order, tier healed */
@@ -862,41 +862,6 @@
       picksUntilMine: picksUntilMine,
       isMyPick: picksUntilMine === 0
     };
-  }
-
-  /**
-   * @param {State} state
-   * @returns {Object<string, boolean>} ids of AVAILABLE players who are the sole available member of their (position, tier) group
-   */
-  function lastInTierIds(state) {
-    var counts = {};
-    state.players.forEach(function (p) {
-      if (p.tier === null || p.tier === undefined) {
-        return;
-      }
-      var m = state.marks[p.id];
-      if (m && m.drafted) {
-        return;
-      }
-      var key = p.position + '|' + p.tier;
-      counts[key] = (counts[key] || 0) + 1;
-    });
-
-    var result = {};
-    state.players.forEach(function (p) {
-      if (p.tier === null || p.tier === undefined) {
-        return;
-      }
-      var m = state.marks[p.id];
-      if (m && m.drafted) {
-        return;
-      }
-      var key = p.position + '|' + p.tier;
-      if (counts[key] === 1) {
-        result[p.id] = true;
-      }
-    });
-    return result;
   }
 
   /**
@@ -1466,7 +1431,6 @@
     tierBreakBefore: tierBreakBefore,
     tierColorClass: tierColorClass,
     pickMath: pickMath,
-    lastInTierIds: lastInTierIds,
     valueFlagIds: valueFlagIds,
     rosterNeeds: rosterNeeds,
     positionRanks: positionRanks,
