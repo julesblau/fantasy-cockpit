@@ -384,7 +384,7 @@
       '<div class="' + rowClasses.join(' ') + '" data-id="' + esc(view.id) + '"' + tierAttr + '>' +
         '<button type="button" class="' + rankBtnClass + '" data-action="rank-jump" data-id="' + esc(view.id) + '">' + rankHTML + '</button>' +
         '<div class="player-info">' +
-          '<div class="player-name">' + esc(view.name) + '</div>' +
+          '<div class="player-name"><span class="player-name-text">' + esc(view.name) + '</span></div>' +
           '<div class="player-meta">' + metaLine(view) + tierChipHTML(view.tier) + '</div>' +
         '</div>' +
         draftedPill +

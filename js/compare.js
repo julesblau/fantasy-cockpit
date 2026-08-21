@@ -43,6 +43,18 @@
     return '<span class="player-avatar-box avatar-lg">' + inner + '</span>';
   }
 
+  // duplicated from ui.js per the esc()/avatarHTML precedent -- team-logo-lg sizes it for the
+  // card's 16px name context; same FA/DST no-logo rule (no fa.png, avatar photo already is the
+  // DST team logo). pointer-events/draggable are inline, not class-based, so the
+  // gesture-inertness guarantee holds even if styles.css fails to load.
+  function teamLogoHTML(player) {
+    if (!player || player.position === 'DST' || player.team === 'FA') {
+      return '';
+    }
+    var src = 'https://sleepercdn.com/images/team_logos/nfl/' + String(player.team).toLowerCase() + '.png';
+    return '<img class="team-logo team-logo-lg" src="' + esc(src) + '" alt="" loading="lazy" draggable="false" style="pointer-events:none;-webkit-user-drag:none" onerror="this.style.display=\'none\'">';
+  }
+
   // live-verified source logos, keyed by adpRowHTML label -- Weighted is ours, not a source, so
   // it's deliberately absent; DK's own logo is DK_LOGO_URL below (separate hardcoded row)
   var SRC_LOGOS = {
@@ -226,9 +238,9 @@
         '<div class="compare-card-inner">' +
           '<div class="compare-card-head">' +
             avatarHTML(player) +
-            '<div class="compare-card-meta">' + esc(player.team) + DOT + esc(player.position) + DOT + 'B' + player.byeWeek + '</div>' +
+            '<div class="compare-card-meta">' + (player.team === 'FA' ? esc(player.team) + DOT : '') + esc(player.position) + DOT + 'B' + player.byeWeek + '</div>' +
           '</div>' +
-          '<div class="compare-card-name">' + esc(player.name) + '</div>' +
+          '<div class="compare-card-name"><span class="player-name-text">' + esc(player.name) + '</span>' + teamLogoHTML(player) + '</div>' +
           '<div class="compare-card-ranks">#' + player.rank + ' ' + MIDDOT + ' ' + esc(player.position) + card.posRank + '</div>' +
           '<div class="compare-card-adp">' +
             adpCellHTML('Flock', flockVal) +

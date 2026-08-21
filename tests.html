@@ -2746,7 +2746,8 @@
       assert(html.indexOf('player-rank">1<') !== -1, 'rank shown');
       assert(html.indexOf('Ja&#39;Marr Chase') !== -1, 'name is escaped: ' + html);
       assert(html.indexOf('<b>WR1</b>') !== -1, 'posRank renders as the bold leading metrics token: ' + html);
-      assert(html.indexOf('CIN') !== -1 && html.indexOf('B10') !== -1, 'metrics line: ' + html);
+      assert(html.indexOf('B10') !== -1, 'metrics line: ' + html);
+      assert(html.indexOf('src="https://sleepercdn.com/images/team_logos/nfl/cin.png"') !== -1, 'team identity now carried by the name-line logo, not text: ' + html);
       assert(html.indexOf('data-action="draft"') !== -1, 'draft action present');
       assert(html.indexOf('data-action="toggle-target"') !== -1, 'toggle-target action present');
       assert(html.indexOf('data-action="toggle-avoid"') !== -1, 'toggle-avoid action present');
@@ -4900,10 +4901,49 @@
       var metaCloseIdx = tieredHtml.indexOf('</div>', metaIdx);
       var chipIdx = tieredHtml.indexOf('<span class="tier-chip');
       assert(chipIdx > metaIdx && chipIdx < metaCloseIdx, 'chip must sit inside .player-meta, after the meta text: ' + tieredHtml);
-      assert(tieredHtml.indexOf('<div class="player-name">Edit Guy</div>') !== -1, 'name line must hold the plain, unwrapped name: ' + tieredHtml);
+      assert(tieredHtml.indexOf('<div class="player-name"><span class="player-name-text">Edit Guy</span></div>') !== -1, 'name text must be wrapped in .player-name-text so it inherits the shared ellipsis rule now that base .player-name is a plain flex container with no truncation properties of its own: ' + tieredHtml);
 
       var noTierHtml = DC.edit.templates.editRowHTML(Object.assign({}, base, { tier: null }), {});
       assert(noTierHtml.indexOf('tier-chip') === -1, 'no chip when tier is null: ' + noTierHtml);
+    });
+
+    t('editRowHTML: long name stays single-line and ellipsizes inside the real #edit-list row geometry (base .player-row max-height:80px/overflow:hidden, no #edit-list override), instead of wrapping and getting silently clipped', function () {
+      var root = document.createElement('div');
+      root.style.position = 'fixed';
+      root.style.top = '0';
+      root.style.left = '0';
+      root.style.width = '390px';
+      root.style.visibility = 'hidden';
+      root.innerHTML = '<div id="edit-list"></div>';
+      document.body.appendChild(root);
+
+      var styleTag = document.createElement('style');
+      styleTag.textContent =
+        '*{box-sizing:border-box}' +
+        '#edit-list{padding:8px 16px}' +
+        '.player-row{display:flex;align-items:center;gap:4px;padding:10px 6px;min-height:64px;max-height:80px;overflow:hidden;position:relative}' +
+        '.player-info{flex:1;min-width:0}' +
+        '.player-name{font-size:17px;font-weight:600;line-height:22px;display:flex;align-items:center;min-width:0}' +
+        '.player-name-text{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}';
+      document.head.appendChild(styleTag);
+
+      try {
+        var longName = 'Absolutely Ridiculously Long Player Name For Overflow Regression Testing Purposes';
+        var view = { id: 'e-long1', rank: 4, name: longName, team: 'KC', position: 'RB', byeWeek: 9, drafted: false };
+        root.querySelector('#edit-list').innerHTML = DC.edit.templates.editRowHTML(view, {});
+        var nameEl = root.querySelector('.player-name');
+        assert(nameEl, 'expected .player-name to render');
+
+        var textSpan = nameEl.querySelector('.player-name-text');
+        assert(textSpan, 'name text must be wrapped in .player-name-text to inherit the shared ellipsis rule: ' + nameEl.innerHTML);
+        assert(textSpan.scrollWidth > textSpan.clientWidth, 'sanity: the long name should actually overflow its box so the ellipsis rule has something to do: scrollWidth=' + textSpan.scrollWidth + ' clientWidth=' + textSpan.clientWidth);
+
+        var rect = nameEl.getBoundingClientRect();
+        assert(rect.height <= 26, '.player-name must stay single-line (~22px) rather than wrapping the long name onto multiple lines and getting clipped by the row\'s 80px max-height cap: measured height=' + rect.height);
+      } finally {
+        document.head.removeChild(styleTag);
+        document.body.removeChild(root);
+      }
     });
 
     // DOM-level companion to the reducer-level acceptance test above (Task 1): proves the WHOLE
@@ -5240,7 +5280,7 @@
       var bodyIdx = availableHtml.indexOf('<div class="player-row-body">');
       assert(stripIdx !== -1 && bodyIdx !== -1 && stripIdx < bodyIdx, 'strip must sit before .player-row-body: ' + availableHtml);
       assert(availableHtml.indexOf('tier-chip') === -1, 'main-board rows must not render the old tier chip: ' + availableHtml);
-      assert(availableHtml.indexOf('<div class="player-name">Avail One</div>') !== -1, 'name line must hold the plain, unwrapped name: ' + availableHtml);
+      assert(availableHtml.indexOf('<span class="player-name-text">Avail One</span>') !== -1, 'name line must hold the plain name text, no tier chip leaking in: ' + availableHtml);
 
       var noTierView = Object.assign({}, availableView, { tier: null });
       var noTierHtml = DC.ui.templates.playerRowHTML(noTierView, {});
@@ -5295,11 +5335,11 @@
         var withAdp = { id: 'ma1', rank: 6, name: 'Meta Fixture One', team: 'KC', position: 'RB', byeWeek: 9, drafted: false, target: false, avoid: false, tier: null, adp: { espn: 4.8, flock: 4.8, sleeper: 4.8, underdog: 4.8 } };
         var withAdpHtml = DC.ui.templates.playerRowHTML(withAdp, { posRanks: { ma1: 2 } });
         // equal-value fixture: all four sources are 4.8, so the weighted mean is 4.8 under ANY ADP_WEIGHTS blend
-        assert(withAdpHtml.indexOf('<div class="player-meta player-meta-card"><span class="meta-main"><b>RB2</b> · KC · B9</span><span class="adp-badge">4.8</span></div>') !== -1, withAdpHtml);
+        assert(withAdpHtml.indexOf('<div class="player-meta player-meta-card"><span class="meta-main"><b>RB2</b> · B9</span><span class="adp-badge">4.8</span></div>') !== -1, withAdpHtml);
 
         var noAdp = Object.assign({}, withAdp, { id: 'ma2', name: 'Meta Fixture Two', adp: null });
         var noAdpHtml = DC.ui.templates.playerRowHTML(noAdp, {});
-        assert(noAdpHtml.indexOf('<div class="player-meta player-meta-card"><span class="meta-main">KC · B9</span></div>') !== -1, 'no posRank token without ctx.posRanks, no dangling ADP segment when consensus is null: ' + noAdpHtml);
+        assert(noAdpHtml.indexOf('<div class="player-meta player-meta-card"><span class="meta-main">B9</span></div>') !== -1, 'no posRank token without ctx.posRanks, no dangling ADP segment when consensus is null, no team code (the name-line logo carries it): ' + noAdpHtml);
       } finally {
         window.DC.adpData = real;
       }
@@ -8014,7 +8054,7 @@
         var metaMain = metaEl.querySelector('.meta-main');
         assert(metaMain, 'expected the text run to be wrapped in .meta-main');
         var text = metaMain.textContent;
-        assert(text.indexOf('RB9') !== -1 && text.indexOf('KC') !== -1 && text.indexOf('B9') !== -1, 'sanity: ' + text);
+        assert(text.indexOf('RB9') !== -1 && text.indexOf('B9') !== -1, 'sanity: ' + text);
         var badge = metaEl.querySelector('.adp-badge');
         assert(badge && badge.textContent === '99.1', 'expected the ADP badge to render the bare tenths-precision number, no label: ' + (badge && badge.textContent));
         assert(metaMain.scrollWidth <= metaMain.clientWidth, 'a realistic long metrics line should fit .meta-main without truncation: scrollWidth=' + metaMain.scrollWidth + ' clientWidth=' + metaMain.clientWidth);
@@ -8054,7 +8094,7 @@
       }
     });
 
-    t('metrics-fit: the pathological worst case (3-letter team + 5-char tenths-precision ADP badge + 2-digit posRank + a sig tag, all at once) truncates .meta-main first so the badge and sig tag stay fully visible and the row never widens', function () {
+    t('metrics-fit: the former pathological worst case (5-char tenths-precision ADP badge + 2-digit posRank + a sig tag, all at once) no longer overflows .meta-main now that team is dropped from the line; badge/sig tag stay fully visible and the row never widens', function () {
       var fixture = buildPinned390FixtureCard();
       var styleTag = injectRowGeometryCSS();
       try {
@@ -8071,21 +8111,22 @@
         var metaMain = metaEl.querySelector('.meta-main');
         assert(metaMain, 'expected the text run to be wrapped in .meta-main');
         var text = metaEl.textContent;
-        assert(text.indexOf('WR15') !== -1 && text.indexOf('SEA') !== -1 && text.indexOf('B11') !== -1 && text.indexOf('CLIFF') !== -1, 'sanity: this is the intended pathological string: ' + text);
+        assert(text.indexOf('WR15') !== -1 && text.indexOf('B11') !== -1 && text.indexOf('CLIFF') !== -1, 'sanity: this is the intended pathological string: ' + text);
         var badge = metaEl.querySelector('.adp-badge');
         assert(badge && badge.textContent === '199.6', 'expected the ADP badge to render the bare tenths-precision number, no label: ' + (badge && badge.textContent));
         var sigTag = metaEl.querySelector('.sig-tag');
         assert(sigTag && sigTag.textContent === 'CLIFF', 'expected the CLIFF sig tag to render: ' + (sigTag && sigTag.textContent));
 
         // .meta-main is the only flex child with overflow:hidden, so it's the only one flex
-        // will shrink below content size -- verify the ellipsis mechanism actually engages there
+        // could ever shrink below content size -- the ellipsis mechanism stays declared
+        // defensively for any future longer content, even though this combination now fits
         var cs = getComputedStyle(metaMain);
         assertEq(cs.overflow, 'hidden', '.meta-main must clip its own text, never push the card wider');
         assertEq(cs.textOverflow, 'ellipsis', '.meta-main must resolve as an ellipsis, not a silent hard clip');
-        assert(metaMain.scrollWidth > metaMain.clientWidth, 'sanity: this pathological combination is expected to genuinely overflow .meta-main\'s budget (scrollWidth=' + metaMain.scrollWidth + ' clientWidth=' + metaMain.clientWidth + ') — see the comment above this test');
+        assert(metaMain.scrollWidth <= metaMain.clientWidth, 'dropping team from the line means this former-pathological combination should now fit without truncation (scrollWidth=' + metaMain.scrollWidth + ' clientWidth=' + metaMain.clientWidth + ')');
 
         // badge and sig tag keep their content-based min-width floor -- they must stay fully
-        // visible inside the card even though the text run above them is truncating
+        // visible inside the card regardless
         var metaRect = metaEl.getBoundingClientRect();
         var badgeRect = badge.getBoundingClientRect();
         var sigRect = sigTag.getBoundingClientRect();
@@ -8116,7 +8157,7 @@
         var metaEl = row.querySelector('.player-meta-card');
         var metaMain = metaEl.querySelector('.meta-main');
         var text = metaEl.textContent;
-        assert(text.indexOf('WR15') !== -1 && text.indexOf('SEA') !== -1 && text.indexOf('B11') !== -1 && text.indexOf('CLIFF') !== -1, 'sanity: this is the intended pathological string: ' + text);
+        assert(text.indexOf('WR15') !== -1 && text.indexOf('B11') !== -1 && text.indexOf('CLIFF') !== -1, 'sanity: this is the intended pathological string: ' + text);
 
         var adpBadge = metaEl.querySelector('.adp-badge');
         var projBadge = metaEl.querySelector('.proj-badge');
@@ -9206,9 +9247,10 @@
         var root = fixture.querySelector('#compare-root');
         var card = root.querySelector('.compare-card[data-id="' + p.id + '"]');
         assertEq(card.querySelector('.compare-card-name').textContent, p.name, 'name should render');
-        // dots are element children (.meta-dot) now, not text -- textContent has no spaces around them
-        assertEq(card.querySelector('.compare-card-meta').textContent, p.team + TEST_MIDDOT + p.position + TEST_MIDDOT + 'B' + p.byeWeek, 'meta should be TEAM/POS/B-bye joined by dot separators, no spaces in textContent');
-        assertEq(card.querySelectorAll('.compare-card-meta .meta-dot').length, 2, 'expected exactly 2 dot separators');
+        // dots are element children (.meta-dot) now, not text -- textContent has no spaces around them.
+        // team is dropped (the card-name logo carries it now); only FA (no logo) keeps it in the meta.
+        assertEq(card.querySelector('.compare-card-meta').textContent, p.position + TEST_MIDDOT + 'B' + p.byeWeek, 'meta should be POS/B-bye joined by a dot separator, no team, no spaces in textContent');
+        assertEq(card.querySelectorAll('.compare-card-meta .meta-dot').length, 1, 'expected exactly 1 dot separator now that team is dropped');
 
         var ranks = card.querySelector('.compare-card-ranks');
         var posRanks = DC.state.positionRanks(store.getState());
@@ -10442,8 +10484,10 @@
         var widest = { width: -1, combo: null };
         combos.forEach(function (c) {
           // exact markup compare.js's cardHTML emits for the meta line -- team/position are always
-          // plain uppercase letters (asserted elsewhere in the data-integrity tests), no esc() needed
-          var html = c.team + '<span class="meta-dot">' + TEST_MIDDOT + '</span>' + c.position + '<span class="meta-dot">' + TEST_MIDDOT + '</span>' + 'B' + c.byeWeek;
+          // plain uppercase letters (asserted elsewhere in the data-integrity tests), no esc() needed;
+          // team itself is dropped except for FA, which has no logo to carry it instead
+          var dot = '<span class="meta-dot">' + TEST_MIDDOT + '</span>';
+          var html = (c.team === 'FA' ? c.team + dot : '') + c.position + dot + 'B' + c.byeWeek;
           var w = naturalMetaWidth(html, cs);
           if (w > widest.width) {
             widest = { width: w, combo: c.team + '|' + c.position + '|B' + c.byeWeek };
@@ -11755,7 +11799,11 @@
           window.DC.adpData = { players: {}, images: {} };
           var html = render(avatarFixturePlayer());
           assert(html.indexOf('avatar-empty') !== -1, label + ' should render the empty avatar span: ' + html);
-          assert(html.indexOf('<img') === -1, label + ' should not render an <img> element when there is no image match: ' + html);
+          var wrap = document.createElement('div');
+          wrap.innerHTML = html;
+          // scoped to .player-avatar-box -- the fixture's normal team still carries a separate
+          // .team-logo <img> on the name line now, unrelated to the ESPN photo match
+          assert(!wrap.querySelector('.player-avatar-box img'), label + ' should not render an avatar <img> element when there is no image match: ' + html);
         } finally {
           window.DC.adpData = real;
         }
@@ -12770,6 +12818,237 @@
       } finally {
         spy.restore();
         cleanup(fixture, store);
+      }
+    });
+  })();
+  </script>
+
+  <script>
+  (function () {
+    'use strict';
+    section('team logos');
+
+    var TL_MIDDOT = '·';
+    var TL_DOT = '<span class="meta-dot">·</span>';
+
+    function sleeperUrl(team) {
+      return 'https://sleepercdn.com/images/team_logos/nfl/' + team.toLowerCase() + '.png';
+    }
+
+    // (a) normal teamed player: row name carries the sleeper team logo
+    t('availableRowHTML: a normal teamed player carries a .team-logo img with the correct sleepercdn src, sitting inside .player-name', function () {
+      var view = { id: 'tl-a1', rank: 5, name: 'Logo Row Guy', team: 'DET', position: 'RB', byeWeek: 6, drafted: false, target: false, avoid: false };
+      var html = DC.ui.templates.availableRowHTML(view, {});
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      var nameEl = wrap.querySelector('.player-name');
+      assert(nameEl, 'expected .player-name to render: ' + html);
+      var logo = nameEl.querySelector('.team-logo');
+      assert(logo, 'expected .player-name to carry a .team-logo img: ' + nameEl.innerHTML);
+      assertEq(logo.getAttribute('src'), sleeperUrl('DET'), 'team-logo src should be the sleepercdn team logo URL');
+      assertEq(logo.getAttribute('alt'), '', 'team-logo alt should be empty');
+      assert(nameEl.querySelector('.player-name-text').textContent === view.name, 'name text should still be present, unwrapped except for its own text span');
+    });
+
+    // (b) FA player: no logo (sleepercdn has no fa.png), and "FA" stays in the meta text
+    t('availableRowHTML: an FA player carries NO .team-logo, and the meta line still shows "FA"', function () {
+      var view = { id: 'tl-b1', rank: 200, name: 'Free Agent Row Guy', team: 'FA', position: 'WR', byeWeek: 0, drafted: false, target: false, avoid: false };
+      var html = DC.ui.templates.availableRowHTML(view, {});
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      assert(!wrap.querySelector('.player-name .team-logo'), 'FA player should render no team logo (sleepercdn has no fa.png): ' + html);
+      var metaText = wrap.querySelector('.meta-main').textContent;
+      assert(metaText.indexOf('FA') !== -1, 'meta line should keep "FA" when there is no logo to carry that information: ' + metaText);
+    });
+
+    // (c) DST row: no inline logo (the avatar photo already IS the team logo -- no doubling)
+    t('availableRowHTML: a DST row carries NO .team-logo next to the name (its avatar photo is already the team logo)', function () {
+      var view = { id: 'tl-c1', rank: 110, name: 'Lions D/ST', team: 'DET', position: 'DST', byeWeek: 6, drafted: false, target: false, avoid: false };
+      var html = DC.ui.templates.availableRowHTML(view, {});
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      assert(!wrap.querySelector('.player-name .team-logo'), 'DST row should render no inline team logo next to the name: ' + html);
+      // sanity: the row's avatar box still renders the sleeper team logo as the photo itself
+      assert(wrap.querySelector('.player-avatar-box img'), 'sanity: DST avatar photo should still render: ' + html);
+    });
+
+    // (d) meta line drops the team code for teamed players, across all three row variants
+    [
+      ['availableRowHTML', function (view, ctx) { return DC.ui.templates.availableRowHTML(view, ctx); }],
+      ['draftedSearchRowHTML', function (view, ctx) { return DC.ui.templates.draftedSearchRowHTML(view, ctx); }],
+      ['draftedRowHTML', function (view, ctx) { return DC.ui.templates.draftedRowHTML(view, ctx); }]
+    ].forEach(function (pair) {
+      var label = pair[0];
+      var render = pair[1];
+      t(label + ': meta line for a teamed player is "POSn · Bbye" -- no team code -- now that the logo carries team identity', function () {
+        var view = { id: 'tl-d-' + label, rank: 12, name: 'Meta Drop Fixture ' + label, team: 'DET', position: 'RB', byeWeek: 6, drafted: false, target: false, avoid: false, mine: false };
+        var html = render(view, { posRanks: { }, pickNumber: 1 });
+        var wrap = document.createElement('div');
+        wrap.innerHTML = html;
+        var metaMain = wrap.querySelector('.meta-main');
+        assert(metaMain, label + ' should render .meta-main: ' + html);
+        assertEq(metaMain.textContent, 'B6', label + ' meta-main should read just the bye (no posRank token without ctx.posRanks, no team code): ' + metaMain.textContent);
+
+        var withRank = render(view, { posRanks: (function () { var o = {}; o[view.id] = 12; return o; })(), pickNumber: 1 });
+        var wrap2 = document.createElement('div');
+        wrap2.innerHTML = withRank;
+        assertEq(wrap2.querySelector('.meta-main').textContent, 'RB12 ' + TL_MIDDOT + ' B6', label + ' with posRank: expected "RB12 · B6" shape (no team)');
+      });
+    });
+
+    // (e) compare card: meta drops team (keeps position + bye), header/name area carries the logo
+    t('cardHTML: a normal teamed player drops team from .compare-card-meta (position + bye only) and carries a .team-logo with the correct sleepercdn src next to the name', function () {
+      var player = { id: 'tl-e1', rank: 3, name: 'Compare Logo Guy', team: 'SEA', position: 'WR', byeWeek: 11, tier: null, adp: null };
+      var card = { player: player, adp: null, posRank: 3, pickNumber: null, marks: { target: false, avoid: false, drafted: false, mine: false }, verdict: { cls: 'verdict-none', text: 'x' } };
+      var html = DC.compare.templates.cardHTML(card);
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      var metaEl = wrap.querySelector('.compare-card-meta');
+      assertEq(metaEl.textContent, player.position + TL_MIDDOT + 'B' + player.byeWeek, 'compare card meta should be POS · Bbye, no team code: ' + metaEl.textContent);
+      var nameEl = wrap.querySelector('.compare-card-name');
+      var logo = nameEl.querySelector('.team-logo');
+      assert(logo, 'expected the compare card name area to carry a .team-logo: ' + nameEl.innerHTML);
+      assertEq(logo.getAttribute('src'), sleeperUrl('SEA'), 'compare card team-logo src should be the sleepercdn team logo URL');
+    });
+
+    t('cardHTML: an FA player carries no .team-logo and keeps "FA" in .compare-card-meta', function () {
+      var player = { id: 'tl-e2', rank: 400, name: 'Compare FA Guy', team: 'FA', position: 'RB', byeWeek: 0, tier: null, adp: null };
+      var card = { player: player, adp: null, posRank: 20, pickNumber: null, marks: { target: false, avoid: false, drafted: false, mine: false }, verdict: { cls: 'verdict-none', text: 'x' } };
+      var html = DC.compare.templates.cardHTML(card);
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      assert(!wrap.querySelector('.team-logo'), 'FA compare card should render no team logo: ' + html);
+      assert(wrap.querySelector('.compare-card-meta').textContent.indexOf('FA') !== -1, 'FA compare card meta should keep "FA": ' + wrap.querySelector('.compare-card-meta').textContent);
+    });
+
+    t('cardHTML: a DST player carries no inline .team-logo (its avatar photo already is the team logo)', function () {
+      var player = { id: 'tl-e3', rank: 110, name: 'Lions D/ST', team: 'DET', position: 'DST', byeWeek: 6, tier: null, adp: null };
+      var card = { player: player, adp: null, posRank: 5, pickNumber: null, marks: { target: false, avoid: false, drafted: false, mine: false }, verdict: { cls: 'verdict-none', text: 'x' } };
+      var html = DC.compare.templates.cardHTML(card);
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      assert(!wrap.querySelector('.team-logo'), 'DST compare card should render no inline team logo: ' + html);
+    });
+
+    // (f) roster tiles: logo present, .tile-meta removed entirely for a teamed player; FA tile keeps .tile-meta and gets no logo
+    t('rosterBoardHTML: a teamed filled tile carries a .team-logo next to .tile-name and renders NO .tile-meta at all', function () {
+      var player = { id: 'tl-f1', rank: 8, name: 'Tile Logo Guy', team: 'DET', position: 'RB', byeWeek: 6, tier: null, target: false, avoid: false, drafted: true, mine: true };
+      var tiles = [{ slot: 'RB', player: player, pickLabel: null }];
+      var html = DC.ui.templates.rosterBoardHTML(tiles);
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      var tile = wrap.querySelector('.roster-tile');
+      var logo = tile.querySelector('.tile-name .team-logo');
+      assert(logo, 'expected .tile-name to carry a .team-logo: ' + tile.innerHTML);
+      assertEq(logo.getAttribute('src'), sleeperUrl('DET'), 'tile team-logo src should be the sleepercdn team logo URL');
+      assert(!tile.querySelector('.tile-meta'), 'a teamed tile should render no .tile-meta at all -- the logo already carries team identity: ' + tile.innerHTML);
+      assert(tile.querySelector('.tile-bye'), 'sanity: .tile-bye should still render on the right side: ' + tile.innerHTML);
+    });
+
+    t('rosterBoardHTML: an FA filled tile carries NO .team-logo and keeps its .tile-meta showing "FA"', function () {
+      var player = { id: 'tl-f2', rank: 400, name: 'Tile FA Guy', team: 'FA', position: 'RB', byeWeek: 0, tier: null, target: false, avoid: false, drafted: true, mine: true };
+      var tiles = [{ slot: 'BENCH', player: player, pickLabel: null }];
+      var html = DC.ui.templates.rosterBoardHTML(tiles);
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      var tile = wrap.querySelector('.roster-tile');
+      assert(!tile.querySelector('.team-logo'), 'FA tile should render no team logo: ' + tile.innerHTML);
+      var meta = tile.querySelector('.tile-meta');
+      assert(meta, 'FA tile should keep its .tile-meta so team info is not lost: ' + tile.innerHTML);
+      assertEq(meta.textContent, 'FA');
+    });
+
+    // (g) inertness: the logo must never be able to steal the swipe/long-press recognizers
+    t('team-logo img: carries the inertness guarantees (pointer-events:none, no native drag, no data-action) so a gesture starting on it is indistinguishable from one on the name text', function () {
+      var view = { id: 'tl-g1', rank: 1, name: 'Inert Logo Guy', team: 'DET', position: 'RB', byeWeek: 6, drafted: false, target: false, avoid: false };
+      var html = DC.ui.templates.availableRowHTML(view, {});
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      var logo = wrap.querySelector('.team-logo');
+      assert(logo, 'expected a .team-logo img: ' + html);
+      assertEq(logo.getAttribute('data-action'), null, 'the logo must carry no data-action -- the swipe/long-press [data-action] exclusion must never match it');
+      assertEq(logo.getAttribute('draggable'), 'false', 'the logo must set draggable="false" to block native image drag (iOS Safari)');
+      assertEq(logo.style.pointerEvents, 'none', 'the logo must be pointer-events:none so it can never itself become the pointerdown target');
+    });
+
+    function buildMountFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function mockTimerQueue() {
+      var original = window.setTimeout;
+      var originalClear = window.clearTimeout;
+      var nextId = 1;
+      var entries = [];
+      window.setTimeout = function (cb) {
+        var id = nextId++;
+        entries.push({ id: id, cb: cb });
+        return id;
+      };
+      window.clearTimeout = function (id) {
+        entries = entries.filter(function (e) { return e.id !== id; });
+      };
+      return {
+        flushOne: function () {
+          var e = entries.shift();
+          if (e) { e.cb(); }
+        },
+        restore: function () {
+          window.setTimeout = original;
+          window.clearTimeout = originalClear;
+        }
+      };
+    }
+
+    function stubCompare() {
+      var real = window.DC.compare;
+      var calls = [];
+      window.DC.compare = { open: function (ids, hooks) { calls.push({ ids: ids, hooks: hooks }); } };
+      return { calls: calls, restore: function () { window.DC.compare = real; } };
+    }
+
+    // real gesture integration: a pointerdown dispatched with the logo AS ev.target must bubble
+    // and arm the long-press-compare recognizer exactly as a pointerdown on .player-name does --
+    // proves the [data-action] exclusion genuinely never matches this element, not just that the
+    // attribute is absent in isolation (the markup-level test above)
+    t('gesture safety: pointerdown targeting .team-logo directly still arms the long-press-compare recognizer, same as .player-name', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var compare = stubCompare();
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var teamedPlayer = DC.data.SEED_PLAYERS.filter(function (p) { return p.team !== 'FA' && p.position !== 'DST'; })[0];
+        assert(teamedPlayer, 'sanity: expected at least one non-FA non-DST seed player');
+        var row = fixture.querySelector('.player-row[data-id="' + teamedPlayer.id + '"]');
+        var logo = row.querySelector('.player-name .team-logo');
+        assert(logo, 'sanity: expected the top row\'s name to carry a .team-logo: ' + row.querySelector('.player-name').innerHTML);
+
+        logo.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0, clientX: 0, clientY: 0 }));
+        timers.flushOne();
+
+        assert(row.classList.contains('is-compared'), 'a pointerdown targeting .team-logo must still arm the compare recognizer, exactly like .player-name');
+      } finally {
+        timers.restore();
+        compare.restore();
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
       }
     });
   })();

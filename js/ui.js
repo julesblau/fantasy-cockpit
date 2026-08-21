@@ -119,8 +119,10 @@
    *   precedent as the old rankBadgeHTML. ctx.signals is read only to decide proj-badge
    *   suppression (see below) — callers that never render signalTagsHTML (drafted/
    *   drafted-search rows) simply pass a ctx without it, so the badge always renders there.
-   * @returns {string} '<span class="meta-main">POSn · TEAM · BN</span>[<span
-   *   class="adp-badge">n</span>][<span class="proj-badge">n</span>]' — text run always wrapped
+   * @returns {string} '<span class="meta-main">POSn · BN</span>[<span
+   *   class="adp-badge">n</span>][<span class="proj-badge">n</span>]' — team is omitted (the
+   *   name-line logo carries it instead, see teamLogoHTML) except for FA, which has no logo and
+   *   so keeps its team text (POSn · FA · BN); text run always wrapped
    *   in .meta-main so it's the only piece that ellipsizes under flex shrink; ADP trailing badge
    *   (bare number, no label) only when adpConsensus resolves; proj badge only when
    *   dkProjForPlayer resolves AND this player isn't already carrying both signal tags (redundant
@@ -134,7 +136,9 @@
     if (posRank) {
       parts.push('<b>' + esc(view.position) + posRank + '</b>');
     }
-    parts.push(esc(view.team));
+    if (view.team === 'FA') {
+      parts.push(esc(view.team)); // no team logo exists for FA, so the text stays or the info is lost
+    }
     var bye = view.byeWeek === 0 ? NDASH_BYE : String(view.byeWeek);
     parts.push('B' + bye);
     var html = '<span class="meta-main">' + parts.join(' ' + MIDDOT + ' ') + '</span>';
@@ -213,6 +217,17 @@
     return '<span class="avatar-tap" data-action="peek" data-id="' + esc(view.id) + '" role="button" aria-label="Show player card">' + avatarHTML(view) + '</span>';
   }
 
+  // inline name-line team logo -- no fa.png on sleepercdn (FA), and DST's avatar photo is
+  // already the team logo (no doubling). pointer-events/draggable are inline, not class-based,
+  // so the gesture-inertness guarantee holds even if styles.css fails to load.
+  function teamLogoHTML(view) {
+    if (!view || view.position === 'DST' || view.team === 'FA') {
+      return '';
+    }
+    var src = 'https://sleepercdn.com/images/team_logos/nfl/' + String(view.team).toLowerCase() + '.png';
+    return '<img class="team-logo" src="' + esc(src) + '" alt="" loading="lazy" draggable="false" style="pointer-events:none;-webkit-user-drag:none" onerror="this.style.display=\'none\'">';
+  }
+
   // shared by all three main-board row templates — the two-line pos-rank badge is gone here
   // (posRank moved to metricsLineHTML's bold leading token); edit.js keeps its own two-line
   // rank-position/rank-overall badge in editRowHTML, untouched.
@@ -254,7 +269,7 @@
           cardRankHTML(view) +
           avatarTapHTML(view) +
           '<div class="player-info">' +
-            '<div class="player-name">' + esc(view.name) + '</div>' +
+            '<div class="player-name"><span class="player-name-text">' + esc(view.name) + '</span>' + teamLogoHTML(view) + '</div>' +
             '<div class="player-meta player-meta-card">' + metricsLineHTML(view, ctx) + signalTagsHTML(view.id, ctx.signals) + '</div>' +
           '</div>' +
           '<button class="' + starClass + '" data-action="toggle-target" data-id="' + esc(view.id) + '">' + starIcon + '</button>' +
@@ -286,7 +301,7 @@
           cardRankHTML(view) +
           avatarTapHTML(view) +
           '<div class="player-info">' +
-            '<div class="player-name">' + esc(view.name) + '</div>' +
+            '<div class="player-name"><span class="player-name-text">' + esc(view.name) + '</span>' + teamLogoHTML(view) + '</div>' +
             '<div class="player-meta player-meta-card">' + metricsLineHTML(view, ctx) + '</div>' +
           '</div>' +
           '<span class="' + pillClass + '">' + pillText + '</span>' +
@@ -319,8 +334,9 @@
           avatarTapHTML(view) +
           '<div class="player-info">' +
             '<div class="player-name">' +
-              '<span style="display:inline-flex;width:16px;height:16px;vertical-align:-3px;color:var(--accent-draft);margin-right:4px">' + icon('check', 16) + '</span>' +
-              esc(view.name) +
+              '<span style="display:inline-flex;flex-shrink:0;width:16px;height:16px;vertical-align:-3px;color:var(--accent-draft);margin-right:4px">' + icon('check', 16) + '</span>' +
+              '<span class="player-name-text">' + esc(view.name) + '</span>' +
+              teamLogoHTML(view) +
             '</div>' +
             '<div class="player-meta player-meta-card">' + metricsLineHTML(view, ctx) + '</div>' +
           '</div>' +
@@ -358,8 +374,10 @@
       }
       var p = tile.player;
       var pickHTML = tile.pickLabel ? '<div class="tile-pick">' + tile.pickLabel + '</div>' : '';
+      // team-only meta is removed entirely once the logo carries it; FA has no logo, so it keeps the meta line
+      var tileMetaHTML = p.team === 'FA' ? '<div class="tile-meta">' + esc(p.team) + '</div>' : '';
       // display-only: every tile is already mine, so un-mine/undraft live in the Drafted row (and Mine's no-league fallback rows)
-      return '<div class="roster-tile" data-slot="' + tile.slot + '"><div class="tile-slot">' + label + '</div><div class="tile-body"><div class="tile-name">' + esc(p.name) + '</div><div class="tile-meta">' + esc(p.team) + '</div></div><div class="tile-right">' + pickHTML + '<div class="tile-bye">BYE ' + p.byeWeek + '</div></div></div>';
+      return '<div class="roster-tile" data-slot="' + tile.slot + '"><div class="tile-slot">' + label + '</div><div class="tile-body"><div class="tile-name"><span class="player-name-text">' + esc(p.name) + '</span>' + teamLogoHTML(p) + '</div>' + tileMetaHTML + '</div><div class="tile-right">' + pickHTML + '<div class="tile-bye">BYE ' + p.byeWeek + '</div></div></div>';
     }).join('');
   }
 
