@@ -42,7 +42,7 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
-**Reminder for this release:** this release bumps the service-worker cache to v27, removes the CLIFF signal tag, moves tier colors to 12 distinct hues (cycling past tier 12), and refreshes ADP from Flock's 3-day PPR export (2026-08-21). Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+**Reminder for this release:** this release bumps the service-worker cache to v28, makes search span the whole board regardless of active filters, adds hold-to-stick position multi-select on the filter chips, and fixes ESPN ADP accuracy (both the bake script and in-app Refresh ADP now read ESPN's PPR draft rank instead of a cross-format crowd average; any pre-fix in-app override stored on a device is discarded on first load). Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
 
 ## Install on iPhone
 
@@ -57,7 +57,7 @@ Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it work
 
 ## Import your real rankings
 
-The board ships pre-loaded with the user's real rankings: 424 players -- 356 skill players from the Flock export plus 36 K and 32 DST slotted in by weighted ADP -- baked by `powershell -File scripts\build-board.ps1` from `scripts/board-source/*.csv` and `scripts/board-manual.json`. Tier letters (S, A, B, ...) come from the user's own tier screenshots, transcribed into `board-manual.json` and mapped down the alphabet per position -- S is Tier 1, A is Tier 2, and so on; K and DST carry no tiers of their own. Real 2026 bye weeks are fetched live from ESPN at bake time, and the bake fails closed -- it emits nothing rather than a board with a guessed or missing bye.
+The board ships pre-loaded with the user's real rankings: 421 players -- 353 skill players from the Flock export plus 36 K and 32 DST slotted in by weighted ADP -- baked by `powershell -File scripts\build-board.ps1` from `scripts/board-source/*.csv` and `scripts/board-manual.json`. Tier letters (S, A, B, ...) come from the user's own tier screenshots, transcribed into `board-manual.json` and mapped down the alphabet per position -- S is Tier 1, A is Tier 2, and so on; K and DST carry no tiers of their own. Real 2026 bye weeks are fetched live from ESPN at bake time, and the bake fails closed -- it emits nothing rather than a board with a guessed or missing bye.
 
 The re-bake ritual: new tier or rankings screenshots come in, get transcribed into `board-manual.json`, then `build-board.ps1` runs and the app redeploys. Phones auto-adopt the freshly baked board on their next open, carrying marks over by player identity -- unless the board's already been manually edited in-app (a drag-reorder, a rank-jump, or an import), in which case edits win and that phone's re-bake is skipped. Adoption itself always leaves a pristine board behind; the edit-lock comes back on only after your next real edit or import.
 
@@ -114,6 +114,14 @@ Dragging a player across a tier boundary, or rank-jumping him via the rank-jump 
 
 Inside Edit Rankings, tap a player's rank to open the rank-jump card; it always includes a Tier -/+ stepper. The stepper is bounded by the nearest same-position tiered players above and below in board order -- untiered rows and other positions in between don't constrain it -- so a tier can never be stepped out of order relative to its same-position neighbors; stepping below the floor clears the tier to none when no same-position player above it is tiered at all.
 
+## Filters and search
+
+Position chips (All/QB/RB/WR/TE/FLEX/DST/K) above the board scope it to one position; tapping the active chip returns to All. FLEX shows the combined RB/WR/TE pool.
+
+**Hold** a single-position chip (QB/RB/WR/TE/DST/K, about half a second) to make it *stick* -- stuck chips keep their highlight and gain a ring and corner dot. Hold more chips to add their positions to the view, or hold a stuck chip again to drop it; dropping the last one returns to All. Holding from a solo or FLEX view adds to what's already showing rather than replacing it. A plain tap on any chip always exits sticky mode: tap a position to solo it, or All to show everyone. Holding All or FLEX does the same as tapping them.
+
+**Search always searches everyone.** Typing in the search bar spans the entire board no matter what's active -- position filter, stuck positions, even the Queue view -- and includes drafted players, shown as compact drafted rows. Clearing the search puts you right back on the view you were using.
+
 ## Track your own roster
 
 While drafting, mark which picks are yours as you go.
@@ -137,7 +145,7 @@ Swipe right on an available player's row -- main board or search results -- to a
 
 The **Queue** chip sits alongside Targets/Avoid/Drafted/Mine, with a count badge showing how many players are queued. Tapping it opens the queue view: full board rows in queue order, with the same actions as the main board -- DRAFT, star, x, tapping a photo to peek his card, long-press to add him to compare. Swipe right on a row there to unqueue him.
 
-Each queued row gets a drag handle for reordering. Dragging only changes your personal queue order -- it never touches board rank, tiers, or anyone else's position. The handle hides while a search is active or a position filter narrows the list to less than everyone, since dragging only makes sense over the whole queue at once; switch back to All with no search to reorder again.
+Each queued row gets a drag handle for reordering. Dragging only changes your personal queue order -- it never touches board rank, tiers, or anyone else's position. The handle hides while a search is active or a position filter (single or stuck) narrows the list to less than everyone, since dragging only makes sense over the whole queue at once; switch back to All with no search to reorder again.
 
 Drafting a queued player drops him out of the queue view, but he keeps his slot in the underlying order -- undoing the draft brings him right back where he was. Queuing is orthogonal to Targets/Avoid: a player can be targeted, avoided, and queued all at once, independently. Your queue rides along in Export Backup, gets wiped by Clear All Data like everything else in that reset, and carries across a re-import or board adoption by player identity, the same way marks do.
 
