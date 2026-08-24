@@ -25,7 +25,7 @@
 
   var CURRENT_SCHEMA_VERSION = 9;
   var STORAGE_KEY = 'draft-cockpit/state';
-  var ADP_OVERRIDE_KEY = 'draft-cockpit/adp-override';
+  var ADP_OVERRIDE_KEY = 'draft-cockpit/adp-override-v2';
   var VALID_POSITIONS = { QB: true, RB: true, WR: true, TE: true, DST: true, K: true };
   var VALID_STATUSES = { AVAILABLE: true, TARGETS: true, AVOID: true, DRAFTED: true, MINE: true, QUEUE: true };
   var ROSTER_KEYS = ['QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K', 'BENCH'];
@@ -1101,6 +1101,8 @@
 
   /** @returns {{updatedAt:string, players:Object}|null} parses ADP_OVERRIDE_KEY; any parse/shape failure clears the key and returns null */
   function readAdpOverride() {
+    // pre-v2 overrides carry the bad ESPN field (ownership.averageDraftPosition) -- purge unconditionally
+    try { localStorage.removeItem('draft-cockpit/adp-override'); } catch (e) { /* ignore */ }
     var raw;
     try {
       raw = localStorage.getItem(ADP_OVERRIDE_KEY);

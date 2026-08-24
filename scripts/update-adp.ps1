@@ -80,7 +80,8 @@ function Build-Key($name, $team, $pos) {
     return ((Normalize-AdpName $name) + "|" + $pos)
 }
 
-# parses one source's rows into key -> rounded-double table; fails closed on within-source dup keys (gate 3)
+# parses one source's rows into key -> rounded-double table (gate 3); an in-source dup key means two
+# distinct real players collided post-normalization (no disambiguating id in the feed) -- dropped, not fatal
 function Build-SourceTable($rows, $sourceName, $keyFn) {
     $table = @{}
     $dupKeys = New-Object System.Collections.ArrayList
@@ -105,11 +106,9 @@ function Build-SourceTable($rows, $sourceName, $keyFn) {
     if ($usable -lt $minUsablePerSource) {
         Fail("$sourceName parsed only $usable usable players (minimum $minUsablePerSource required)")
     }
-    if ($dupKeys.Count -gt 0) {
-        foreach ($k in $dupKeys) {
-            Write-Host "ERROR: duplicate join key within $sourceName : '$k'"
-        }
-        exit 1
+    foreach ($k in $dupKeys) {
+        Write-Host "WARN: duplicate join key within $sourceName : '$k' -- dropped (unresolvable)"
+        $table.Remove($k)
     }
     return $table
 }
@@ -136,8 +135,9 @@ $espnKeyFn = {
         return $null
     }
     $pos = $espnPositionMap[[int]$pl.defaultPositionId]
-    $adp = $pl.ownership.averageDraftPosition
-    if (-not $adp -or [double]$adp -le 0) {
+    # ownership.averageDraftPosition blends all ESPN league formats (DST/K land rounds too early); PPR-scoped draft rank tracks the reference far more closely
+    $adp = $pl.draftRanksByRankType.PPR.rank
+    if ($null -eq $adp -or [double]$adp -le 0) {
         return $null
     }
     $team = $null

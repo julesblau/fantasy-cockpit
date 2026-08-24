@@ -67,7 +67,8 @@
       return null;
     }
     var pos = ESPN_POSITION_MAP[pl.defaultPositionId];
-    var adp = pl.ownership && pl.ownership.averageDraftPosition;
+    // ownership.averageDraftPosition blends all ESPN league formats (DST/K land rounds too early); PPR-scoped draft rank tracks the reference far more closely
+    var adp = pl.draftRanksByRankType && pl.draftRanksByRankType.PPR && pl.draftRanksByRankType.PPR.rank;
     if (typeof adp !== 'number' || !isFinite(adp) || adp <= 0) {
       return null;
     }

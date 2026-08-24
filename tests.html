@@ -35,7 +35,7 @@
   <!-- same rationale as the state-key snapshot above: a test visit must never corrupt a real
        in-app ADP refresh override. Literal must match ADP_OVERRIDE_KEY in js/state.js. -->
   <script>
-    window.__DC_REAL_ADP_OVERRIDE_SNAPSHOT__ = localStorage.getItem('draft-cockpit/adp-override');
+    window.__DC_REAL_ADP_OVERRIDE_SNAPSHOT__ = localStorage.getItem('draft-cockpit/adp-override-v2');
   </script>
 
   <!-- app scripts under test (later tasks append more script tags here, before the harness) -->
@@ -11323,16 +11323,19 @@
       opts = opts || {};
       var players = [];
       for (var i = 0; i < n; i++) {
-        players.push({ player: { fullName: 'Esp Fixture' + i, defaultPositionId: 2, ownership: { averageDraftPosition: 6 + i * 0.25 } } });
+        players.push({ player: { fullName: 'Esp Fixture' + i, defaultPositionId: 2, draftRanksByRankType: { PPR: { rank: 6 + i * 0.25 } } } });
       }
       if (opts.includeDst) {
-        players.push({ player: { fullName: 'Some Team DST', defaultPositionId: 16, proTeamId: 2, ownership: { averageDraftPosition: 140 } } }); // proTeamId 2 -> BUF
+        players.push({ player: { fullName: 'Some Team DST', defaultPositionId: 16, proTeamId: 2, draftRanksByRankType: { PPR: { rank: 140 } } } }); // proTeamId 2 -> BUF
       }
       if (opts.includeSkip) {
-        players.push({ player: { fullName: 'Skip Me', defaultPositionId: 99, ownership: { averageDraftPosition: 3 } } }); // unmapped positionId
+        players.push({ player: { fullName: 'Skip Me', defaultPositionId: 99, draftRanksByRankType: { PPR: { rank: 3 } } } }); // unmapped positionId
       }
       if (opts.includeFixture) {
-        players.push({ player: { fullName: 'Zeke Testplayer', defaultPositionId: 2, ownership: { averageDraftPosition: 15.5 } } });
+        players.push({ player: { fullName: 'Zeke Testplayer', defaultPositionId: 2, draftRanksByRankType: { PPR: { rank: 15.5 } } } });
+      }
+      if (opts.includeLegacyOnly) {
+        players.push({ player: { fullName: 'Legacy Only Fixture', defaultPositionId: 2, ownership: { averageDraftPosition: 42 } } }); // never-again: retired field alone must not parse
       }
       return { players: players };
     }
@@ -11423,6 +11426,35 @@
       });
     });
 
+    // 1b) PPR.rank is the espn field read; the retired ownership.averageDraftPosition field alone
+    // must never surface a value again (this is the same bug the app shipped with before the fix)
+    chain = chain.then(function () {
+      var sleeper = buildSleeperRows(155);
+      var espn = buildEspnPayload(155, { includeLegacyOnly: true });
+      var unstub = stubFetch(sleeper, espn);
+
+      return DC.adpRefresh.run().then(function () {
+        t('adp-refresh: parseEspnRow reads draftRanksByRankType.PPR.rank as the espn ADP value', function () {
+          var parsed = JSON.parse(localStorage.getItem(OVERRIDE_KEY));
+          var entry = parsed.players['espfixture0|rb'];
+          assert(entry, 'PPR.rank fixture row should be present');
+          assertEq(entry.espn, 6, 'espn value should come from draftRanksByRankType.PPR.rank, not ownership');
+        });
+        t('adp-refresh: never-again regression -- a row carrying ONLY ownership.averageDraftPosition (no draftRanksByRankType) is skipped, never surfaces as an espn value', function () {
+          var parsed = JSON.parse(localStorage.getItem(OVERRIDE_KEY));
+          assert(!parsed.players['legacyonlyfixture|rb'], 'ownership-only row must not produce an espn entry');
+        });
+      }, function (err) {
+        t('adp-refresh PPR.rank test: run() should not have rejected', function () {
+          assert(false, 'unexpected rejection: ' + (err && err.message));
+        });
+      }).then(function () {
+        unstub();
+        localStorage.removeItem(OVERRIDE_KEY);
+        DC.state.reloadAdpOverride();
+      });
+    });
+
     // 2) gate failure -----------------------------------------------------------------------------
     chain = chain.then(function () {
       var okSleeper = buildSleeperRows(155);
@@ -11484,6 +11516,24 @@
           localStorage.removeItem(OVERRIDE_KEY);
           DC.state.reloadAdpOverride();
           window.DC.adpData = real;
+        }
+      });
+    });
+
+    // 3c) a pre-v2 override (the retired literal key, carrying the bad ESPN field) must never
+    // become active, and must be purged from localStorage once encountered
+    chain = chain.then(function () {
+      t('adp-refresh: retired v1 override key is invalidated on load -- never becomes the active override, and is removed from localStorage', function () {
+        var V1_KEY = 'draft-cockpit/adp-override';
+        try {
+          localStorage.setItem(V1_KEY, JSON.stringify({ updatedAt: '2020-01-01', players: { 'somefixture|rb': { espn: 5, sleeper: 5 } } }));
+          var result = DC.state.reloadAdpOverride();
+          assertEq(result, null, 'a pre-v2 override must never become the active override');
+          assertEq(localStorage.getItem(V1_KEY), null, 'the retired v1 key must be removed once invalidated');
+        } finally {
+          localStorage.removeItem(V1_KEY);
+          localStorage.removeItem(OVERRIDE_KEY);
+          DC.state.reloadAdpOverride();
         }
       });
     });
@@ -13571,9 +13621,9 @@
       // same rationale, for the ADP override key (see the snapshot script at the top of this file)
       var __realAdpOverrideSnapshot = window.__DC_REAL_ADP_OVERRIDE_SNAPSHOT__;
       if (__realAdpOverrideSnapshot === null || typeof __realAdpOverrideSnapshot === 'undefined') {
-        localStorage.removeItem('draft-cockpit/adp-override');
+        localStorage.removeItem('draft-cockpit/adp-override-v2');
       } else {
-        localStorage.setItem('draft-cockpit/adp-override', __realAdpOverrideSnapshot);
+        localStorage.setItem('draft-cockpit/adp-override-v2', __realAdpOverrideSnapshot);
       }
     })();
   </script>
