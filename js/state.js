@@ -141,7 +141,7 @@
       players: players,
       marks: marks,
       undoStack: [],
-      filters: { position: 'ALL', status: 'AVAILABLE' },
+      filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: [] },
       searchText: '',
       manuallyEdited: false,
       league: null,
@@ -356,6 +356,22 @@
     });
   }
 
+  /** @param {*} v @returns {string[]} healed subset of the six real positions, dedup preserving first occurrence; non-array or garbage entries -> dropped, non-array v -> [] */
+  function healStickyPositions(v) {
+    if (!Array.isArray(v)) {
+      return [];
+    }
+    var seen = {};
+    var out = [];
+    v.forEach(function (p) {
+      if (typeof p === 'string' && VALID_POSITIONS[p] && !seen[p]) {
+        seen[p] = true;
+        out.push(p);
+      }
+    });
+    return out;
+  }
+
   // ---- league helpers (pure) --------------------------------------------------------------
 
   /** loose coercion for load-time healing: accepts an exact int, an integral float, or a digit string */
@@ -556,7 +572,36 @@
         return Object.assign({}, state, { searchText: action.text });
 
       case 'SET_POSITION_FILTER':
-        return Object.assign({}, state, { filters: Object.assign({}, state.filters, { position: action.position }) });
+        return Object.assign({}, state, { filters: Object.assign({}, state.filters, { position: action.position, stickyPositions: [] }) });
+
+      case 'TOGGLE_STICKY_POSITION': {
+        var heldPosition = action.position;
+        if (!VALID_POSITIONS[heldPosition]) {
+          return state; // ALL/FLEX/garbage never enter the sticky set
+        }
+        var curSticky = state.filters.stickyPositions || [];
+        var nextSticky;
+        if (curSticky.length === 0) {
+          // seed from the current single filter, then union in the held position
+          var seed;
+          if (state.filters.position === 'FLEX') {
+            seed = ['RB', 'WR', 'TE'];
+          } else if (VALID_POSITIONS[state.filters.position]) {
+            seed = [state.filters.position];
+          } else {
+            seed = []; // ALL
+          }
+          nextSticky = seed.indexOf(heldPosition) === -1 ? seed.concat([heldPosition]) : seed.slice();
+        } else {
+          var heldIdx = curSticky.indexOf(heldPosition);
+          nextSticky = heldIdx === -1
+            ? curSticky.concat([heldPosition])
+            : curSticky.slice(0, heldIdx).concat(curSticky.slice(heldIdx + 1));
+        }
+        // position filtering derives solely from the (non-empty) set while sticky mode is active,
+        // and an emptied-out set means mode-off -- either way filters.position lands on 'ALL'
+        return Object.assign({}, state, { filters: Object.assign({}, state.filters, { position: 'ALL', stickyPositions: nextSticky }) });
+      }
 
       case 'SET_STATUS_FILTER': {
         var nextStatus = action.status === state.filters.status ? 'AVAILABLE' : action.status;
@@ -590,7 +635,7 @@
           players: state.players,
           marks: clearedMarks,
           undoStack: [],
-          filters: { position: 'ALL', status: 'AVAILABLE' },
+          filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: [] },
           searchText: '',
           manuallyEdited: state.manuallyEdited,
           league: null,
@@ -621,7 +666,7 @@
           players: newPlayers,
           marks: newMarks,
           undoStack: newUndoStack,
-          filters: { position: 'ALL', status: 'AVAILABLE' },
+          filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: [] },
           searchText: '',
           // an imported board is user-authored -- same protected class as a manual reorder, so it
           // must never be silently replaced by adoption: stamp the current fingerprint (a missing
@@ -699,15 +744,28 @@
    * @returns {Array<Player & Marks>}
    */
   function visiblePlayers(state) {
+    // non-empty search mutes the position filter, the sticky set, AND queue scoping entirely --
+    // whole-board search in board order, drafted players included (rendered as drafted-search rows)
+    if (state.searchText.trim() !== '') {
+      return state.players.filter(function (p) {
+        return matchesSearch(p, state.searchText);
+      }).map(function (p) {
+        return Object.assign({}, p, state.marks[p.id]);
+      });
+    }
+
+    var sticky = state.filters.stickyPositions || [];
     var positionFiltered = state.players.filter(function (p) {
+      if (sticky.length > 0) {
+        return sticky.indexOf(p.position) !== -1;
+      }
       return state.filters.position === 'ALL' ||
         (state.filters.position === 'FLEX' ? !!FLEX_ELIGIBLE[p.position] : p.position === state.filters.position);
     });
 
-    var searchActive = state.searchText.trim() !== '';
     var statusFiltered;
     if (state.filters.status === 'QUEUE') {
-      // queue order, not board order: derive from queueIds, position filter and search compose as membership checks on top
+      // queue order, not board order: derive from queueIds, position/sticky filter composes as a membership check on top
       var posFilteredIds = {};
       var posFilteredById = {};
       positionFiltered.forEach(function (p) {
@@ -721,14 +779,7 @@
           return false;
         }
         var mark = state.marks[p.id];
-        if (!mark || mark.drafted) {
-          return false;
-        }
-        return !searchActive || matchesSearch(p, state.searchText);
-      });
-    } else if (searchActive) {
-      statusFiltered = positionFiltered.filter(function (p) {
-        return matchesSearch(p, state.searchText);
+        return !!mark && !mark.drafted;
       });
     } else {
       statusFiltered = positionFiltered.filter(function (p) {
@@ -1297,7 +1348,7 @@
       players: normalizeTiers(healPlayers(state.players)),
       marks: marks,
       undoStack: undoStack,
-      filters: state.filters,
+      filters: Object.assign({}, state.filters, { stickyPositions: healStickyPositions(state.filters && state.filters.stickyPositions) }),
       searchText: state.searchText,
       manuallyEdited: (typeof state.manuallyEdited === 'boolean' ? state.manuallyEdited : false),
       league: healLeague(state.league),

@@ -592,7 +592,7 @@
         assertEq(p, { id: seed.id, rank: seed.rank, name: seed.name, team: seed.team, position: seed.position, byeWeek: seed.byeWeek, tier: seed.tier, adp: seed.adp }, 'seed player ' + i);
       });
       assertEq(s.undoStack, []);
-      assertEq(s.filters, { position: 'ALL', status: 'AVAILABLE' });
+      assertEq(s.filters, { position: 'ALL', status: 'AVAILABLE', stickyPositions: [] });
       assertEq(s.searchText, '');
       assertEq(s.league, null);
       DC.data.SEED_PLAYERS.forEach(function (p) {
@@ -911,7 +911,7 @@
         assertEq(next.marks[id], { drafted: false, target: false, avoid: false, mine: false }, 'mark for ' + id + ' reset all-false');
       });
       assertEq(next.undoStack, []);
-      assertEq(next.filters, { position: 'ALL', status: 'AVAILABLE' });
+      assertEq(next.filters, { position: 'ALL', status: 'AVAILABLE', stickyPositions: [] });
       assertEq(next.searchText, '');
       assertEq(next.league, null);
       assertEq(next.manuallyEdited, true, 'manuallyEdited preserved untouched (the reorder above had set it true)');
@@ -941,7 +941,7 @@
       assertEq(next.marks.c, { drafted: true, target: false, avoid: false, mine: false }, 'surviving mark for c preserved as-is (still drafted; mine:false stamped by DRAFT_PLAYER)');
       assertEq(next.marks.z, { drafted: false, target: false, avoid: false, mine: false }, 'new player z gets all-false marks, including mine:false');
       assertEq(next.undoStack.map(function (e) { return e.playerId; }), ['c'], 'a dropped (gone), c kept (still exists), order preserved');
-      assertEq(next.filters, { position: 'ALL', status: 'AVAILABLE' });
+      assertEq(next.filters, { position: 'ALL', status: 'AVAILABLE', stickyPositions: [] });
       assertEq(next.searchText, '');
     });
 
@@ -1513,7 +1513,7 @@
       assertEq(loaded.manuallyEdited, false);
       assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v1 fixture players (x1/x2) never survive');
       assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption');
-      assertEq(loaded.filters, payload.filters, 'filters still carry through adoption from the original v1 payload');
+      assertEq(loaded.filters, Object.assign({}, payload.filters, { stickyPositions: [] }), 'filters still carry through adoption from the original v1 payload, healed with an empty stickyPositions');
       assertEq(loaded.searchText, payload.searchText, 'searchText still carries through adoption');
       assertEq(loaded.league, null, 'v1 payload has no league; carried through as null and healed the same as always');
       localStorage.removeItem(DC.state.STORAGE_KEY);
@@ -1989,7 +1989,7 @@
       assertEq(loaded.schemaVersion, 9);
       assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v2 fixture players (y1/y2) never survive');
       assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption');
-      assertEq(loaded.filters, payload.filters);
+      assertEq(loaded.filters, Object.assign({}, payload.filters, { stickyPositions: [] }));
       assertEq(loaded.searchText, payload.searchText);
       assertEq(loaded.manuallyEdited, false, 'v8 force-adopt has no manuallyEdited guard -- forces false regardless of the old true flag');
       assertEq(loaded.league, null);
@@ -6464,7 +6464,7 @@
       assertEq(loaded.schemaVersion, 9);
       assertEq(loaded.players, DC.state.createSeedState().players, 'v8 force-adopt replaces the board wholesale; the v3 fixture players (w1/w2) never survive');
       assertEq(loaded.undoStack, [], 'old-id pick references are unsafe, cleared on adoption');
-      assertEq(loaded.filters, payload.filters);
+      assertEq(loaded.filters, Object.assign({}, payload.filters, { stickyPositions: [] }));
       assertEq(loaded.searchText, payload.searchText);
       assertEq(loaded.manuallyEdited, false, 'v8 force-adopt has no manuallyEdited guard -- forces false regardless of the old true flag');
       assertEq(loaded.league, null);
@@ -11138,7 +11138,7 @@
         assertEq(loaded.marks['stub-beta'], { drafted: false, target: false, avoid: false, mine: false }, 'no old match -> default all-false marks');
         assert(!Object.prototype.hasOwnProperty.call(loaded.marks, 'old-gone'), 'dropped player\'s mark must not survive under its old id');
         assertEq(loaded.undoStack, [], 'old-id pick references are unsafe');
-        assertEq(loaded.filters, { position: 'RB', status: 'TARGETS' }, 'filters carried from old state');
+        assertEq(loaded.filters, { position: 'RB', status: 'TARGETS', stickyPositions: [] }, 'filters carried from old state, healed with an empty stickyPositions');
         assertEq(loaded.searchText, 'zzz', 'searchText carried from old state');
         assertEq(loaded.league, payload.league, 'league carried from old state');
         assertEq(loaded.manuallyEdited, false, 'adoption yields a pristine seed regardless of the old flag');
@@ -12958,6 +12958,540 @@
         compare.restore();
         document.body.removeChild(fixture);
         localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+  })();
+  </script>
+
+  <!-- Feature: positionless search + hold-to-stick position multi-select -- reducer tests -->
+  <script>
+  (function () {
+    'use strict';
+    section('state');
+
+    function stickyBaseState(overrides) {
+      var base = {
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+        players: [],
+        marks: {},
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: [] },
+        searchText: '',
+        manuallyEdited: false,
+        league: null,
+        seedFingerprint: 'fixture',
+        queueIds: []
+      };
+      return Object.assign({}, base, overrides || {});
+    }
+
+    t('TOGGLE_STICKY_POSITION: seeds from ALL -- holding WR while the filter is ALL yields sticky {WR}, position ALL', function () {
+      var state = stickyBaseState({ filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: [] } });
+      var next = DC.state.reduce(state, { type: 'TOGGLE_STICKY_POSITION', position: 'WR' });
+      assertEq(next.filters.stickyPositions, ['WR']);
+      assertEq(next.filters.position, 'ALL');
+    });
+
+    t('TOGGLE_STICKY_POSITION: seeds from a solo real position -- holding a DIFFERENT position unions it onto the seed', function () {
+      var state = stickyBaseState({ filters: { position: 'RB', status: 'AVAILABLE', stickyPositions: [] } });
+      var next = DC.state.reduce(state, { type: 'TOGGLE_STICKY_POSITION', position: 'WR' });
+      assertEq(next.filters.stickyPositions, ['RB', 'WR']);
+      assertEq(next.filters.position, 'ALL');
+    });
+
+    t('TOGGLE_STICKY_POSITION: holding the chip already soloed unions to a one-element sticky set (view unchanged, mode now sticky)', function () {
+      var state = stickyBaseState({ filters: { position: 'WR', status: 'AVAILABLE', stickyPositions: [] } });
+      var next = DC.state.reduce(state, { type: 'TOGGLE_STICKY_POSITION', position: 'WR' });
+      assertEq(next.filters.stickyPositions, ['WR']);
+      assertEq(next.filters.position, 'ALL');
+    });
+
+    t('TOGGLE_STICKY_POSITION: seeds from FLEX (RB/WR/TE) -- holding a position outside FLEX unions onto the seed', function () {
+      var state = stickyBaseState({ filters: { position: 'FLEX', status: 'AVAILABLE', stickyPositions: [] } });
+      var next = DC.state.reduce(state, { type: 'TOGGLE_STICKY_POSITION', position: 'DST' });
+      assertEq(next.filters.stickyPositions, ['RB', 'WR', 'TE', 'DST']);
+      assertEq(next.filters.position, 'ALL');
+    });
+
+    t('TOGGLE_STICKY_POSITION: toggles a held position OUT of an existing sticky set, leaving the rest', function () {
+      var state = stickyBaseState({ filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: ['RB', 'WR'] } });
+      var next = DC.state.reduce(state, { type: 'TOGGLE_STICKY_POSITION', position: 'RB' });
+      assertEq(next.filters.stickyPositions, ['WR']);
+      assertEq(next.filters.position, 'ALL');
+    });
+
+    t('TOGGLE_STICKY_POSITION: toggling out the last member empties the set and turns sticky mode off (position ALL)', function () {
+      var state = stickyBaseState({ filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: ['WR'] } });
+      var next = DC.state.reduce(state, { type: 'TOGGLE_STICKY_POSITION', position: 'WR' });
+      assertEq(next.filters.stickyPositions, []);
+      assertEq(next.filters.position, 'ALL');
+    });
+
+    [['ALL', 'ALL'], ['FLEX', 'FLEX'], ['zzz (unknown string)', 'zzz'], ['undefined', undefined], ['null', null], ['123 (number)', 123]].forEach(function (pair) {
+      t('TOGGLE_STICKY_POSITION: ' + pair[0] + ' is not a real position -- state unchanged (same reference)', function () {
+        var state = stickyBaseState({ filters: { position: 'RB', status: 'AVAILABLE', stickyPositions: [] } });
+        var next = DC.state.reduce(state, { type: 'TOGGLE_STICKY_POSITION', position: pair[1] });
+        assert(next === state, 'expected same reference for non-real-position ' + pair[0]);
+      });
+    });
+
+    t('SET_POSITION_FILTER clears an existing sticky set to []', function () {
+      var state = stickyBaseState({ filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: ['RB', 'WR'] } });
+      var next = DC.state.reduce(state, { type: 'SET_POSITION_FILTER', position: 'TE' });
+      assertEq(next.filters.stickyPositions, []);
+      assertEq(next.filters.position, 'TE');
+    });
+  })();
+  </script>
+
+  <!-- Feature: sticky position -- load-time healing of filters.stickyPositions -->
+  <script>
+  (function () {
+    'use strict';
+    section('persistence');
+
+    function stickyHealPlayers() {
+      return [
+        { id: 'sp1', rank: 1, name: 'Sticky One', team: 'KC', position: 'QB', byeWeek: 9, tier: null, adp: null }
+      ];
+    }
+
+    t('load(): a stored state missing filters.stickyPositions entirely heals to []', function () {
+      var payload = {
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
+        players: stickyHealPlayers(),
+        marks: { sp1: { drafted: false, target: false, avoid: false, mine: false } },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE' }, // stickyPositions intentionally absent (pre-feature shape)
+        searchText: '',
+        manuallyEdited: true,
+        league: null
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.filters.stickyPositions, [], 'missing field heals to []');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): a non-array stickyPositions (a bare string) heals to []', function () {
+      var payload = {
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
+        players: stickyHealPlayers(),
+        marks: { sp1: { drafted: false, target: false, avoid: false, mine: false } },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: 'RB' },
+        searchText: '',
+        manuallyEdited: true,
+        league: null
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.filters.stickyPositions, [], 'non-array heals to []');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+
+    t('load(): stickyPositions with invalid entries mixed in (numbers, ALL, FLEX, an unknown string, a duplicate) heals to just the valid real positions, deduped, first-occurrence order', function () {
+      var payload = {
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+        seedFingerprint: DC.state.createSeedState().seedFingerprint,
+        players: stickyHealPlayers(),
+        marks: { sp1: { drafted: false, target: false, avoid: false, mine: false } },
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: ['RB', 42, 'ALL', 'FLEX', 'zzz', 'WR', 'RB', null] },
+        searchText: '',
+        manuallyEdited: true,
+        league: null
+      };
+      localStorage.setItem(DC.state.STORAGE_KEY, JSON.stringify(payload));
+      var loaded = DC.state.load();
+      assertEq(loaded.filters.stickyPositions, ['RB', 'WR'], 'garbage/invalid entries dropped, duplicate RB collapsed to its first occurrence');
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    });
+  })();
+  </script>
+
+  <!-- Feature: positionless search + sticky position -- visiblePlayers selector tests -->
+  <script>
+  (function () {
+    'use strict';
+    section('selectors');
+
+    function stickyPlayers() {
+      return [
+        { id: 'sv1', rank: 1, name: 'Aaron Ace', team: 'KC', position: 'QB', byeWeek: 9 },
+        { id: 'sv2', rank: 2, name: 'Bobby Back', team: 'DAL', position: 'RB', byeWeek: 7 },
+        { id: 'sv3', rank: 3, name: 'Cody Catch', team: 'MIA', position: 'WR', byeWeek: 10 },
+        { id: 'sv4', rank: 4, name: 'Dave Deep', team: 'KC', position: 'TE', byeWeek: 9 },
+        { id: 'sv5', rank: 5, name: 'Erik End', team: 'SEA', position: 'RB', byeWeek: 13 }
+      ];
+    }
+
+    function stickyMarks(players, overrides) {
+      var marks = {};
+      players.forEach(function (p) {
+        marks[p.id] = { drafted: false, target: false, avoid: false, mine: false };
+      });
+      return Object.assign(marks, overrides || {});
+    }
+
+    function stickyState(overrides) {
+      var players = stickyPlayers();
+      var base = {
+        schemaVersion: DC.state.CURRENT_SCHEMA_VERSION,
+        players: players,
+        marks: stickyMarks(players),
+        undoStack: [],
+        filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: [] },
+        searchText: '',
+        manuallyEdited: false,
+        league: null,
+        seedFingerprint: 'fixture',
+        queueIds: []
+      };
+      return Object.assign({}, base, overrides || {});
+    }
+
+    t('visiblePlayers: a non-empty sticky set filters to exactly that position union, in board order', function () {
+      var state = stickyState({ filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: ['RB', 'WR'] } });
+      var ids = DC.state.visiblePlayers(state).map(function (p) { return p.id; });
+      assertEq(ids, ['sv2', 'sv3', 'sv5'], 'RB+WR players in board order');
+    });
+
+    t('visiblePlayers: QUEUE status composes with the sticky set as a membership check, preserving queue order', function () {
+      var state = stickyState({
+        filters: { position: 'ALL', status: 'QUEUE', stickyPositions: ['RB'] },
+        queueIds: ['sv3', 'sv5', 'sv2']
+      });
+      var ids = DC.state.visiblePlayers(state).map(function (p) { return p.id; });
+      assertEq(ids, ['sv5', 'sv2'], 'sv3 (WR) excluded by the RB sticky set; sv5/sv2 stay in queue order');
+    });
+
+    t('visiblePlayers: an active search ignores the single position filter entirely', function () {
+      var state = stickyState({
+        filters: { position: 'RB', status: 'AVAILABLE', stickyPositions: [] },
+        searchText: 'cody'
+      });
+      var ids = DC.state.visiblePlayers(state).map(function (p) { return p.id; });
+      assertEq(ids, ['sv3'], 'Cody Catch (WR) is found even though the position filter is RB');
+    });
+
+    t('visiblePlayers: an active search ignores a non-empty sticky set entirely', function () {
+      var state = stickyState({
+        filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: ['RB'] },
+        searchText: 'cody'
+      });
+      var ids = DC.state.visiblePlayers(state).map(function (p) { return p.id; });
+      assertEq(ids, ['sv3'], 'Cody Catch (WR) is found even though the sticky set is {RB}');
+    });
+
+    t('visiblePlayers: an active search ignores Queue scoping -- a match outside the queue is still returned', function () {
+      var state = stickyState({
+        filters: { position: 'ALL', status: 'QUEUE', stickyPositions: [] },
+        queueIds: ['sv2'],
+        searchText: 'cody'
+      });
+      var ids = DC.state.visiblePlayers(state).map(function (p) { return p.id; });
+      assertEq(ids, ['sv3'], 'Cody Catch is not in the queue at all, but a live search still finds him');
+    });
+
+    t('visiblePlayers: an active search includes drafted players', function () {
+      var players = stickyPlayers();
+      var state = stickyState({
+        marks: stickyMarks(players, { sv3: { drafted: true, target: false, avoid: false, mine: false } }),
+        searchText: 'cody'
+      });
+      var visible = DC.state.visiblePlayers(state);
+      assertEq(visible.map(function (p) { return p.id; }), ['sv3']);
+      assertEq(visible[0].drafted, true, 'a drafted match is still returned while searching');
+    });
+
+    t('visiblePlayers: clearing the search restores the sticky-filtered view that was active before', function () {
+      var state = stickyState({ filters: { position: 'ALL', status: 'AVAILABLE', stickyPositions: ['RB'] } });
+      var before = DC.state.visiblePlayers(state).map(function (p) { return p.id; });
+      var searching = DC.state.reduce(state, { type: 'SET_SEARCH', text: 'cody' });
+      assertEq(DC.state.visiblePlayers(searching).map(function (p) { return p.id; }), ['sv3']);
+      var cleared = DC.state.reduce(searching, { type: 'SET_SEARCH', text: '' });
+      assertEq(DC.state.visiblePlayers(cleared).map(function (p) { return p.id; }), before, 'clearing search brings back exactly the pre-search sticky view');
+    });
+  })();
+  </script>
+
+  <!-- Feature: sticky position -- chipsHTML rendering tests -->
+  <script>
+  (function () {
+    'use strict';
+    section('ui-templates');
+
+    function chipEl(html, position) {
+      var wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      return wrap.querySelector('[data-action="set-position"][data-position="' + position + '"]');
+    }
+
+    t('chipsHTML: a non-empty sticky set marks every stuck position chip active-position AND sticky-position, leaving the rest plain', function () {
+      var html = DC.ui.templates.chipsHTML({ position: 'ALL', status: 'AVAILABLE', stickyPositions: ['RB', 'WR'] });
+      assert(chipEl(html, 'RB').classList.contains('active-position') && chipEl(html, 'RB').classList.contains('sticky-position'), 'RB should be active+sticky: ' + html);
+      assert(chipEl(html, 'WR').classList.contains('active-position') && chipEl(html, 'WR').classList.contains('sticky-position'), 'WR should be active+sticky: ' + html);
+      assert(!chipEl(html, 'QB').classList.contains('active-position') && !chipEl(html, 'QB').classList.contains('sticky-position'), 'QB should stay plain: ' + html);
+      assert(!chipEl(html, 'TE').classList.contains('active-position') && !chipEl(html, 'TE').classList.contains('sticky-position'), 'TE should stay plain: ' + html);
+    });
+
+    t('chipsHTML: the ALL chip never shows active while sticky mode is on', function () {
+      var html = DC.ui.templates.chipsHTML({ position: 'ALL', status: 'AVAILABLE', stickyPositions: ['RB'] });
+      assert(!chipEl(html, 'ALL').classList.contains('active-position'), 'ALL must never show active-position in sticky mode: ' + html);
+    });
+
+    t('chipsHTML: the FLEX chip never shows active from the sticky set, even when the set equals RB+WR+TE', function () {
+      var html = DC.ui.templates.chipsHTML({ position: 'ALL', status: 'AVAILABLE', stickyPositions: ['RB', 'WR', 'TE'] });
+      assert(!chipEl(html, 'FLEX').classList.contains('active-position'), 'FLEX must never show active even though the set equals RB+WR+TE: ' + html);
+    });
+
+    t('chipsHTML: a missing stickyPositions field behaves exactly like the pre-feature single-filter rendering', function () {
+      var html = DC.ui.templates.chipsHTML({ position: 'RB', status: 'AVAILABLE' });
+      assert(chipEl(html, 'RB').classList.contains('active-position') && !chipEl(html, 'RB').classList.contains('sticky-position'), 'RB should be plain active-position, no sticky class: ' + html);
+      assert(!/sticky-position/.test(html), 'no sticky-position class anywhere: ' + html);
+    });
+
+    t('emptyStateHTML combo: a sticky-position label joins the set in order (e.g. "WR+RB")', function () {
+      var html = DC.ui.templates.emptyStateHTML('combo', { status: 'Available', position: 'WR+RB' });
+      assert(html.indexOf('WR+RB') !== -1, 'combo empty state should surface the joined sticky label: ' + html);
+    });
+
+    function buildStickyMountFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    t('render(): AVOID + sticky {RB,WR} with nobody avoided shows the combo empty state with a joined "RB+WR" position label', function () {
+      var fixture = buildStickyMountFixture();
+      var seed = DC.state.createSeedState();
+      var withSticky = Object.assign({}, seed, { filters: Object.assign({}, seed.filters, { position: 'ALL', status: 'AVOID', stickyPositions: ['RB', 'WR'] }) });
+      var store = DC.state.createStore(withSticky);
+      try {
+        DC.ui.mount(store);
+        var listEl = fixture.querySelector('#player-list');
+        assert(listEl.textContent.indexOf('RB+WR') !== -1, 'expected the joined sticky label in the empty-state copy: ' + listEl.innerHTML);
+      } finally {
+        document.body.removeChild(fixture);
+        localStorage.removeItem(DC.state.STORAGE_KEY);
+      }
+    });
+  })();
+  </script>
+
+  <!-- Feature: sticky position -- hold-to-stick long-press gesture wiring on the main board's
+       position chips. Mirrors the queue-ui section's mount-fixture/spyDispatch/mockTimerQueue
+       patterns for real-DOM PointerEvent gesture tests. -->
+  <script>
+  (function () {
+    'use strict';
+    section('sticky-gesture');
+
+    function buildMountFixture() {
+      var root = document.createElement('div');
+      root.style.display = 'none';
+      root.innerHTML =
+        '<div id="app">' +
+          '<header id="header">' +
+            '<div id="search-container"></div>' +
+            '<div id="tracker-strip"></div>' +
+            '<div id="filter-chips"></div>' +
+            '<div id="summary-line"></div>' +
+          '</header>' +
+          '<main id="player-list"></main>' +
+          '<div id="undo-banner-root"></div>' +
+          '<nav id="bottom-bar"></nav>' +
+          '<div id="sheet-root"></div>' +
+        '</div>';
+      document.body.appendChild(root);
+      return root;
+    }
+
+    function spyDispatch(store) {
+      var calls = [];
+      var original = store.dispatch;
+      store.dispatch = function (action) {
+        calls.push(action);
+        return original(action);
+      };
+      return { calls: calls, restore: function () { store.dispatch = original; } };
+    }
+
+    function mockTimerQueue() {
+      var original = window.setTimeout;
+      var originalClear = window.clearTimeout;
+      var nextId = 1;
+      var entries = [];
+      window.setTimeout = function (cb) {
+        var id = nextId++;
+        entries.push({ id: id, cb: cb });
+        return id;
+      };
+      window.clearTimeout = function (id) {
+        entries = entries.filter(function (e) { return e.id !== id; });
+      };
+      return {
+        flushOne: function () {
+          var e = entries.shift();
+          if (e) { e.cb(); }
+        },
+        pendingCount: function () { return entries.length; },
+        restore: function () {
+          window.setTimeout = original;
+          window.clearTimeout = originalClear;
+        }
+      };
+    }
+
+    function cleanup(fixture, store) {
+      document.body.removeChild(fixture);
+      localStorage.removeItem(DC.state.STORAGE_KEY);
+    }
+
+    function chip(fixture, position) {
+      return fixture.querySelector('[data-action="set-position"][data-position="' + position + '"]');
+    }
+
+    t('hold on a real position chip fires TOGGLE_STICKY_POSITION after the long-press timer', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var rb = chip(fixture, 'RB');
+        rb.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, button: 0, clientX: 100, clientY: 50 }));
+        timers.flushOne();
+
+        var toggles = spy.calls.filter(function (a) { return a.type === 'TOGGLE_STICKY_POSITION'; });
+        assertEq(toggles.length, 1, 'expected exactly one TOGGLE_STICKY_POSITION dispatch');
+        assertEq(toggles[0].position, 'RB');
+        assertEq(store.getState().filters.stickyPositions, ['RB']);
+      } finally {
+        timers.restore();
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('movement beyond 8px before the timer fires cancels the hold -- the timer never fires, no dispatch', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var rb = chip(fixture, 'RB');
+        rb.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 2, button: 0, clientX: 100, clientY: 50 }));
+        rb.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 2, clientX: 112, clientY: 50 })); // dx=12 > 8px
+        assertEq(timers.pendingCount(), 0, 'the hold timer should have been cleared by the move');
+        timers.flushOne(); // no-op: nothing pending
+        assertEq(spy.calls.length, 0, 'no dispatch should happen after a cancelled hold');
+      } finally {
+        timers.restore();
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('a fired hold suppresses the trailing click even though the re-render replaced the chip node', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var rb = chip(fixture, 'RB');
+        rb.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 3, button: 0, clientX: 100, clientY: 50 }));
+        timers.flushOne(); // fires the hold, dispatches TOGGLE_STICKY_POSITION, re-renders the chip row
+        assert(rb !== chip(fixture, 'RB'), 'sanity: the re-render replaced the RB chip node');
+
+        var freshRb = chip(fixture, 'RB');
+        freshRb.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+        var setPositionDispatches = spy.calls.filter(function (a) { return a.type === 'SET_POSITION_FILTER'; });
+        assertEq(setPositionDispatches.length, 0, 'the trailing click must not also dispatch a plain SET_POSITION_FILTER');
+      } finally {
+        timers.restore();
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('a quick tap (release well before the long-press timer) still solos the position via the normal click path', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      var spy = spyDispatch(store);
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var rb = chip(fixture, 'RB');
+        rb.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 4, button: 0, clientX: 100, clientY: 50 }));
+        rb.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 4, clientX: 100, clientY: 50 }));
+        assertEq(timers.pendingCount(), 0, 'the hold timer should have been cleared by pointerup');
+        rb.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+        var setPositionDispatches = spy.calls.filter(function (a) { return a.type === 'SET_POSITION_FILTER'; });
+        assertEq(setPositionDispatches.length, 1, 'a quick tap should dispatch exactly one SET_POSITION_FILTER');
+        assertEq(setPositionDispatches[0].position, 'RB');
+        assertEq(store.getState().filters.position, 'RB');
+      } finally {
+        timers.restore();
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('holding the ALL chip behaves identically to a tap -- routes through SET_POSITION_FILTER, never TOGGLE_STICKY_POSITION', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      store.dispatch({ type: 'SET_POSITION_FILTER', position: 'RB' });
+      var spy = spyDispatch(store);
+      var timers = mockTimerQueue();
+      try {
+        DC.ui.mount(store);
+        var allChip = chip(fixture, 'ALL');
+        allChip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 5, button: 0, clientX: 10, clientY: 50 }));
+        timers.flushOne();
+
+        var stickyDispatches = spy.calls.filter(function (a) { return a.type === 'TOGGLE_STICKY_POSITION'; });
+        assertEq(stickyDispatches.length, 0, 'holding ALL must never dispatch TOGGLE_STICKY_POSITION');
+        assertEq(store.getState().filters.position, 'ALL');
+      } finally {
+        timers.restore();
+        spy.restore();
+        cleanup(fixture, store);
+      }
+    });
+
+    t('contextmenu on a position chip is prevented (blocks the iOS long-press callout)', function () {
+      var fixture = buildMountFixture();
+      var store = DC.state.createStore(DC.state.createSeedState());
+      try {
+        DC.ui.mount(store);
+        var rb = chip(fixture, 'RB');
+        var evt = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+        rb.dispatchEvent(evt);
+        assert(evt.defaultPrevented, 'contextmenu on a position chip should be prevented');
+      } finally {
+        cleanup(fixture, store);
       }
     });
   })();

@@ -412,11 +412,21 @@
    * @param {number} [queuedCount] undrafted-queued count, badge hidden when falsy/zero
    */
   function chipsHTML(filters, queuedCount) {
+    var sticky = (filters && filters.stickyPositions) || [];
+    var stickySet = {};
+    sticky.forEach(function (p) { stickySet[p] = true; });
     var positionRow = '<div class="chip-row chip-row-positions">' + POSITION_CHIPS.map(function (pair) {
       var val = pair[0];
       var label = pair[1];
-      var active = filters.position === val ? ' active-position' : '';
-      return '<button class="chip' + active + '" data-action="set-position" data-position="' + val + '">' + label + '</button>';
+      // ALL/FLEX are never sticky-set members (only the six real positions are) -- while sticky
+      // mode is on, active status comes solely from the set, so ALL/FLEX read as inactive even
+      // though filters.position itself is always 'ALL' during sticky mode
+      var isActive = sticky.length > 0 ? !!stickySet[val] : filters.position === val;
+      var cls = isActive ? ' active-position' : '';
+      if (stickySet[val]) {
+        cls += ' sticky-position';
+      }
+      return '<button class="chip' + cls + '" data-action="set-position" data-position="' + val + '">' + label + '</button>';
     }).join('') + '</div>';
 
     var queueBadge = queuedCount > 0 ? '<span class="chip-count">' + queuedCount + '</span>' : '';
@@ -1388,6 +1398,83 @@
       }
     }
 
+    // ---- sticky-position hold: pointerdown on a position chip arms a ~500ms timer; pointerup/
+    // cancel or movement past ~8px (the chip row scrolls horizontally on iPhone -- a scroll must
+    // never arm a hold) cancels back to a normal tap. On fire, a real or FLEX position dispatches
+    // TOGGLE_STICKY_POSITION; ALL/FLEX route through the same tap logic as a plain click. Firing
+    // re-renders the chip row (chipsEl.innerHTML), which can replace the very node under the
+    // finger before the trailing click arrives -- chipHoldFired is a container-level flag (cleared
+    // on the next chip pointerdown), never a per-node/per-id check, so the suppression in the
+    // 'set-position' click case above holds regardless of which node the click lands on. ----
+
+    var chipPressTimer = null;
+    var chipPressPointerId = null;
+    var chipPressStartX = 0;
+    var chipPressStartY = 0;
+    var chipPressPosition = null;
+    var chipHoldFired = false;
+    var CHIP_HOLD_MOVE_PX = 8;
+
+    function teardownChipPress() {
+      if (chipPressTimer !== null) {
+        clearTimeout(chipPressTimer);
+        chipPressTimer = null;
+      }
+      chipPressPointerId = null;
+      chipPressPosition = null;
+    }
+
+    chipsEl.addEventListener('pointerdown', function (ev) {
+      var chipTarget = ev.target.closest('[data-action="set-position"]');
+      if (!chipTarget || (ev.button !== 0 && ev.pointerType === 'mouse')) {
+        return;
+      }
+      chipHoldFired = false; // the only place this flag is cleared -- see block comment above
+      teardownChipPress(); // a second pointerdown while armed cancels the first
+      chipPressPointerId = ev.pointerId;
+      chipPressPosition = chipTarget.getAttribute('data-position');
+      chipPressStartX = ev.clientX;
+      chipPressStartY = ev.clientY;
+      chipPressTimer = setTimeout(function () {
+        var position = chipPressPosition;
+        teardownChipPress();
+        chipHoldFired = true;
+        if (position === 'ALL' || position === 'FLEX') {
+          var current = store.getState().filters.position;
+          store.dispatch({ type: 'SET_POSITION_FILTER', position: position === current ? 'ALL' : position });
+        } else {
+          store.dispatch({ type: 'TOGGLE_STICKY_POSITION', position: position });
+        }
+      }, LONG_PRESS_MS);
+    });
+
+    chipsEl.addEventListener('pointermove', function (ev) {
+      if (ev.pointerId !== chipPressPointerId) {
+        return;
+      }
+      var dx = ev.clientX - chipPressStartX;
+      var dy = ev.clientY - chipPressStartY;
+      if (Math.abs(dx) > CHIP_HOLD_MOVE_PX || Math.abs(dy) > CHIP_HOLD_MOVE_PX) {
+        teardownChipPress();
+      }
+    });
+
+    function onChipPressEnd(ev) {
+      if (ev.pointerId !== chipPressPointerId) {
+        return;
+      }
+      teardownChipPress();
+    }
+
+    chipsEl.addEventListener('pointerup', onChipPressEnd);
+    chipsEl.addEventListener('pointercancel', onChipPressEnd);
+
+    chipsEl.addEventListener('contextmenu', function (ev) {
+      if (ev.target.closest('[data-action="set-position"]')) {
+        ev.preventDefault();
+      }
+    });
+
     // ---- delegated click handling ----
 
     appEl.addEventListener('click', function (ev) {
@@ -1455,6 +1542,9 @@
           }
           break;
         case 'set-position': {
+          if (chipHoldFired) {
+            break; // the click that follows a fired chip hold -- suppressed regardless of which node it landed on
+          }
           var pos = target.getAttribute('data-position');
           var current = store.getState().filters.position;
           store.dispatch({ type: 'SET_POSITION_FILTER', position: pos === current ? 'ALL' : pos });
@@ -1686,11 +1776,13 @@
       if (allDrafted) {
         return { kind: 'complete' };
       }
+      var sticky = state.filters.stickyPositions || [];
+      var positionLabel = sticky.length > 0 ? sticky.join('+') : (state.filters.position === 'ALL' ? '' : state.filters.position);
       return {
         kind: 'combo',
         detail: {
           status: STATUS_LABELS[state.filters.status] || state.filters.status,
-          position: state.filters.position === 'ALL' ? '' : state.filters.position
+          position: positionLabel
         }
       };
     }
@@ -1736,10 +1828,12 @@
         var myPick = !!(pm && pm.isMyPick);
         var queuedIds = {};
         (state.queueIds || []).forEach(function (id) { queuedIds[id] = true; });
-        // drag reorder only makes sense over the WHOLE queue, in order -- a text search or a
-        // narrowing position filter shows a subset, so the handle hides rather than reorder
-        // ambiguously underneath it (edit.js's search-disables-drag rule, same rationale)
-        var showDragHandle = state.filters.status === 'QUEUE' && !searching && state.filters.position === 'ALL';
+        // drag reorder only makes sense over the WHOLE queue, in order -- a text search, a
+        // narrowing position filter, OR a non-empty sticky set shows a subset, so the handle
+        // hides rather than reorder ambiguously underneath it (edit.js's search-disables-drag
+        // rule, same rationale)
+        var noSticky = !state.filters.stickyPositions || state.filters.stickyPositions.length === 0;
+        var showDragHandle = state.filters.status === 'QUEUE' && !searching && state.filters.position === 'ALL' && noSticky;
         var rowsHtml = visible.map(function (v) {
           var pn = v.drafted ? DC.state.pickNumber(state, v.id) : null;
           var ctx = {
@@ -1766,7 +1860,7 @@
       renderLeagueSection(state);
       renderCompareTray(); // heals the tray/prunes stale ids after every store-driven render
 
-      var filtersKey = state.filters.position + '|' + state.filters.status;
+      var filtersKey = state.filters.position + '|' + state.filters.status + '|' + (state.filters.stickyPositions || []).join(',');
       if (filtersKey !== lastFiltersKey || state.searchText !== lastSearchText) {
         listEl.scrollTop = 0;
       }
