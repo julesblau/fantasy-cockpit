@@ -42,7 +42,7 @@ git push -u origin main
 
 Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it works correctly at that repo subpath with no configuration changes. The repo must serve from the branch root; no `/docs` folder is needed.
 
-**Reminder for this release:** this release bumps the service-worker cache to v28, makes search span the whole board regardless of active filters, adds hold-to-stick position multi-select on the filter chips, and fixes ESPN ADP accuracy (both the bake script and in-app Refresh ADP now read ESPN's PPR draft rank instead of a cross-format crowd average; any pre-fix in-app override stored on a device is discarded on first load). Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
+**Reminder for this release:** this release bumps the service-worker cache to v29 and fixes K/DST board placement -- the interleave now uses Flock's multi-site average ADP and count-based placement (each K/DST lands after however many skill players the market prices ahead of it), so the first kicker/DST sits at overall ~131 instead of 112. Already-installed iPhones pick up the update on their SECOND online open after you deploy, not the first -- that's expected iOS service-worker behavior, not a bug.
 
 ## Install on iPhone
 
@@ -57,7 +57,7 @@ Every path in this app is relative (`./index.html`, `./sw.js`, etc.), so it work
 
 ## Import your real rankings
 
-The board ships pre-loaded with the user's real rankings: 421 players -- 353 skill players from the Flock export plus 36 K and 32 DST slotted in by weighted ADP -- baked by `powershell -File scripts\build-board.ps1` from `scripts/board-source/*.csv` and `scripts/board-manual.json`. Tier letters (S, A, B, ...) come from the user's own tier screenshots, transcribed into `board-manual.json` and mapped down the alphabet per position -- S is Tier 1, A is Tier 2, and so on; K and DST carry no tiers of their own. Real 2026 bye weeks are fetched live from ESPN at bake time, and the bake fails closed -- it emits nothing rather than a board with a guessed or missing bye.
+The board ships pre-loaded with the user's real rankings: 421 players -- 353 skill players from the Flock export plus 36 K and 32 DST slotted in at their market depth by Flock's multi-site average ADP -- baked by `powershell -File scripts\build-board.ps1` from `scripts/board-source/*.csv` and `scripts/board-manual.json`. Tier letters (S, A, B, ...) come from the user's own tier screenshots, transcribed into `board-manual.json` and mapped down the alphabet per position -- S is Tier 1, A is Tier 2, and so on; K and DST carry no tiers of their own. Real 2026 bye weeks are fetched live from ESPN at bake time, and the bake fails closed -- it emits nothing rather than a board with a guessed or missing bye.
 
 The re-bake ritual: new tier or rankings screenshots come in, get transcribed into `board-manual.json`, then `build-board.ps1` runs and the app redeploys. Phones auto-adopt the freshly baked board on their next open, carrying marks over by player identity -- unless the board's already been manually edited in-app (a drag-reorder, a rank-jump, or an import), in which case edits win and that phone's re-bake is skipped. Adoption itself always leaves a pristine board behind; the edit-lock comes back on only after your next real edit or import.
 

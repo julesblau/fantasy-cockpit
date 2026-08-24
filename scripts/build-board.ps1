@@ -88,8 +88,7 @@ $dstNameMap = @{
     "Washington Commanders" = "Commanders D/ST"; "Arizona Cardinals" = "Cardinals D/ST"
 }
 
-# weighted ADP renormalization weights for K/DST interleave (Expert/Sleeper/Underdog/ESPN only)
-$adpWeights = @{ Expert = 0.33; Sleeper = 0.22; Underdog = 0.22; ESPN = 0.23 }
+# K/DST interleave consensus source: adp.csv AVG column (Flock's multi-site average, incl. Yahoo/CBS/FFPC)
 
 # ---- Step 1: parse REDRAFT (skill order) ------------------------------------------------------
 
@@ -233,7 +232,7 @@ foreach ($code in $TEAM_BYE_WEEKS.Keys) {
 }
 Write-Host "Byes OK: 32/32 teams, all ints 1..18"
 
-# ---- Step 4: K/DST interleave by weighted ADP --------------------------------------------------
+# ---- Step 4: K/DST interleave by ADP consensus --------------------------------------------------
 
 $adpCsv = Import-Csv (Join-Path $srcDir "adp.csv")
 if ($adpCsv.Count -lt 1000) {
@@ -274,18 +273,9 @@ foreach ($key in $adpGroups.Keys) {
         Fail("3+ adp.csv rows collide on key '$key' (" + $idxList.Count + " rows)")
     }
     $row = $adpCsv[$chosenIdx]
-    $sum = 0.0
-    $wsum = 0.0
-    foreach ($col in @('Expert', 'Sleeper', 'Underdog', 'ESPN')) {
-        $raw = $row.$col
-        if (-not [string]::IsNullOrWhiteSpace($raw)) {
-            $val = [double]::Parse($raw, [System.Globalization.CultureInfo]::InvariantCulture)
-            $sum += $val * $adpWeights[$col]
-            $wsum += $adpWeights[$col]
-        }
-    }
-    if ($wsum -gt 0) {
-        $adpWeighted[$key] = $sum / $wsum
+    $raw = $row.AVG
+    if (-not [string]::IsNullOrWhiteSpace($raw)) {
+        $adpWeighted[$key] = [double]::Parse($raw, [System.Globalization.CultureInfo]::InvariantCulture)
     }
 }
 
@@ -383,16 +373,18 @@ foreach ($d in $dstPlayers) {
 
 $sortedCombined = $combined | Sort-Object -Property SortKey, FileOrder
 
+# slot = count of skill players with a lower (better) consensus value -- not "first skill player
+# exceeding it" in board order, which lets one aggressively user-ranked player dam up all K/DST behind it
 foreach ($item in $sortedCombined) {
     $bucket = $n
     if ($null -ne $item.Weighted) {
-        for ($i = 0; $i -lt $n; $i++) {
-            $sp = $skillDeduped[$i]
-            if ($null -ne $sp.Weighted -and $sp.Weighted -gt $item.Weighted) {
-                $bucket = $i
-                break
+        $count = 0
+        foreach ($sp in $skillDeduped) {
+            if ($null -ne $sp.Weighted -and $sp.Weighted -lt $item.Weighted) {
+                $count++
             }
         }
+        $bucket = $count
     }
     [void]$insertBuckets[$bucket].Add($item)
 }
@@ -522,7 +514,7 @@ for ($i = 0; $i -lt $sortedTeams.Count; $i++) {
 [void]$lines.Add("  };")
 [void]$lines.Add("")
 [void]$lines.Add("  // real user rankings bake: 353 skill (REDRAFT-rankings.csv, one dedup drop) + K/DST")
-[void]$lines.Add("  // interleaved by weighted ADP consensus -- see scripts\build-board.ps1")
+[void]$lines.Add("  // interleaved by Flock's multi-site average ADP (adp.csv AVG) -- see scripts\build-board.ps1")
 [void]$lines.Add("  var SEED_PLAYERS = [")
 for ($i = 0; $i -lt $seedFinal.Count; $i++) {
     $p = $seedFinal[$i]
